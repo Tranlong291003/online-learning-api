@@ -1,10 +1,19 @@
 const express = require("express");
 const router = express.Router();
-const controller = require("../controllers/courseCategories.controller");
+const courseCategoryController = require("../controllers/courseCategories.controller");
 
-router.get("/", controller.getAllCategories);
-router.post("/", controller.createCategory);
-router.put("/:id", controller.updateCategory);
-router.delete("/:id", controller.deleteCategory);
+router.get("/course-categories", courseCategoryController.getAllCategories);
+
+router.post("/course-categories", courseCategoryController.createCategory);
+
+router.put(
+  "/course-categories/:category_id",
+  courseCategoryController.updateCategory
+);
+
+router.delete(
+  "/course-categories/:category_id",
+  courseCategoryController.deleteCategory
+);
 
 module.exports = router;

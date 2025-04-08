@@ -1,4 +1,3 @@
-// 📄 src/app.js
 const express = require("express");
 const cors = require("cors");
 const app = express();
@@ -6,12 +5,18 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const userRoutes = require("./routes/users.router");
+// Import các route
 const courseCategoryRoutes = require("./routes/courseCategories.router");
-const lessonRoutes = require("./routes/lessons.router"); // Thêm route cho lessons
+const courseRoutes = require("./routes/courses.router");
+const lessonRoutes = require("./routes/lessons.router");
+const enrollmentRoutes = require("./routes/enrollments.router");
+const progressRoutes = require("./routes/progress.router"); // Đảm bảo đúng đường dẫn
 
-app.use("/api/users", userRoutes);
-app.use("/api/course-categories", courseCategoryRoutes);
-app.use("/api", lessonRoutes); // Đăng ký route lessons
+// Gắn route với đường dẫn cụ thể
+app.use("/api", courseCategoryRoutes);
+app.use("/api", courseRoutes);
+app.use("/api", lessonRoutes);
+app.use("/api/enrollments", enrollmentRoutes);
+app.use("/api/progress", progressRoutes);
 
 module.exports = app;

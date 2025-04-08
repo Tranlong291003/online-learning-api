@@ -7,19 +7,15 @@ const config = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD || "", // nếu không có password thì để rỗng
   options: {
-    encrypt: false,
+    encrypt: false, // thay đổi nếu bạn sử dụng SSL
     enableArithAbort: true,
   },
 };
 
+// Tạo kết nối
 const pool = new sql.ConnectionPool(config);
+
+// Sử dụng pool.connect() trả về promise
 const poolConnect = pool.connect();
 
 module.exports = { sql, pool, poolConnect };
-
-// console.log("📄 .env đang sử dụng:");
-// console.log({
-//   DB_SERVER: process.env.DB_SERVER,
-//   DB_USER: process.env.DB_USER,
-//   DB_PASSWORD: process.env.DB_PASSWORD,
-// });

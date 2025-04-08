@@ -38,7 +38,7 @@ exports.createCategory = async (req, res) => {
 
 exports.updateCategory = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { category_id } = req.params;
     const { name, description } = req.body;
 
     if (!name)
@@ -48,11 +48,11 @@ exports.updateCategory = async (req, res) => {
 
     await poolConnect;
     const request = new sql.Request(pool);
-    request.input("id", sql.Int, id);
+    request.input("category_id", sql.Int, category_id);
     request.input("name", sql.NVarChar, name);
     request.input("desc", sql.NVarChar, description);
     const result = await request.query(
-      "UPDATE course_categories SET name = @name, description = @desc, updated_at = GETDATE() WHERE id = @id"
+      "UPDATE course_categories SET name = @name, description = @desc, updated_at = GETDATE() WHERE category_id = @category_id"
     );
 
     res.status(200).json({
@@ -66,13 +66,13 @@ exports.updateCategory = async (req, res) => {
 
 exports.deleteCategory = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { category_id } = req.params;
 
     await poolConnect;
     const request = new sql.Request(pool);
-    request.input("id", sql.Int, id);
+    request.input("category_id", sql.Int, category_id);
     const result = await request.query(
-      "DELETE FROM course_categories WHERE id = @id"
+      "DELETE FROM course_categories WHERE category_id = @category_id"
     );
 
     if (result.rowsAffected[0] === 0) {
