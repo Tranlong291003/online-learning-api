@@ -12,7 +12,7 @@ const lessonRoutes = require("./routes/lessons.router");
 const enrollmentRoutes = require("./routes/enrollments.router");
 const progressRoutes = require("./routes/progress.router"); // Đảm bảo đúng đường dẫn
 const quizzesRoutes = require("./routes/quizzes.router");
-const questionsRoutes = require("./routes/questions.Router");
+const questionsRoutes = require("./routes/questions.router");
 
 // Gắn route với đường dẫn cụ thể
 app.use("/api", courseCategoryRoutes);
