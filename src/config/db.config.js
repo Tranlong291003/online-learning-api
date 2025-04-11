@@ -1,25 +1,21 @@
-// config/db.js
-require("dotenv").config();
 const sql = require("mssql");
+require("dotenv").config();
 
-const dbConfig = {
+const config = {
+  server: process.env.DB_SERVER,
+  database: process.env.DB_DATABASE,
   user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  server: process.env.DB_SERVER, // Địa chỉ IP công khai của máy tính hoặc tên máy chủ trên cloud
-  database: process.env.DB_NAME,
+  password: process.env.DB_PASSWORD || "", // nếu không có password thì để rỗng
   options: {
-    encrypt: true, // Nếu bạn dùng Azure hoặc cần mã hóa kết nối
-    trustServerCertificate: true, // Để tránh lỗi chứng chỉ SSL
+    encrypt: false, // thay đổi nếu bạn sử dụng SSL
+    enableArithAbort: true,
   },
 };
 
-const connectDB = async () => {
-  try {
-    await sql.connect(dbConfig);
-    console.log("Connected to SQL Server");
-  } catch (err) {
-    console.error("Error connecting to database:", err);
-  }
-};
+// Tạo kết nối
+const pool = new sql.ConnectionPool(config);
 
-module.exports = connectDB;
+// Sử dụng pool.connect() trả về promise
+const poolConnect = pool.connect();
+
+module.exports = { sql, pool, poolConnect };
