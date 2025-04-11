@@ -21,6 +21,6 @@ app.use("/api", lessonRoutes);
 app.use("/api", enrollmentRoutes);
 app.use("/api", progressRoutes);
 app.use("/api", quizzesRoutes);
-app.use("/api/questions", questionsRoutes);
+app.use("/api", questionsRoutes);
 
 module.exports = app;
