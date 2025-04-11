@@ -11,12 +11,16 @@ const courseRoutes = require("./routes/courses.router");
 const lessonRoutes = require("./routes/lessons.router");
 const enrollmentRoutes = require("./routes/enrollments.router");
 const progressRoutes = require("./routes/progress.router"); // Đảm bảo đúng đường dẫn
+const quizzesRoutes = require("./routes/quizzes.router");
+const questionsRoutes = require("./routes/questions.Router");
 
 // Gắn route với đường dẫn cụ thể
 app.use("/api", courseCategoryRoutes);
 app.use("/api", courseRoutes);
 app.use("/api", lessonRoutes);
-app.use("/api/enrollments", enrollmentRoutes);
-app.use("/api/progress", progressRoutes);
+app.use("/api", enrollmentRoutes);
+app.use("/api", progressRoutes);
+app.use("/api", quizzesRoutes);
+app.use("/api/questions", questionsRoutes);
 
 module.exports = app;
