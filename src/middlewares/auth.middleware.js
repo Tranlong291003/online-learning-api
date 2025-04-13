@@ -1,16 +1,22 @@
+// middlewares/checkAuth.js
 const admin = require("../config/firebase.config");
 
-const verifyToken = async (req, res, next) => {
-  const token = req.headers.authorization?.split("Bearer ")[1];
-  if (!token) return res.status(401).json({ error: "Token không có" });
+async function checkAuth(req, res, next) {
+  const authorizationHeader = req.headers.authorization || "";
+  const token = authorizationHeader.split(" ")[1]; // Tách "Bearer <token>"
+
+  if (!token) {
+    return res.status(401).json({ error: "No token provided" });
+  }
 
   try {
-    const decoded = await admin.auth().verifyIdToken(token);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    res.status(403).json({ error: "Token không hợp lệ", detail: err.message });
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    req.user = decodedToken; // Gắn user đã xác thực vào req
+    next(); // Cho phép request đi tiếp
+  } catch (error) {
+    console.error("Error verifying Firebase ID token:", error);
+    return res.status(401).json({ error: "Unauthorized" });
   }
-};
+}
 
-module.exports = verifyToken;
+module.exports = checkAuth;

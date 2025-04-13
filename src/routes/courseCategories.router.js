@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const courseCategoryController = require("../controllers/courseCategories.controller");
+const courseCategoryController = require("../controllers/courseCategories/courseCategories.controller");
 
 router.get("/course-categories", courseCategoryController.getAllCategories);
 

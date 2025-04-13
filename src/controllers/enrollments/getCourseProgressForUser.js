@@ -1,6 +1,6 @@
-const { sql, poolConnect, pool } = require("../config/db.config");
+const { sql, poolConnect, pool } = require("../../config/db.config");
 
-exports.getCourseProgressForUser = async (req, res) => {
+const getCourseProgressForUser = async (req, res) => {
   const { user_id, course_id } = req.params;
 
   try {
@@ -50,3 +50,5 @@ exports.getCourseProgressForUser = async (req, res) => {
     res.status(500).json({ error: "Lỗi lấy tiến độ học tập: " + err.message });
   }
 };
+
+module.exports = getCourseProgressForUser;

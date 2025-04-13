@@ -7,7 +7,7 @@ const config = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD || "", // nếu không có password thì để rỗng
   options: {
-    encrypt: true, // thay đổi nếu bạn sử dụng SSL
+    encrypt: false, // thay đổi nếu bạn sử dụng SSL
     enableArithAbort: true,
   },
 };
