@@ -1,19 +1,15 @@
 const express = require("express");
 const router = express.Router();
-const courseCategoryController = require("../controllers/courseCategories.controller");
+const authenticateToken = require("../middlewares/authMiddleware.js"); // Import middleware
 
-router.get("/course-categories", courseCategoryController.getAllCategories);
+const courseCategoryController = require("../controllers/courseCategories/courseCategories.controller");
 
-router.post("/course-categories", courseCategoryController.createCategory);
+router.get("/", authenticateToken, courseCategoryController.getAllCategories);
 
-router.put(
-  "/course-categories/:category_id",
-  courseCategoryController.updateCategory
-);
+router.post("/create", courseCategoryController.createCategory);
 
-router.delete(
-  "/course-categories/:category_id",
-  courseCategoryController.deleteCategory
-);
+router.put("/update/:category_id", courseCategoryController.updateCategory);
+
+router.delete("/delete/:category_id", courseCategoryController.deleteCategory);
 
 module.exports = router;

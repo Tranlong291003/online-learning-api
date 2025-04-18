@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const quizResultsController = require("../controllers/quizResults.controller");
+const quizResultsController = require("../controllers/quizResults/quizResults.controller");
 
 // Route để nộp bài làm
 router.post("/quiz-results", quizResultsController.submitQuizResult);
