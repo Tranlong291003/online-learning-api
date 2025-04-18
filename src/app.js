@@ -15,8 +15,6 @@ const questionsRoutes = require("./routes/questions.router");
 const quizResultsRoutes = require("./routes/quizResults.router");
 const usersRoutes = require("./routes/user.router");
 
-// Gắn route với đường dẫn cụ thể
-// Đặt tiền tố rõ ràng cho từng nhóm route
 app.use("/api/course-categories", courseCategoryRoutes); // API cho danh mục khóa học
 app.use("/api/courses", courseRoutes); // API cho các khóa học
 app.use("/api/lessons", lessonRoutes); // API cho bài học

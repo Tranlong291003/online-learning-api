@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+
 const enrollmentsController = require("../controllers/enrollments/enrollments.controller");
 
 router.post("/", enrollmentsController.enrollCourse);

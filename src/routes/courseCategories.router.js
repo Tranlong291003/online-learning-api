@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+
 const authenticateToken = require("../middlewares/authMiddleware.js"); // Import middleware
 
 const courseCategoryController = require("../controllers/courseCategories/courseCategories.controller");
