@@ -1,9 +1,10 @@
-const { sql, poolConnect, pool } = require("../../config/db.config");
+const { sql, poolPromise } = require("../../config/db.config");
 
 const deleteEnrollment = async (req, res) => {
   try {
     const { enrollment_id } = req.params; // Sử dụng `enrollment_id` thay vì `id` để tránh nhầm lẫn
-    await poolConnect; // Đảm bảo kết nối đã được thiết lập
+
+    const pool = await poolPromise; // Sử dụng poolPromise để kết nối
     const request = new sql.Request(pool);
     request.input("enrollment_id", sql.Int, enrollment_id);
 
@@ -19,7 +20,8 @@ const deleteEnrollment = async (req, res) => {
 
     res.json({ message: "🗑️ Huỷ đăng ký thành công" });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Lỗi huỷ đăng ký: " + err.message });
   }
 };
+
 module.exports = deleteEnrollment;

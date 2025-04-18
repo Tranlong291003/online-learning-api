@@ -1,12 +1,12 @@
-const { sql, poolConnect, pool } = require("../../config/db.config");
+const { sql, poolPromise } = require("../../config/db.config");
 
 const getResultsByUser = async (req, res) => {
-  const { id } = req.params; // user_id từ URL
+  const { user_id } = req.params; // user_id từ URL
 
   try {
-    const pool = await poolConnect; // Đảm bảo kết nối đã được thiết lập
+    const pool = await poolPromise; // Sử dụng poolPromise để kết nối
     const request = new sql.Request(pool);
-    request.input("user_id", sql.Int, id);
+    request.input("user_id", sql.Int, user_id);
 
     const result = await request.query(
       "SELECT * FROM quiz_results WHERE user_id = @user_id"
@@ -27,4 +27,5 @@ const getResultsByUser = async (req, res) => {
       .json({ error: "Lỗi khi lấy kết quả người học: " + err.message });
   }
 };
+
 module.exports = getResultsByUser;

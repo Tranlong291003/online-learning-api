@@ -1,4 +1,4 @@
-const { sql, poolConnect } = require("../../config/db.config");
+const { sql, poolPromise } = require("../../config/db.config");
 
 const updateQuestion = async (req, res) => {
   const { question_id } = req.params; // Lấy question_id từ URL
@@ -8,13 +8,33 @@ const updateQuestion = async (req, res) => {
     options,
     correct_index,
     expected_keywords,
+    uid, // UID để kiểm tra quyền người dùng
   } = req.body;
 
+  if (!uid) {
+    return res.status(400).json({ error: "UID không hợp lệ" });
+  }
+
   try {
-    // 1. Lấy thông tin câu hỏi dựa trên question_id
-    const pool = await poolConnect;
+    const pool = await poolPromise; // Sử dụng poolPromise để kết nối
     const request = new sql.Request(pool);
 
+    // Kiểm tra quyền của người dùng
+    request.input("uid", sql.NVarChar, uid);
+    const roleQuery = await request.query(
+      `SELECT role FROM users WHERE uid = @uid`
+    );
+
+    const userRole = roleQuery.recordset[0]?.role;
+
+    // Kiểm tra quyền cập nhật câu hỏi (Admin hoặc Giảng viên)
+    if (userRole !== "admin" && userRole !== "giang_vien") {
+      return res.status(403).json({
+        error: "Bạn không có quyền cập nhật câu hỏi",
+      });
+    }
+
+    // 1. Lấy thông tin câu hỏi dựa trên question_id
     request.input("question_id", sql.Int, question_id);
     const questionData = await request.query(`
       SELECT qq.question_id, qq.quiz_id, qq.question,
@@ -169,4 +189,5 @@ const updateQuestion = async (req, res) => {
     });
   }
 };
+
 module.exports = updateQuestion;

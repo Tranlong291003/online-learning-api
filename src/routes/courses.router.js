@@ -4,9 +4,9 @@ const courseController = require("../controllers/courses/courses.controller");
 
 router.get("/", courseController.getAllCourses);
 router.get("/:course_id", courseController.getCourseById);
-router.post("/", courseController.createCourse);
-router.put("/:course_id", courseController.updateCourse);
+router.post("/create", courseController.createCourse);
+router.put("/update/:course_id", courseController.updateCourse);
 router.patch("/:course_id/status", courseController.changeCourseStatus);
-router.delete("/:course_id", courseController.deleteCourse);
+router.delete("/delete/:course_id", courseController.deleteCourse);
 
 module.exports = router;

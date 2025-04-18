@@ -5,7 +5,7 @@ const authenticateToken = require("../middlewares/authMiddleware.js"); // Import
 
 const courseCategoryController = require("../controllers/courseCategories/courseCategories.controller");
 
-router.get("/", authenticateToken, courseCategoryController.getAllCategories);
+router.get("/", courseCategoryController.getAllCategories);
 
 router.post("/create", courseCategoryController.createCategory);
 

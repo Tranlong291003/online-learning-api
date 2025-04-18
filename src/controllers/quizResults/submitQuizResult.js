@@ -1,4 +1,4 @@
-const { sql, poolConnect, pool } = require("../../config/db.config");
+const { sql, poolPromise } = require("../../config/db.config");
 
 const submitQuizResult = async (req, res) => {
   const { user_id, quiz_id, answers, score, explanation } = req.body;
@@ -10,7 +10,7 @@ const submitQuizResult = async (req, res) => {
   }
 
   try {
-    const pool = await poolConnect; // Đảm bảo kết nối đã được thiết lập
+    const pool = await poolPromise; // Sử dụng poolPromise để kết nối
     const request = new sql.Request(pool);
 
     // Khai báo tham số @user_id, @quiz_id và các tham số khác
@@ -38,18 +38,23 @@ const submitQuizResult = async (req, res) => {
         "SELECT question_id, correct_index FROM quiz_questions WHERE quiz_id = @quiz_id"
       );
 
-      let calculatedScore = 0;
+      let correctAnswersCount = 0;
       questions.recordset.forEach((question, index) => {
         const userAnswer = answers[index]; // Đáp án của người học
 
         // So sánh đáp án người học với đáp án đúng
         if (userAnswer === question.correct_index) {
-          calculatedScore += 1; // Tăng điểm nếu đúng
+          correctAnswersCount += 1; // Tăng điểm nếu đúng
         }
       });
 
-      // Nếu không có điểm được tính trong body, sử dụng điểm đã tính
-      const finalScore = score || calculatedScore;
+      // Tính điểm trên thang 0-10
+      const maxScore = 10;
+      const totalQuestions = questions.recordset.length;
+      const percentage =
+        totalQuestions > 0 ? (correctAnswersCount / totalQuestions) * 100 : 0;
+      const finalScore = Math.round((percentage / 100) * maxScore); // Quy đổi thành điểm từ 0-10
+
       request.input("finalScore", sql.Float, finalScore);
 
       // Lưu kết quả bài làm vào bảng quiz_results với finalScore
@@ -75,4 +80,5 @@ const submitQuizResult = async (req, res) => {
     res.status(500).json({ error: "Lỗi khi nộp bài làm: " + err.message });
   }
 };
+
 module.exports = submitQuizResult;

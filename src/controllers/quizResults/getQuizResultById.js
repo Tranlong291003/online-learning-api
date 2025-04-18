@@ -1,16 +1,16 @@
-const { sql, poolConnect, pool } = require("../../config/db.config");
+const { sql, poolPromise } = require("../../config/db.config");
 
 const getQuizResultById = async (req, res) => {
-  const { id } = req.params; // result_id từ URL
+  const { result_id } = req.params; // result_id từ URL
 
   try {
-    const pool = await poolConnect; // Kết nối DB
+    const pool = await poolPromise; // Sử dụng poolPromise để kết nối
     const request = new sql.Request(pool);
 
     // Lấy kết quả từ bảng quiz_results
-    request.input("result_id", sql.Int, id);
+    request.input("result_id", sql.Int, result_id);
     const result = await request.query(
-      "SELECT * FROM quiz_results WHERE result_id = @result_id"
+      "SELECT * FROM quiz_results WHERE result_id = @result_id" // Sử dụng result_id thay vì quiz_result_id
     );
 
     // Kiểm tra có dữ liệu không

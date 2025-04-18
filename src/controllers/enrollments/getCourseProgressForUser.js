@@ -1,10 +1,10 @@
-const { sql, poolConnect, pool } = require("../../config/db.config");
+const { sql, poolPromise } = require("../../config/db.config");
 
 const getCourseProgressForUser = async (req, res) => {
   const { user_id, course_id } = req.params;
 
   try {
-    const pool = await poolConnect; // Đảm bảo kết nối đã được thiết lập
+    const pool = await poolPromise; // Sử dụng poolPromise để kết nối
     const request = new sql.Request(pool);
 
     // Khai báo tham số `user_id` và `course_id`

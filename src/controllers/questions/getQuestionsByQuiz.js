@@ -1,10 +1,10 @@
-const { sql, poolConnect } = require("../../config/db.config");
+const { sql, poolPromise } = require("../../config/db.config");
 
 const getQuestionsByQuiz = async (req, res) => {
   const { quiz_id } = req.params; // quiz_id từ URL
 
   try {
-    const pool = await poolConnect; // Đảm bảo kết nối đã được thiết lập
+    const pool = await poolPromise; // Sử dụng poolPromise để kết nối
     const request = new sql.Request(pool);
 
     // Kiểm tra quiz có tồn tại hay không

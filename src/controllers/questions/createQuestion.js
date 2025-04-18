@@ -1,4 +1,4 @@
-const { sql, poolConnect } = require("../../config/db.config");
+const { sql, poolPromise } = require("../../config/db.config");
 
 const createQuestion = async (req, res) => {
   const {
@@ -8,6 +8,7 @@ const createQuestion = async (req, res) => {
     options,
     correct_index,
     expected_keywords,
+    uid, // UID để kiểm tra quyền người dùng
   } = req.body;
 
   // Kiểm tra dữ liệu bắt buộc
@@ -17,14 +18,31 @@ const createQuestion = async (req, res) => {
     });
   }
 
+  if (!uid) {
+    return res.status(400).json({ error: "UID không hợp lệ" });
+  }
+
   try {
-    const pool = await poolConnect; // Đảm bảo kết nối đã được thiết lập
+    const pool = await poolPromise; // Sử dụng poolPromise để kết nối
     const request = new sql.Request(pool);
 
-    // Truyền quiz_id vào tham số cho câu truy vấn
-    request.input("quiz_id", sql.Int, quiz_id);
+    // Kiểm tra quyền của người dùng
+    request.input("uid", sql.NVarChar, uid);
+    const roleQuery = await request.query(
+      `SELECT role FROM users WHERE uid = @uid`
+    );
 
-    // Lấy loại quiz dựa trên quiz_id
+    const userRole = roleQuery.recordset[0]?.role;
+
+    // Kiểm tra quyền tạo câu hỏi (Admin hoặc Giảng viên)
+    if (userRole !== "admin" && userRole !== "giang_vien") {
+      return res.status(403).json({
+        error: "Bạn không có quyền tạo câu hỏi",
+      });
+    }
+
+    // Truy vấn lấy loại quiz
+    request.input("quiz_id", sql.Int, quiz_id);
     const quizResult = await request.query(`
       SELECT [type]
       FROM quizzes
@@ -36,20 +54,17 @@ const createQuestion = async (req, res) => {
       return res.status(404).json({ error: "Không tìm thấy quiz này." });
     }
 
-    // Lấy kiểu quiz (trac_nghiem / tu_luan) từ DB
+    // Lấy kiểu quiz từ DB
     const quizType = quizResult.recordset[0].type;
 
-    // (Tuỳ chọn) So sánh với type do client gửi lên để đảm bảo khớp:
+    // So sánh với type do client gửi lên để đảm bảo khớp:
     if (submittedType && submittedType !== quizType) {
       return res.status(400).json({
         error: `Sai loại quiz. Quiz trong DB là '${quizType}', nhưng bạn gửi '${submittedType}'.`,
       });
     }
 
-    // Hiển thị tạm trên log để theo dõi (hoặc trả về response)
-    console.log("Loại quiz (type) từ DB:", quizType);
-
-    // Tuỳ theo loại quiz từ DB mà thực hiện logic ràng buộc
+    // Kiểm tra loại quiz và thực hiện xử lý tương ứng
     if (quizType === "trac_nghiem") {
       // Bắt buộc phải có options và correct_index
       if (!options || correct_index === undefined) {
@@ -60,7 +75,6 @@ const createQuestion = async (req, res) => {
       }
 
       request.input("question", sql.NVarChar, question);
-      // Nếu options là mảng, nên stringify khi lưu:
       request.input("options", sql.NVarChar, JSON.stringify(options));
       request.input("correct_index", sql.Int, correct_index);
       request.input("expected_keywords", sql.NVarChar, null);
@@ -75,7 +89,7 @@ const createQuestion = async (req, res) => {
       request.input("correct_index", sql.Int, null);
       request.input("question", sql.NVarChar, question);
     } else {
-      // Nếu DB trả về loại quiz ngoài 2 loại trên, báo lỗi (nếu cần)
+      // Nếu loại quiz không hợp lệ
       return res.status(400).json({
         error: `Loại quiz không hợp lệ: ${quizType}`,
       });
@@ -95,7 +109,7 @@ const createQuestion = async (req, res) => {
       });
     }
 
-    // Thêm câu hỏi mới
+    // Thêm câu hỏi mới vào quiz
     await request.query(`
       INSERT INTO quiz_questions (
         quiz_id, question, options, correct_index, expected_keywords, created_at
@@ -113,8 +127,7 @@ const createQuestion = async (req, res) => {
         AND question = @question
     `);
 
-    // Trả kết quả, kèm thông tin loại quiz
-    return res.status(201).json({
+    res.status(201).json({
       message: `Câu hỏi đã được thêm thành công. Loại quiz là '${quizType}'.`,
       data: result.recordset[0],
     });

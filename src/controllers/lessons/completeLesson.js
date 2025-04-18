@@ -1,4 +1,4 @@
-const { sql, poolConnect, pool } = require("../../config/db.config");
+const { sql, poolPromise } = require("../../config/db.config");
 
 const completeLesson = async (req, res) => {
   const { lesson_id } = req.params; // ID bài học từ URL
@@ -9,7 +9,7 @@ const completeLesson = async (req, res) => {
   }
 
   try {
-    await poolConnect; // Đảm bảo kết nối đã được thiết lập
+    const pool = await poolPromise; // Sử dụng poolPromise để kết nối
     const request = new sql.Request(pool);
 
     // Khai báo các tham số
@@ -33,4 +33,5 @@ const completeLesson = async (req, res) => {
     res.status(500).json({ error: "Lỗi đánh dấu hoàn thành: " + err.message });
   }
 };
+
 module.exports = completeLesson;
