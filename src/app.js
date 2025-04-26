@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const app = express();
+const path = require("path");
 
 app.use(cors());
 app.use(express.json());
@@ -23,5 +24,6 @@ app.use("/api/quizzes", quizzesRoutes); // API cho các bài quiz
 app.use("/api/questions", questionsRoutes); // API cho các câu hỏi
 app.use("/api/quiz-results", quizResultsRoutes); // API cho kết quả quiz
 app.use("/api/users", usersRoutes); // API cho người dùng
+app.use("/uploads", express.static("src/public/uploads"));
 
 module.exports = app;

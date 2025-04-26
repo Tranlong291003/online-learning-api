@@ -1,5 +1,5 @@
-// controllers/courseCategories/createCourse.js
 const { sql, poolPromise } = require("../../config/db.config");
+const path = require("path");
 
 const createCourse = async (req, res) => {
   const {
@@ -9,14 +9,12 @@ const createCourse = async (req, res) => {
     level,
     price,
     discount_price,
-    status, // Có thể có hoặc không
+    status,
     language,
     tags,
-    thumbnail_url,
-    uid, // Thêm uid vào để kiểm tra quyền người dùng
+    uid, // instructor_uid
   } = req.body;
 
-  // Kiểm tra các trường bắt buộc
   if (!title || !category_id) {
     return res.status(400).json({ error: "Tên và danh mục là bắt buộc" });
   }
@@ -26,43 +24,36 @@ const createCourse = async (req, res) => {
   }
 
   try {
-    // Kết nối cơ sở dữ liệu
     const pool = await poolPromise;
     const request = new sql.Request(pool);
 
-    // Truy vấn để lấy instructor_id và name của giảng viên từ bảng users
     request.input("uid", sql.NVarChar, uid);
     const userQuery = await request.query(
-      `SELECT user_id, name FROM users WHERE uid = @uid` // Truy vấn lấy user_id và name của giảng viên
+      `SELECT name, role FROM users WHERE uid = @uid`
     );
 
-    // Nếu không tìm thấy người dùng
     if (userQuery.recordset.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy người dùng" });
     }
 
-    const instructor_id = userQuery.recordset[0].user_id; // Sử dụng user_id làm instructor_id
-    const instructor_name = userQuery.recordset[0].name; // Lấy tên giảng viên
+    const { name: instructor_name, role: userRole } = userQuery.recordset[0];
 
-    // Kiểm tra vai trò của người dùng
-    const roleQuery = await request.query(
-      `SELECT role FROM users WHERE uid = @uid`
-    );
-
-    const userRole = roleQuery.recordset[0]?.role;
-
-    // Kiểm tra quyền của người dùng
-    if (userRole !== "admin" && userRole !== "giang_vien") {
+    if (userRole !== "admin" && userRole !== "mentor") {
       return res.status(403).json({ error: "Bạn không có quyền tạo khóa học" });
     }
 
-    // Nếu status không được gửi lên, gán mặc định là "chua_duyet"
     const finalStatus = status || "chua_duyet";
 
-    // Các input cần thiết
+    // Xử lý ảnh thumbnail nếu có
+    let thumbnail_url = null;
+    if (req.file) {
+      thumbnail_url = `/uploads/courses/${req.file.filename}`;
+    }
+
+    // Gán input
     request.input("title", sql.NVarChar, title);
     request.input("description", sql.NVarChar, description || null);
-    request.input("instructor_id", sql.Int, instructor_id); // Sử dụng instructor_id từ user_id
+    request.input("instructor_uid", sql.NVarChar, uid);
     request.input("category_id", sql.Int, category_id);
     request.input("level", sql.NVarChar, level || null);
     request.input("price", sql.Int, price || null);
@@ -70,14 +61,13 @@ const createCourse = async (req, res) => {
     request.input("status", sql.NVarChar, finalStatus);
     request.input("language", sql.NVarChar, language || null);
     request.input("tags", sql.NVarChar, tags || null);
-    request.input("thumbnail_url", sql.NVarChar, thumbnail_url || null);
+    request.input("thumbnail_url", sql.NVarChar, thumbnail_url);
 
-    // Thực hiện insert
     await request.query(`
       INSERT INTO courses (
         title,
         description,
-        instructor_id,
+        instructor_uid,
         category_id,
         level,
         price,
@@ -87,13 +77,12 @@ const createCourse = async (req, res) => {
         tags,
         thumbnail_url,
         created_at,
-        approved_at,
         updated_at
       )
       VALUES (
         @title,
         @description,
-        @instructor_id,
+        @instructor_uid,
         @category_id,
         @level,
         @price,
@@ -103,25 +92,23 @@ const createCourse = async (req, res) => {
         @tags,
         @thumbnail_url,
         GETDATE(),
-        NULL,
-        NULL
+        GETDATE()
       )
     `);
 
-    // Truy vấn để lấy thông tin khóa học vừa tạo
-    const courseQuery = await request.query(
-      `SELECT * FROM courses WHERE title = @title AND instructor_id = @instructor_id ORDER BY created_at DESC`
-    );
+    const courseQuery = await request.query(`
+      SELECT * FROM courses
+      WHERE title = @title AND instructor_uid = @uid
+      ORDER BY created_at DESC
+    `);
 
-    // Lấy thông tin khóa học vừa tạo
     const course = courseQuery.recordset[0];
 
-    // Trả về thông tin khóa học cùng với tên giảng viên
     res.status(201).json({
       message: "Tạo khóa học mới thành công",
       course: {
-        ...course, // Thêm thông tin khóa học
-        instructor_name: instructor_name, // Thêm tên giảng viên
+        ...course,
+        instructor_name,
       },
     });
   } catch (err) {

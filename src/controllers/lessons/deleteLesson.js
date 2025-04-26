@@ -1,50 +1,67 @@
 const { sql, poolPromise } = require("../../config/db.config");
+const fs = require("fs");
+const path = require("path");
 
 const deleteLesson = async (req, res) => {
   const { lesson_id } = req.params;
-  const { uid } = req.body; // Thêm UID để kiểm tra quyền người dùng
+  const { uid } = req.body;
 
   if (!uid) {
     return res.status(400).json({ error: "UID không hợp lệ" });
   }
 
   try {
-    const pool = await poolPromise; // Sử dụng poolPromise để kết nối
+    const pool = await poolPromise;
     const request = new sql.Request(pool);
 
-    // Kiểm tra quyền của người dùng
+    // Lấy role người dùng
     request.input("uid", sql.NVarChar, uid);
-    const roleQuery = await request.query(
-      `SELECT role FROM users WHERE uid = @uid`
-    );
-
-    const userRole = roleQuery.recordset[0]?.role;
-
-    // Kiểm tra quyền xóa bài học (Admin hoặc Giảng viên)
-    if (userRole !== "admin" && userRole !== "giang_vien") {
-      return res.status(403).json({
-        error: "Bạn không có quyền xóa bài học",
-      });
-    }
-
-    // Kiểm tra sự tồn tại của bài học
-    request.input("lesson_id", sql.Int, lesson_id);
-    const lessonQuery = await request.query(`
-      SELECT * FROM lessons WHERE lesson_id = @lesson_id
+    const roleResult = await request.query(`
+      SELECT role FROM users WHERE uid = @uid
     `);
 
-    if (lessonQuery.recordset.length === 0) {
+    const userRole = roleResult.recordset[0]?.role;
+    if (!userRole) {
+      return res
+        .status(403)
+        .json({ error: "Không xác định được vai trò người dùng" });
+    }
+
+    // Lấy bài học và thông tin creator_uid
+    request.input("lesson_id", sql.Int, lesson_id);
+    const lessonResult = await request.query(`
+      SELECT lesson_id, pdf_url, slide_url, creator_uid FROM lessons WHERE lesson_id = @lesson_id
+    `);
+
+    if (lessonResult.recordset.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy bài học để xoá" });
     }
 
-    // Thực hiện xóa bài học
-    const result = await request.query(`
+    const lesson = lessonResult.recordset[0];
+
+    // Nếu là mentor, chỉ được xoá bài học của mình
+    if (userRole === "mentor" && lesson.creator_uid !== uid) {
+      return res
+        .status(403)
+        .json({ error: "Bạn chỉ được xoá bài học do bạn tạo" });
+    }
+
+    // Xoá file nếu có
+    const deleteFile = (urlPath) => {
+      if (!urlPath) return;
+      const absolutePath = path.join(__dirname, "../../public", urlPath);
+      if (fs.existsSync(absolutePath)) fs.unlinkSync(absolutePath);
+    };
+
+    deleteFile(lesson.pdf_url);
+    deleteFile(lesson.slide_url);
+
+    // Xoá bản ghi trong database
+    const deleteRequest = new sql.Request(pool);
+    deleteRequest.input("lesson_id", sql.Int, lesson_id);
+    await deleteRequest.query(`
       DELETE FROM lessons WHERE lesson_id = @lesson_id
     `);
-
-    if (result.rowsAffected[0] === 0) {
-      return res.status(404).json({ error: "Không tìm thấy bài học để xoá" });
-    }
 
     res.status(200).json({ message: "Xoá bài học thành công" });
   } catch (err) {

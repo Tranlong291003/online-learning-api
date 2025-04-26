@@ -1,36 +1,34 @@
-// controllers/courseCategories/getAllCourses.js
 const { sql, poolPromise } = require("../../config/db.config");
 
 const getAllCourses = async (req, res) => {
   try {
-    const pool = await poolPromise; // Sử dụng poolPromise để đảm bảo kết nối sẵn sàng
+    const pool = await poolPromise;
     const request = new sql.Request(pool);
 
-    // Truy vấn SQL để lấy danh sách khóa học
     const query = `
       SELECT
-        course_id,
-        courses.title,
-        courses.price,
-        courses.discount_price,
-        courses.thumbnail_url,
-        courses.updated_at,
-        users.name AS instructor_name,
-        course_categories.name AS category_name
-      FROM courses
-      LEFT JOIN users ON courses.instructor_id = users.user_id
-      LEFT JOIN course_categories ON courses.category_id = course_categories.category_id
+        c.course_id,
+        c.title,
+        c.price,
+        c.discount_price,
+        c.thumbnail_url,
+        c.status,
+        c.updated_at,
+        u.name AS instructor_name,
+        cat.name AS category_name
+      FROM courses c
+      LEFT JOIN users u ON c.instructor_uid = u.uid
+      LEFT JOIN course_categories cat ON c.category_id = cat.category_id
+      ORDER BY c.updated_at DESC
     `;
 
-    const result = await request.query(query); // Thực thi truy vấn
+    const result = await request.query(query);
 
-    // Trả về danh sách khóa học
     res.status(200).json({
       message: "Lấy danh sách khóa học thành công",
-      data: result.recordset, // Dữ liệu khóa học trả về từ query
+      data: result.recordset,
     });
   } catch (err) {
-    // Nếu có lỗi, trả về mã lỗi 500 và thông báo lỗi
     res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };

@@ -1,77 +1,66 @@
 const { sql, poolPromise } = require("../../config/db.config");
+const path = require("path");
 
 const createLesson = async (req, res) => {
-  const {
-    course_id,
-    title,
-    video_url,
-    pdf_url,
-    slide_url,
-    content,
-    order,
-    is_preview,
-    uid, // UID để kiểm tra quyền người dùng
-  } = req.body;
+  const { course_id, title, video_url, content, order, is_preview, uid } =
+    req.body;
 
-  if (!course_id || !title) {
+  if (!course_id || !title || !uid) {
     return res.status(400).json({
-      error: "Các trường course_id và title là bắt buộc",
+      error: "Các trường course_id, title và uid là bắt buộc",
     });
   }
 
   try {
-    const pool = await poolPromise; // Sử dụng poolPromise để kết nối
+    const pool = await poolPromise;
     const request = new sql.Request(pool);
 
-    // Kiểm tra quyền của người dùng
-    if (!uid) {
-      return res.status(400).json({ error: "UID không hợp lệ" });
-    }
-
-    // Kiểm tra vai trò của người dùng
+    // Kiểm tra vai trò người dùng
     request.input("uid", sql.NVarChar, uid);
-    const roleQuery = await request.query(
-      `SELECT role FROM users WHERE uid = @uid`
-    );
-
-    const userRole = roleQuery.recordset[0]?.role;
-
-    // Kiểm tra quyền tạo bài học (Admin hoặc Giảng viên)
-    if (userRole !== "admin" && userRole !== "giang_vien") {
-      return res.status(403).json({
-        error: "Bạn không có quyền tạo bài học",
-      });
-    }
-
-    // 1. Lấy dữ liệu khóa học hiện tại (nếu có)
-    request.input("course_id_param", sql.Int, course_id); // Thay đổi tên tham số
-    const currentResult = await request.query(`
-      SELECT * FROM courses WHERE course_id = @course_id_param
+    const roleQuery = await request.query(`
+      SELECT role FROM users WHERE uid = @uid
     `);
 
-    if (currentResult.recordset.length === 0) {
+    const userRole = roleQuery.recordset[0]?.role;
+    if (userRole !== "admin" && userRole !== "mentor") {
+      return res.status(403).json({ error: "Bạn không có quyền tạo bài học" });
+    }
+
+    // Kiểm tra khóa học tồn tại
+    request.input("course_id", sql.Int, course_id);
+    const courseCheck = await request.query(`
+      SELECT course_id FROM courses WHERE course_id = @course_id
+    `);
+
+    if (courseCheck.recordset.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy khóa học" });
     }
 
-    // 2. Merge với dữ liệu mới (nếu không truyền thì giữ nguyên giá trị cũ)
-    const updatedTitle = title ?? currentResult.recordset[0].title;
-    const updatedVideoUrl = video_url ?? null;
-    const updatedPdfUrl = pdf_url ?? null;
-    const updatedSlideUrl = slide_url ?? null;
-    const updatedContent = content ?? null;
-    const updatedOrder = order ?? null;
-    const updatedIsPreview =
-      typeof is_preview === "boolean" ? is_preview : null;
+    // Xử lý file PDF và Slide (nếu có)
+    const pdf_url = req.files?.pdf?.[0]?.filename
+      ? `/uploads/lessons/pdf/${req.files.pdf[0].filename}`
+      : null;
 
-    // 3. Thực hiện truy vấn thêm bài học vào bảng lessons
-    request.input("title_param", sql.NVarChar, updatedTitle); // Thay đổi tên tham số
-    request.input("video_url_param", sql.NVarChar, updatedVideoUrl); // Thay đổi tên tham số
-    request.input("pdf_url_param", sql.NVarChar, updatedPdfUrl); // Thay đổi tên tham số
-    request.input("slide_url_param", sql.NVarChar, updatedSlideUrl); // Thay đổi tên tham số
-    request.input("content_param", sql.NVarChar, updatedContent); // Thay đổi tên tham số
-    request.input("order_param", sql.Int, updatedOrder); // Thay đổi tên tham số
-    request.input("is_preview_param", sql.Bit, updatedIsPreview); // Thay đổi tên tham số
+    const slide_url = req.files?.slide?.[0]?.filename
+      ? `/uploads/lessons/slides/${req.files.slide[0].filename}`
+      : null;
 
+    // Gán dữ liệu input
+    // Gán dữ liệu input
+    request.input("title", sql.NVarChar, title);
+    request.input("video_url", sql.NVarChar, video_url || null);
+    request.input("pdf_url", sql.NVarChar, pdf_url);
+    request.input("slide_url", sql.NVarChar, slide_url);
+    request.input("content", sql.NVarChar, content || null);
+    request.input("order", sql.Int, order || null);
+    request.input(
+      "is_preview",
+      sql.Bit,
+      is_preview === "true" || is_preview === true
+    );
+    request.input("creator_uid", sql.NVarChar, uid); // ✅ Thêm dòng này
+
+    // Thêm mới bài học
     await request.query(`
       INSERT INTO lessons (
         course_id,
@@ -82,34 +71,32 @@ const createLesson = async (req, res) => {
         content,
         [order],
         is_preview,
+        creator_uid,
         created_at
-      )
-      VALUES (
-        @course_id_param,  -- Thay đổi tên tham số
-        @title_param,  -- Thay đổi tên tham số
-        @video_url_param,  -- Thay đổi tên tham số
-        @pdf_url_param,  -- Thay đổi tên tham số
-        @slide_url_param,  -- Thay đổi tên tham số
-        @content_param,  -- Thay đổi tên tham số
-        @order_param,  -- Thay đổi tên tham số
-        @is_preview_param,  -- Thay đổi tên tham số
+      ) VALUES (
+        @course_id,
+        @title,
+        @video_url,
+        @pdf_url,
+        @slide_url,
+        @content,
+        @order,
+        @is_preview,
+        @creator_uid,
         GETDATE()
       )
     `);
 
-    // Lấy thông tin bài học vừa được tạo
-    const lessonResult = await request.query(`
+    // Lấy bài học vừa tạo
+    const result = await request.query(`
       SELECT * FROM lessons
-      WHERE course_id = @course_id_param
-      AND title = @title_param
+      WHERE course_id = @course_id AND title = @title
+      ORDER BY created_at DESC
     `);
 
-    const createdLesson = lessonResult.recordset[0]; // Thông tin bài học mới tạo
-
-    // Trả về kết quả thành công cùng với thông tin bài học
     res.status(201).json({
-      message: "Tạo bài học mới thành công",
-      data: createdLesson,
+      message: "Tạo bài học thành công",
+      data: result.recordset[0],
     });
   } catch (err) {
     res.status(500).json({

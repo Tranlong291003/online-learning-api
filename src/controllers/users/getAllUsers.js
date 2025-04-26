@@ -1,22 +1,29 @@
-const { sql, poolConnect, pool } = require("../../config/db.config");
+const { sql, poolPromise } = require("../../config/db.config");
 const admin = require("../../config/firebase.config"); // Firebase Admin SDK
 
 const getAllUsers = async (req, res) => {
   try {
-    const pool = await poolConnect; // Đảm bảo kết nối đã được thiết lập
-    const request = new sql.Request(pool);
+    // 1) Lấy ConnectionPool từ poolPromise
+    const pool = await poolPromise;
 
-    // Truy vấn danh sách người dùng
-    const result = await request.query(
-      "SELECT user_id, display_name, email, role FROM users"
-    );
+    // 2) Tạo Request từ pool và chạy query
+    const result = await pool.request().query(`
+        SELECT
+          uid,
+          name,
+          phone,
+          role,
+          is_active
+        FROM users
+      `);
 
+    // 3) Trả về kết quả
     res.json({
       message: "Danh sách người dùng",
       data: result.recordset,
     });
   } catch (err) {
-    console.error(err);
+    console.error("Error in getAllUsers:", err);
     res
       .status(500)
       .json({ error: "Lỗi khi lấy danh sách người dùng: " + err.message });

@@ -1,10 +1,12 @@
-const createQuestion = require("./createQuestion");
+const createQuestionManual = require("./createQuestionManual");
+const createQuestionFromAi = require("./createQuestionFromAi");
 const deleteQuestion = require("./deleteQuestion");
 const getQuestionsByQuiz = require("./getQuestionsByQuiz");
 const updateQuestion = require("./updateQuestion");
 
 module.exports = {
-  createQuestion,
+  createQuestionFromAi,
+  createQuestionManual,
   deleteQuestion,
   getQuestionsByQuiz,
   updateQuestion,

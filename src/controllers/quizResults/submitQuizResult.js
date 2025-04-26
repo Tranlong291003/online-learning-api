@@ -1,80 +1,93 @@
 const { sql, poolPromise } = require("../../config/db.config");
 
 const submitQuizResult = async (req, res) => {
-  const { user_id, quiz_id, answers, score, explanation } = req.body;
+  const { uid, quiz_id, answers, score, explanation } = req.body;
 
-  if (!user_id || !quiz_id || !answers) {
+  if (!uid || !quiz_id || !answers) {
     return res
       .status(400)
-      .json({ error: "Thiếu thông tin người dùng, quiz hoặc câu trả lời" });
+      .json({ error: "Thiếu user_uid, quiz_id hoặc câu trả lời" });
   }
 
   try {
-    const pool = await poolPromise; // Sử dụng poolPromise để kết nối
+    const pool = await poolPromise;
     const request = new sql.Request(pool);
 
-    // Khai báo tham số @user_id, @quiz_id và các tham số khác
-    request.input("user_id", sql.Int, user_id);
+    // Lấy loại quiz
     request.input("quiz_id", sql.Int, quiz_id);
-    request.input("answers", sql.NVarChar, JSON.stringify(answers));
-    request.input("score", sql.Float, score || 0);
-    request.input("explanation", sql.NVarChar, explanation || "");
-
-    // Lấy loại quiz (trac_nghiem)
-    const quizResult = await request.query(
-      "SELECT [type] FROM quizzes WHERE quiz_id = @quiz_id"
-    );
+    const quizResult = await request.query(`
+      SELECT [type] FROM quizzes WHERE quiz_id = @quiz_id
+    `);
 
     if (quizResult.recordset.length === 0) {
-      return res.status(404).json({ error: "Không tìm thấy quiz này" });
+      return res.status(404).json({ error: "Không tìm thấy bài kiểm tra" });
     }
 
     const quizType = quizResult.recordset[0].type;
 
-    // Nếu quiz là trắc nghiệm (trac_nghiem), tính điểm tự động
-    if (quizType === "trac_nghiem") {
-      // Lấy danh sách câu hỏi và đáp án đúng từ bảng quiz_questions
-      const questions = await request.query(
-        "SELECT question_id, correct_index FROM quiz_questions WHERE quiz_id = @quiz_id"
-      );
+    // Lấy danh sách câu hỏi hợp lệ thuộc quiz
+    const validQuestionsQuery = await request.query(`
+      SELECT question_id, correct_index
+      FROM quiz_questions
+      WHERE quiz_id = @quiz_id
+    `);
 
-      let correctAnswersCount = 0;
-      questions.recordset.forEach((question, index) => {
-        const userAnswer = answers[index]; // Đáp án của người học
+    const validQuestions = validQuestionsQuery.recordset;
+    const validQuestionMap = {};
+    validQuestions.forEach(
+      (q) => (validQuestionMap[q.question_id] = q.correct_index)
+    );
 
-        // So sánh đáp án người học với đáp án đúng
-        if (userAnswer === question.correct_index) {
-          correctAnswersCount += 1; // Tăng điểm nếu đúng
-        }
-      });
+    let correctCount = 0;
+    let invalidQuestions = [];
 
-      // Tính điểm trên thang 0-10
-      const maxScore = 10;
-      const totalQuestions = questions.recordset.length;
-      const percentage =
-        totalQuestions > 0 ? (correctAnswersCount / totalQuestions) * 100 : 0;
-      const finalScore = Math.round((percentage / 100) * maxScore); // Quy đổi thành điểm từ 0-10
+    // Kiểm tra từng đáp án gửi lên
+    for (const [questionIdStr, userAnswer] of Object.entries(answers)) {
+      const questionId = parseInt(questionIdStr);
+      if (!validQuestionMap.hasOwnProperty(questionId)) {
+        invalidQuestions.push(questionId);
+        continue;
+      }
 
-      request.input("finalScore", sql.Float, finalScore);
-
-      // Lưu kết quả bài làm vào bảng quiz_results với finalScore
-      await request.query(
-        "INSERT INTO quiz_results (user_id, quiz_id, answers, score, explanation, submitted_at, status) " +
-          "VALUES (@user_id, @quiz_id, @answers, @finalScore, @explanation, GETDATE(), 'da_cham')"
-      );
-
-      res
-        .status(201)
-        .json({ message: "Bài làm đã được nộp thành công", score: finalScore });
-    } else {
-      // Nếu loại quiz không phải trắc nghiệm, chỉ lưu điểm đã được gửi
-      await request.query(
-        "INSERT INTO quiz_results (user_id, quiz_id, answers, score, explanation, submitted_at, status) " +
-          "VALUES (@user_id, @quiz_id, @answers, @score, @explanation, GETDATE(), 'cho_cham')"
-      );
-
-      res.status(201).json({ message: "Bài làm đã được nộp thành công" });
+      const correctIndex = validQuestionMap[questionId];
+      if (userAnswer === correctIndex) {
+        correctCount++;
+      }
     }
+
+    const totalQuestions = validQuestions.length;
+    const finalScore = totalQuestions
+      ? Math.round((correctCount / totalQuestions) * 10)
+      : 0;
+
+    // Ghi nhận kết quả
+    const insertRequest = new sql.Request(pool);
+    insertRequest.input("user_uid", sql.NVarChar, uid);
+    insertRequest.input("quiz_id", sql.Int, quiz_id);
+    insertRequest.input("score", sql.Float, finalScore);
+    insertRequest.input("answers", sql.NVarChar, JSON.stringify(answers));
+    insertRequest.input("explanation", sql.NVarChar, explanation || "");
+
+    await insertRequest.query(`
+      INSERT INTO quiz_results (
+        user_uid, quiz_id, score, submitted_at, answers, explanation, status
+      ) VALUES (
+        @user_uid, @quiz_id, @score, GETDATE(), @answers, @explanation, '${
+          quizType === "trac_nghiem" ? "da_cham" : "cho_cham"
+        }'
+      )
+    `);
+
+    res.status(201).json({
+      message:
+        quizType === "trac_nghiem"
+          ? "Nộp bài và chấm điểm tự động thành công"
+          : "Bài làm đã được nộp, chờ giảng viên chấm điểm",
+      score: finalScore,
+      total_questions: totalQuestions,
+      correct_answers: correctCount,
+      invalid_question_ids: invalidQuestions,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Lỗi khi nộp bài làm: " + err.message });
