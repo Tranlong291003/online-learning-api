@@ -15,7 +15,9 @@ const quizzesRoutes = require("./routes/quizzes.router");
 const questionsRoutes = require("./routes/questions.router");
 const quizResultsRoutes = require("./routes/quizResults.router");
 const usersRoutes = require("./routes/user.router");
+const notificationsRouter = require("./routes/notifications.router"); // Import router thông báo
 
+app.use("/api/notifications", notificationsRouter);
 app.use("/api/course-categories", courseCategoryRoutes); // API cho danh mục khóa học
 app.use("/api/courses", courseRoutes); // API cho các khóa học
 app.use("/api/lessons", lessonRoutes); // API cho bài học

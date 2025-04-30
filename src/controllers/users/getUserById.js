@@ -29,7 +29,7 @@ const getUserById = (req, res) => {
       }
       res.json({
         message: "Chi tiết người dùng",
-        data: result.recordset[0],
+        user: result.recordset[0],
       });
     })
     .catch((err) => {

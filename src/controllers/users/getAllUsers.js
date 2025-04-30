@@ -20,7 +20,7 @@ const getAllUsers = async (req, res) => {
     // 3) Trả về kết quả
     res.json({
       message: "Danh sách người dùng",
-      data: result.recordset,
+      user: result.recordset,
     });
   } catch (err) {
     console.error("Error in getAllUsers:", err);
