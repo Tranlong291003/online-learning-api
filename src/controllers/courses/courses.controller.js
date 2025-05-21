@@ -5,6 +5,7 @@ const createCourse = require("./createCourse");
 const updateCourse = require("./updateCourse");
 const deleteCourse = require("./deleteCourse");
 const changeCourseStatus = require("./changeCourseStatus");
+const getMentorCourses = require("./getMentorCourses");
 
 module.exports = {
   getAllCourses,
@@ -13,4 +14,5 @@ module.exports = {
   updateCourse,
   deleteCourse,
   changeCourseStatus,
+  getMentorCourses,
 };

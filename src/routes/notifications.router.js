@@ -5,13 +5,13 @@ const notificationController = require("../controllers/notification/notification
 // Endpoint để tạo thông báo mới
 router.post("/create", notificationController.createNotification);
 
-// Endpoint để lấy thông báo mới nhất của người dùng
-router.get("/", notificationController.getNotifications); // Lấy thông báo mới nhất
+// Endpoint để lấy thông báo của user
+router.post("/", notificationController.getNotifications);
 
-// Endpoint để cập nhật trạng thái thông báo
-router.put("/update/:id", notificationController.updateNotification); // Sử dụng noti_id ở đây
+// Endpoint để đánh dấu thông báo đã đọc
+router.post("/mark-read", notificationController.markAsRead);
 
 // Endpoint để xóa thông báo
-router.delete("/delete/:id", notificationController.deleteNotification); // Sử dụng noti_id ở đây
+router.delete("/delete/:id", notificationController.deleteNotification);
 
 module.exports = router;

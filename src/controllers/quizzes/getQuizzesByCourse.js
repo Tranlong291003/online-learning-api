@@ -14,17 +14,38 @@ const getQuizzesByCourse = async (req, res) => {
 
     const result = await request.query(`
       SELECT
-        quiz_id,
-        title,
-        description,
-        type,
-        time_limit,
-        attempt_limit,
-        creator_uid,
-        created_at,
-        updated_at
-      FROM quizzes
-      WHERE course_id = @course_id
+        q.quiz_id,
+        q.title,
+        q.description,
+        q.type,
+        q.time_limit,
+        q.attempt_limit,
+        q.creator_uid,
+        q.created_at,
+        q.updated_at,
+        COUNT(DISTINCT qq.question_id) as total_questions,
+        CAST(AVG(CAST(qr.score AS FLOAT)) AS DECIMAL(5,2)) as average_score,
+        CAST(
+          CASE
+            WHEN COUNT(qr.result_id) > 0
+            THEN (COUNT(CASE WHEN qr.score >= 5 THEN 1 END) * 100.0 / COUNT(qr.result_id))
+            ELSE 0
+          END
+        AS DECIMAL(5,2)) as passing_rate
+      FROM quizzes q
+      LEFT JOIN quiz_questions qq ON q.quiz_id = qq.quiz_id
+      LEFT JOIN quiz_results qr ON q.quiz_id = qr.quiz_id
+      WHERE q.course_id = @course_id
+      GROUP BY
+        q.quiz_id,
+        q.title,
+        q.description,
+        q.type,
+        q.time_limit,
+        q.attempt_limit,
+        q.creator_uid,
+        q.created_at,
+        q.updated_at
     `);
 
     if (result.recordset.length === 0) {

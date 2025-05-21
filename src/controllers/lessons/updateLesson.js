@@ -4,7 +4,7 @@ const fs = require("fs");
 
 const updateLesson = async (req, res) => {
   const { lesson_id } = req.params;
-  const { title, video_url, content, order, is_preview, uid } = req.body;
+  const { title, video_url, content, order, uid } = req.body;
 
   if (!uid) {
     return res.status(400).json({ error: "UID không hợp lệ" });
@@ -72,10 +72,6 @@ const updateLesson = async (req, res) => {
     const updatedVideoUrl = video_url ?? current.video_url;
     const updatedContent = content ?? current.content;
     const updatedOrder = order ?? current.order;
-    const updatedIsPreview =
-      typeof is_preview !== "undefined"
-        ? is_preview === "true" || is_preview === true
-        : current.is_preview;
 
     // Cập nhật DB
     const updateRequest = new sql.Request(pool);
@@ -86,7 +82,6 @@ const updateLesson = async (req, res) => {
     updateRequest.input("slide_url", sql.NVarChar, newSlideUrl);
     updateRequest.input("content", sql.NVarChar, updatedContent);
     updateRequest.input("order", sql.Int, updatedOrder);
-    updateRequest.input("is_preview", sql.Bit, updatedIsPreview);
 
     await updateRequest.query(`
       UPDATE lessons SET
@@ -96,7 +91,6 @@ const updateLesson = async (req, res) => {
         slide_url = @slide_url,
         content = @content,
         [order] = @order,
-        is_preview = @is_preview,
         updated_at = GETDATE()
       WHERE lesson_id = @lesson_id
     `);

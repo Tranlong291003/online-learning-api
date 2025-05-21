@@ -1,58 +1,80 @@
 // controllers/courseCategories/updateCategory.js
 const { sql, poolPromise } = require("../../config/db.config");
+const fs = require("fs");
+const path = require("path");
+
+const removeOldIcon = (oldIconPath) => {
+  if (!oldIconPath) return;
+  const fullPath = path.join(__dirname, "../public", oldIconPath);
+  if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+};
 
 const updateCategory = async (req, res) => {
   try {
-    const { category_id } = req.params; // Lấy category_id từ params
-    const { name, description, uid } = req.body; // Lấy name, description, uid từ body
+    const { category_id } = req.params;
+    const { name, description, uid } = req.body;
+    const iconFile = req.file;
 
-    // Kiểm tra xem name có bị thiếu không
     if (!name)
       return res
         .status(400)
         .json({ error: "Tên danh mục không được bỏ trống" });
-
     if (!uid) return res.status(400).json({ error: "UID không được bỏ trống" });
 
-    // Kết nối đến cơ sở dữ liệu bằng poolPromise
-    const pool = await poolPromise; // Đảm bảo rằng kết nối đã sẵn sàng
-    const request = new sql.Request(pool); // Tạo một request từ pool kết nối
+    const pool = await poolPromise;
 
-    // Truy vấn vai trò của người dùng từ bảng users
-    request.input("uid", sql.NVarChar, uid);
-    const roleQuery = await request.query(
-      `SELECT role FROM users WHERE uid = @uid` // Truy vấn lấy role của người dùng từ bảng users
+    // 1. Kiểm quyền
+    const reqRole = new sql.Request(pool);
+    reqRole.input("uid", sql.NVarChar, uid);
+    const roleQ = await reqRole.query(
+      "SELECT role FROM users WHERE uid = @uid"
     );
-
-    // Kiểm tra xem người dùng có tồn tại không và lấy role
-    if (roleQuery.recordset.length === 0) {
+    const user = roleQ.recordset[0];
+    if (!user)
       return res.status(404).json({ error: "Không tìm thấy người dùng" });
-    }
-
-    const userRole = roleQuery.recordset[0]?.role; // Lấy vai trò người dùng từ kết quả truy vấn
-
-    // Kiểm tra vai trò của người dùng
-    if (userRole !== "admin" && userRole !== "giang_vien") {
+    if (user.role !== "admin" && user.role !== "giang_vien")
       return res
         .status(403)
         .json({ error: "Bạn không có quyền thay đổi danh mục" });
+
+    // 2. Lấy và xóa icon cũ (nếu có file mới)
+    if (iconFile) {
+      const reqSelect = new sql.Request(pool);
+      reqSelect.input("category_id", sql.Int, category_id);
+      const sel = await reqSelect.query(
+        "SELECT icon FROM course_categories WHERE category_id = @category_id"
+      );
+      const oldIcon = sel.recordset[0]?.icon;
+      if (oldIcon) removeOldIcon(oldIcon);
     }
 
-    // Nếu vai trò hợp lệ, tiếp tục cập nhật danh mục
-    request.input("category_id", sql.Int, category_id);
-    request.input("name", sql.NVarChar, name);
-    request.input("desc", sql.NVarChar, description);
+    // 3. Cập nhật
+    const reqUpd = new sql.Request(pool);
+    reqUpd.input("category_id", sql.Int, category_id);
+    reqUpd.input("name", sql.NVarChar, name);
+    reqUpd.input("desc", sql.NVarChar, description);
 
-    const result = await request.query(
-      "UPDATE course_categories SET name = @name, description = @desc, updated_at = GETDATE() WHERE category_id = @category_id"
-    );
+    const sets = [
+      "name = @name",
+      "description = @desc",
+      "updated_at = GETDATE()",
+    ];
+    if (iconFile) {
+      const newIcon = `/uploads/categories/${iconFile.filename}`;
+      reqUpd.input("icon", sql.NVarChar, newIcon);
+      sets.push("icon = @icon");
+    }
 
-    res.status(200).json({
-      message: "✅ Cập nhật thành công",
-      rowsAffected: result.rowsAffected,
-    });
+    const sqlUpdate = `
+      UPDATE course_categories
+      SET ${sets.join(", ")}
+      WHERE category_id = @category_id
+    `;
+    await reqUpd.query(sqlUpdate);
+
+    return res.status(200).json({ message: "✅ Cập nhật thành công" });
   } catch (err) {
-    res.status(500).json({ error: "❌ Lỗi cập nhật: " + err.message });
+    return res.status(500).json({ error: "❌ Lỗi cập nhật: " + err.message });
   }
 };
 

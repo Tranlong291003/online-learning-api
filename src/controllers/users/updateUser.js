@@ -1,60 +1,76 @@
+// src/controllers/user/updateUser.js
+
 const path = require("path");
 const { sql, poolPromise } = require("../../config/db.config");
-const { sendNotification } = require("../../services/notificationService"); // Thêm service gửi thông báo
+const { sendNotification } = require("../../services/notificationService");
 
 /**
  * PUT /api/users/:id
- * middleware multer.single('avatar') phải chạy trước
+ * middleware multer.single('avatar') đã chạy trước
  */
 const updateUser = async (req, res) => {
   const uid = req.params.id;
-  const { name, bio, phone } = req.body;
+  const { name, bio, phone, gender, birthdate } = req.body;
 
-  /* ---------- Chuẩn bị avatar_url (nếu có) ---------- */
+  // Chuẩn bị avatar_url nếu có
   let avatarUrl = null;
   if (req.file) {
     avatarUrl = `/uploads/avatars/${path.basename(req.file.path)}`;
   }
 
-  /* ---------- Xây mảng SET động ---------- */
+  // Xây mảng SET động
   const setClauses = [];
-  const inputs = []; // gom input để thêm vào request sau
+  const inputs = [];
 
-  if (name !== undefined && name != null) {
+  if (name != null) {
     setClauses.push("name = @name");
     inputs.push(["name", name]);
   }
-  if (bio !== undefined && bio != null) {
+  if (bio != null) {
     setClauses.push("bio = @bio");
     inputs.push(["bio", bio]);
   }
-  if (phone !== undefined && phone != null) {
+  if (phone != null) {
     setClauses.push("phone = @phone");
     inputs.push(["phone", phone]);
+  }
+  if (gender != null) {
+    setClauses.push("gender = @gender");
+    inputs.push(["gender", gender]);
+  }
+  if (birthdate != null) {
+    // Convert string -> Date nếu cần
+    const bd = new Date(birthdate);
+    setClauses.push("birthdate = @birthdate");
+    inputs.push(["birthdate", bd]);
   }
   if (avatarUrl) {
     setClauses.push("avatar_url = @avatar_url");
     inputs.push(["avatar_url", avatarUrl]);
   }
 
-  // chẳng có gì để update
+  // Không có gì để update
   if (setClauses.length === 0) {
     return res.status(400).json({ error: "Không có dữ liệu để cập nhật" });
   }
 
-  // luôn cập nhật updated_at
+  // Luôn cập nhật updated_at
   setClauses.push("updated_at = GETDATE()");
 
   try {
     const pool = await poolPromise;
     const request = pool.request().input("uid", sql.NVarChar, uid);
 
-    // thêm các input động
+    // Gán các input động
     for (const [key, val] of inputs) {
-      request.input(key, sql.NVarChar, val);
+      if (key === "birthdate") {
+        request.input(key, sql.DateTime, val);
+      } else {
+        request.input(key, sql.NVarChar, val);
+      }
     }
 
-    /* ---------- UPDATE ---------- */
+    // Thực hiện UPDATE
     const result = await request.query(`
       UPDATE users
       SET ${setClauses.join(", ")}
@@ -65,7 +81,7 @@ const updateUser = async (req, res) => {
       return res.status(404).json({ error: "Không tìm thấy người dùng" });
     }
 
-    /* ---------- SELECT lại user ---------- */
+    // Lấy lại dữ liệu user sau khi update
     const { recordset } = await pool
       .request()
       .input("uid", sql.NVarChar, uid)
@@ -73,12 +89,15 @@ const updateUser = async (req, res) => {
 
     const user = recordset[0];
 
-    // Tạo thông báo mới trong bảng notifications
+    // Chuẩn bị thông báo
     const notificationTitle = "Thông tin đã được cập nhật";
-    const notificationBody = `Thông tin của bạn (Tên: ${user.name}, Số điện thoại: ${user.phone}) đã được cập nhật thành công.`;
+    const bdDisplay = user.birthdate
+      ? new Date(user.birthdate).toLocaleDateString("vi-VN")
+      : "Chưa cập nhật";
+    const notificationBody = `Hồ sơ của bạn đã được cập nhật: Tên=${user.name}, SĐT=${user.phone}, Giới tính=${user.gender}, Ngày sinh=${bdDisplay}.`;
     const fcmToken = user.fcm_token;
 
-    // Tạo thông báo mới trong cơ sở dữ liệu
+    // Tạo bản ghi notification trong DB và lấy noti_id
     const notificationResult = await pool
       .request()
       .input("uid", sql.NVarChar, user.uid)
@@ -89,13 +108,13 @@ const updateUser = async (req, res) => {
       .input("is_read", sql.Bit, false)
       .input("created_at", sql.DateTime, new Date()).query(`
         INSERT INTO notifications (uid, title, content, icon, color, is_read, created_at)
-        OUTPUT INSERTED.noti_id  -- Lấy ID thông báo vừa tạo
+        OUTPUT INSERTED.noti_id
         VALUES (@uid, @title, @content, @icon, @color, @is_read, @created_at)
       `);
 
     const noti_id = notificationResult.recordset[0].noti_id;
 
-    // Gửi thông báo tới người dùng
+    // Gửi FCM
     await sendNotification(
       fcmToken,
       noti_id,
@@ -106,11 +125,12 @@ const updateUser = async (req, res) => {
       "#4caf50"
     );
 
+    // Trả về response
     res.json({
       message: "Cập nhật thành công và thông báo đã được gửi",
-      user: recordset[0],
+      user,
       notification: {
-        noti_id: noti_id,
+        noti_id,
         title: notificationTitle,
         body: notificationBody,
         sent: true,

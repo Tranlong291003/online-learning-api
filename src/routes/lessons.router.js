@@ -3,7 +3,7 @@ const router = express.Router();
 const lessonController = require("../controllers/lessons/lessons.controller");
 const uploadLessonFiles = require("../config/multer.lesson.config");
 
-router.get("/:course_id", lessonController.getAllLessons);
+router.get("/courses/:course_id/:userUid", lessonController.getAllLessons);
 router.post(
   "/create",
   uploadLessonFiles.fields([
@@ -21,7 +21,8 @@ router.put(
   lessonController.updateLesson
 );
 router.delete("/delete/:lesson_id", lessonController.deleteLesson);
-router.post("/:lesson_id/complete", lessonController.completeLesson);
+router.post("/complete", lessonController.completeLesson);
+router.get("/detail/:lessonId", lessonController.getLessonDetail);
 // router.post("/:lesson_id/complete", lessonsController.completeLesson);
 
 module.exports = router;

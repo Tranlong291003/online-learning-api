@@ -43,7 +43,7 @@ const createUser = async (req, res) => {
     request.input("avatar_url", sql.NVarChar, avatar_url || "");
     request.input("bio", sql.NVarChar, bio || "");
     request.input("phone", sql.NVarChar, phone || ""); // Thay phone_number bằng phone
-    request.input("role", sql.NVarChar, role || "sinh_vien");
+    request.input("role", sql.NVarChar, role || "user");
 
     // Câu truy vấn SQL để thêm người dùng vào cơ sở dữ liệu
     await request.query(

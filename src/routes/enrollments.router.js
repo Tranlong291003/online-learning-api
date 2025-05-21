@@ -6,8 +6,6 @@ const enrollmentsController = require("../controllers/enrollments/enrollments.co
 router.post("/register", enrollmentsController.enrollCourse);
 router.get("/user/:uid", enrollmentsController.getCoursesByUser);
 router.delete("/delete/:enrollment_id", enrollmentsController.deleteEnrollment);
-router.get(
-  "/progress/:uid/:course_id",
-  enrollmentsController.getCourseProgressForUser
-);
+router.get("/progress", enrollmentsController.getCourseProgressForUser);
+router.get("/check/:uid/:course_id", enrollmentsController.checkEnrollStatus);
 module.exports = router;

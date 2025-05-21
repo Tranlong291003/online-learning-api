@@ -28,7 +28,7 @@ const updateQuestion = async (req, res) => {
     const userRole = roleQuery.recordset[0]?.role;
 
     // Kiểm tra quyền cập nhật câu hỏi (Admin hoặc Giảng viên)
-    if (userRole !== "admin" && userRole !== "giang_vien") {
+    if (userRole !== "admin" && userRole !== "mentor") {
       return res.status(403).json({
         error: "Bạn không có quyền cập nhật câu hỏi",
       });

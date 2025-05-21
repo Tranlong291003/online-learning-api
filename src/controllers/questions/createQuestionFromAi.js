@@ -27,7 +27,7 @@ const createQuestionFromAi = async (req, res) => {
       `SELECT role FROM users WHERE uid = @uid`
     );
     const role = roleRes.recordset[0]?.role;
-    if (role !== "admin" && role !== "giang_vien") {
+    if (role !== "admin" && role !== "mentor") {
       return res
         .status(403)
         .json({ error: "Bạn không có quyền tạo câu hỏi AI" });
@@ -50,36 +50,52 @@ const createQuestionFromAi = async (req, res) => {
     }
 
     const prompt = `
-Bạn là một trợ lý giáo dục thông minh, chuyên tạo ra câu hỏi cho các kỳ thi.
+Bạn là một chuyên gia giáo dục với nhiều năm kinh nghiệm trong việc tạo câu hỏi kiểm tra chất lượng cao.
 
-Yêu cầu:
-- Tạo ${number} câu hỏi dạng ${
+Yêu cầu tạo ${number} câu hỏi ${
       type === "trac_nghiem" ? "trắc nghiệm" : "tự luận"
-    } về chủ đề "${topic}".
-- Câu hỏi cần có độ khó: ${difficulty}, bằng ngôn ngữ ${
-      language === "vi" ? "Tiếng Việt" : "English"
-    }.
-- KHÔNG lặp lại cấu trúc, hãy viết mỗi câu theo một phong cách hoặc hướng khác nhau để tạo sự đa dạng.
-- KHÔNG sử dụng từ "là gì" trong tất cả câu hỏi.
-- KHÔNG tạo câu hỏi dạng định nghĩa trơn. Hãy đưa tình huống, mã giả, phân tích hoặc mô tả.
+    } về chủ đề "${topic}":
 
-Nếu là trắc nghiệm, mỗi câu phải gồm:
+1. Yêu cầu chung:
+- Độ khó: ${difficulty}
+- Ngôn ngữ: ${language === "vi" ? "Tiếng Việt" : "English"}
+- Mỗi câu hỏi phải có tính thực tế và ứng dụng cao
+- Tuyệt đối không sử dụng từ "là gì", "định nghĩa", "giải thích"
+- Tránh các câu hỏi dạng liệt kê hoặc học thuộc lòng
+- Mỗi câu hỏi phải có một tình huống cụ thể hoặc vấn đề thực tế cần giải quyết
+
+2. Yêu cầu về nội dung:
+- Câu hỏi phải rõ ràng, không gây nhầm lẫn
+- Đáp án phải chính xác và không gây tranh cãi
+- Nếu là trắc nghiệm, các lựa chọn phải có độ dài tương đương
+- Các lựa chọn sai phải hợp lý và có tính phân biệt
+- Tránh các câu hỏi quá dễ đoán hoặc quá khó
+
+3. Định dạng JSON cho câu hỏi trắc nghiệm:
 {
-  "question": "Nội dung câu hỏi",
-  "options": ["Lựa chọn A", "Lựa chọn B", "Lựa chọn C", "Lựa chọn D"],
-  "correct_index": số từ 1 đến 4 (chỉ định đáp án đúng)
+  "question": "Câu hỏi phải bắt đầu bằng động từ hoặc câu hỏi Wh-",
+  "options": [
+    "Lựa chọn A (phải có tính phân biệt)",
+    "Lựa chọn B (phải có tính phân biệt)",
+    "Lựa chọn C (phải có tính phân biệt)",
+    "Lựa chọn D (phải có tính phân biệt)"
+  ],
+  "correct_index": số từ 1 đến 4 (chỉ định đáp án đúng, 1 là đáp án đầu tiên)
 }
 
-Yêu cầu:
-- Đáp án đúng phải rõ ràng, không gây tranh cãi
-- Không trả về thêm lời giải thích nào khác
-- Kết quả đầu ra PHẢI là mảng JSON THUẦN (không kèm theo \`\`\` hay ghi chú).
+Lưu ý:
+- Chỉ trả về mảng JSON thuần, không kèm theo markdown hoặc ghi chú
+- Mỗi câu hỏi phải độc lập và không phụ thuộc vào câu hỏi khác
+- Đảm bảo tính nhất quán trong ngôn ngữ và phong cách
 `;
 
     const aiResponse = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.7,
+      max_tokens: 2000,
+      presence_penalty: 0.6,
+      frequency_penalty: 0.3,
     });
 
     let raw = aiResponse.choices[0].message.content.trim();
@@ -97,21 +113,51 @@ Yêu cầu:
         .json({ error: "AI trả về không đúng định dạng JSON" });
     }
 
+    // Kiểm tra cấu trúc câu hỏi
+    if (!Array.isArray(questions) || questions.length === 0) {
+      return res.status(400).json({
+        error: "AI trả về không phải mảng câu hỏi hoặc mảng rỗng",
+      });
+    }
+
     if (type === "trac_nghiem") {
       for (const q of questions) {
-        if (
-          !q.hasOwnProperty("correct_index") ||
-          typeof q.correct_index !== "number" ||
-          q.correct_index < 1 ||
-          q.correct_index > 4 ||
-          !Array.isArray(q.options) ||
-          q.options.length !== 4 ||
-          typeof q.options[q.correct_index - 1] !== "string"
-        ) {
+        // Kiểm tra cấu trúc câu hỏi
+        if (!q.question || typeof q.question !== "string") {
           return res.status(400).json({
-            error:
-              "Một hoặc nhiều câu hỏi thiếu correct_index hợp lệ hoặc options không đúng định dạng",
+            error: "Câu hỏi không hợp lệ",
             question: q,
+          });
+        }
+
+        // Kiểm tra cấu trúc options
+        if (!Array.isArray(q.options) || q.options.length !== 4) {
+          return res.status(400).json({
+            error: "Options phải là mảng có đúng 4 phần tử",
+            question: q,
+          });
+        }
+
+        // Kiểm tra correct_index chi tiết hơn
+        if (typeof q.correct_index !== "number") {
+          return res.status(400).json({
+            error: "correct_index phải là số",
+            question: q,
+          });
+        }
+
+        // Chuyển đổi correct_index từ 0-based sang 1-based nếu cần
+        if (q.correct_index >= 0 && q.correct_index <= 3) {
+          q.correct_index = q.correct_index + 1;
+        }
+
+        // Kiểm tra sau khi chuyển đổi
+        if (q.correct_index < 1 || q.correct_index > 4) {
+          return res.status(400).json({
+            error: "correct_index phải là số từ 1 đến 4 (1 là đáp án đầu tiên)",
+            question: q,
+            current_index: q.correct_index,
+            options: q.options,
           });
         }
       }
@@ -123,7 +169,7 @@ Yêu cầu:
         const options =
           type === "trac_nghiem" ? JSON.stringify(q.options) : null;
         const correct_index =
-          type === "trac_nghiem" ? q.correct_index - 1 : null;
+          type === "trac_nghiem" ? q.correct_index - 1 : null; // Chuyển từ 1-based sang 0-based
         const expected_keywords =
           type === "tu_luan" ? q.expected_keywords?.join(", ") : null;
 

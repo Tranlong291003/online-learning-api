@@ -5,6 +5,8 @@ const getUserById = require("./getUserById");
 const updateUserStatus = require("./updateUserStatus");
 const loginUser = require("./loginUser");
 const updateUser = require("./updateUser");
+const getAllMentors = require("./getAllMentors");
+const updateRole = require("./updateRole");
 
 module.exports = {
   createUser,
@@ -14,4 +16,6 @@ module.exports = {
   updateUserStatus,
   loginUser,
   updateUser,
+  getAllMentors,
+  updateRole,
 };

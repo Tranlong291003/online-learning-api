@@ -35,7 +35,7 @@ const createQuestion = async (req, res) => {
     const userRole = roleQuery.recordset[0]?.role;
 
     // Kiểm tra quyền tạo câu hỏi (Admin hoặc Giảng viên)
-    if (userRole !== "admin" && userRole !== "giang_vien") {
+    if (userRole !== "admin" && userRole !== "mentor") {
       return res.status(403).json({
         error: "Bạn không có quyền tạo câu hỏi",
       });

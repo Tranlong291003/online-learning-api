@@ -9,7 +9,6 @@ const createCourse = async (req, res) => {
     level,
     price,
     discount_price,
-    status,
     language,
     tags,
     uid, // instructor_uid
@@ -42,8 +41,6 @@ const createCourse = async (req, res) => {
       return res.status(403).json({ error: "Bạn không có quyền tạo khóa học" });
     }
 
-    const finalStatus = status || "chua_duyet";
-
     // Xử lý ảnh thumbnail nếu có
     let thumbnail_url = null;
     if (req.file) {
@@ -58,7 +55,8 @@ const createCourse = async (req, res) => {
     request.input("level", sql.NVarChar, level || null);
     request.input("price", sql.Int, price || null);
     request.input("discount_price", sql.Int, discount_price || null);
-    request.input("status", sql.NVarChar, finalStatus);
+    request.input("status", sql.NVarChar, "pending");
+    request.input("rejection_reason", sql.NVarChar, null);
     request.input("language", sql.NVarChar, language || null);
     request.input("tags", sql.NVarChar, tags || null);
     request.input("thumbnail_url", sql.NVarChar, thumbnail_url);
@@ -73,6 +71,7 @@ const createCourse = async (req, res) => {
         price,
         discount_price,
         status,
+        rejection_reason,
         language,
         tags,
         thumbnail_url,
@@ -88,6 +87,7 @@ const createCourse = async (req, res) => {
         @price,
         @discount_price,
         @status,
+        @rejection_reason,
         @language,
         @tags,
         @thumbnail_url,

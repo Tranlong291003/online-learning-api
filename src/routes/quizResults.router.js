@@ -9,7 +9,7 @@ router.post("/submit", quizResultsController.submitQuizResult);
 router.get("/:result_id", quizResultsController.getQuizResultById);
 
 // Route để lấy kết quả của người học theo user_id
-router.get("/users/:user_id/results", quizResultsController.getResultsByUser);
+router.get("/users/:user_uid/results", quizResultsController.getResultsByUser);
 
 // Route để chấm bài tự luận theo quiz_result_id
 router.patch(

@@ -11,8 +11,9 @@ const getAllUsers = async (req, res) => {
         SELECT
           uid,
           name,
-          phone,
+        avatar_url,
           role,
+          bio,
           is_active
         FROM users
       `);
@@ -20,7 +21,7 @@ const getAllUsers = async (req, res) => {
     // 3) Trả về kết quả
     res.json({
       message: "Danh sách người dùng",
-      user: result.recordset,
+      users: result.recordset,
     });
   } catch (err) {
     console.error("Error in getAllUsers:", err);

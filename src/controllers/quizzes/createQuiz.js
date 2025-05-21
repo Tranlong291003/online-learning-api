@@ -24,7 +24,7 @@ const createQuiz = async (req, res) => {
     `);
     const role = roleResult.recordset[0]?.role;
 
-    if (role !== "admin" && role !== "giang_vien") {
+    if (role !== "admin" && role !== "mentor") {
       return res
         .status(403)
         .json({ error: "Bạn không có quyền tạo bài kiểm tra" });

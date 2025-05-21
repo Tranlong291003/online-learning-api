@@ -4,6 +4,7 @@ const courseController = require("../controllers/courses/courses.controller");
 const uploadCourseThumbnail = require("../config/multer.course.config");
 
 router.get("/", courseController.getAllCourses);
+router.get("/mentor/:instructor_uid", courseController.getMentorCourses);
 router.get("/:course_id", courseController.getCourseById);
 router.put(
   "/update/:course_id",
