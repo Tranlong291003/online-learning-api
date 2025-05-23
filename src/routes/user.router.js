@@ -2,27 +2,24 @@ const express = require("express");
 const router = express.Router();
 const usersController = require("../controllers/users/users.controller");
 const upload = require("../config/multer.user.config");
-const checkUserStatus = require("../controllers/user/checkUserStatus");
+const checkUserStatus = require("../controllers/users/checkUserStatus");
+const authMiddleware = require("../middleware/auth.middleware");
 
-// Tạo người dùng mới
+// Đăng ký (signup) - KHÔNG cần token
 router.post("/create", usersController.createUser);
-router.get("/listmentor", usersController.getAllMentors);
-
-// Lấy danh sách người dùng
-router.get("/", usersController.getAllUsers);
-
-// Lấy chi tiết người dùng theo ID
-router.get("/:id", usersController.getUserById);
-
-// Cập nhật trạng thái tài khoản người dùng (Khóa hoặc mở tài khoản)
-router.patch("/:id/status", usersController.updateUserStatus);
-
-// Xóa người dùng
-router.delete("/delete/:id", usersController.deleteUser);
+// Đăng nhập (login) - KHÔNG cần token
 router.post("/login", usersController.loginUser);
+
+// Các route dưới đây đều cần token
+router.use(authMiddleware);
+
+router.get("/listmentor", usersController.getAllMentors);
+router.get("/", usersController.getAllUsers);
+router.get("/:id", usersController.getUserById);
+router.patch("/:id/status", usersController.updateUserStatus);
+router.delete("/delete/:id", usersController.deleteUser);
 router.put("/update/:id", upload.single("avatar"), usersController.updateUser);
 router.put("/updaterole", usersController.updateRole);
-
 router.get("/checkactive/:uid", checkUserStatus);
 
 module.exports = router;

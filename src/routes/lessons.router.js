@@ -2,6 +2,10 @@ const express = require("express");
 const router = express.Router();
 const lessonController = require("../controllers/lessons/lessons.controller");
 const uploadLessonFiles = require("../config/multer.lesson.config");
+const authMiddleware = require("../middleware/auth.middleware");
+
+// Tất cả các route đều cần token
+router.use(authMiddleware);
 
 router.get("/courses/:course_id/:userUid", lessonController.getAllLessons);
 router.post(

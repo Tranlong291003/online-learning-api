@@ -1,6 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const notificationController = require("../controllers/notification/notification.controller");
+const authMiddleware = require("../middleware/auth.middleware");
+
+// Tất cả các route đều cần token
+router.use(authMiddleware);
 
 // Endpoint để tạo thông báo mới
 router.post("/create", notificationController.createNotification);

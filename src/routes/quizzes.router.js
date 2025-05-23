@@ -1,6 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const quizzesController = require("../controllers/quizzes/quizzes.controller");
+const authMiddleware = require("../middleware/auth.middleware");
+
+// Tất cả các route đều cần token
+router.use(authMiddleware);
 
 router.get("/getquizbycoures/:course_id", quizzesController.getQuizzesByCourse);
 router.post("/create", quizzesController.createQuiz);
@@ -10,4 +14,5 @@ router.get(
   "/getquizuser/:user_uid",
   quizzesController.getUserCoursesAndQuizzes
 );
+
 module.exports = router;

@@ -1,6 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const quizResultsController = require("../controllers/quizResults/quizResults.controller");
+const authMiddleware = require("../middleware/auth.middleware");
+
+// Tất cả các route đều cần token
+router.use(authMiddleware);
 
 // Route để nộp bài làm
 router.post("/submit", quizResultsController.submitQuizResult);

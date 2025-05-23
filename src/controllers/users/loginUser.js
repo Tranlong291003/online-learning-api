@@ -1,5 +1,6 @@
 const admin = require("../../config/firebase.config"); // Firebase Admin SDK
 const { poolPromise, sql } = require("../../config/db.config"); // Thêm sql vào import
+const jwt = require("jsonwebtoken");
 
 const loginUser = async (req, res) => {
   const { idToken, fcmToken } = req.body; // Nhận ID Token và FCM Token từ frontend (Firebase Client SDK)
@@ -73,6 +74,20 @@ const loginUser = async (req, res) => {
       `Đăng nhập thành công cho người dùng: ${userRecord.email} (UID: ${userRecord.uid})`
     );
 
+    // Tạo JWT token
+    const token = jwt.sign(
+      {
+        uid: userRecord.uid,
+        email: userRecord.email,
+        role: role,
+      },
+      process.env.JWT_SECRET || "your_secret_key",
+      { expiresIn: "7d" }
+    );
+
+    // Log token ra console để kiểm tra
+    console.log("Token trả về:", token);
+
     // Dữ liệu trả về cho client
     const responseData = {
       success: true,
@@ -81,6 +96,7 @@ const loginUser = async (req, res) => {
       email: userRecord.email,
       role: role, // Gửi thông tin role về frontend
       fcm_token: fcmToken, // Trả về fcm_token để client có thể sử dụng nếu cần
+      token: token, // Trả về JWT token
     };
 
     // In dữ liệu trả về ra console
