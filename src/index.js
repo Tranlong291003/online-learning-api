@@ -1,6 +1,7 @@
 const app = require("./app");
 const PORT = process.env.PORT || 3000;
 const { pgPool } = require("./config/db");  // 👈 intentional bug: will leak in shutdown
+const sqlPool = require("./config/sqlServer"); // 👈 new: SQL Server pool
 
 const server = app.listen(PORT, () =>
   console.log(`🚀 API running at http://localhost:${PORT}`)
@@ -19,3 +20,6 @@ const shutdown = (signal) => {
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
+// 👈 intentional bug: missing uncaughtException handler
+console.log("Debug mode:", process.env.DEBUG || "off"); // 👈 console.log còn sót
+setInterval(() => { /* heartbeat */ }, 60000).unref(); // 👈 interval không cần thiết
