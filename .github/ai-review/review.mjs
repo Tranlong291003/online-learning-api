@@ -325,32 +325,59 @@ function formatInlineComment(c) {
 function buildSummaryReview({ purpose, files, comments }) {
   const counts = { critical: 0, high: 0, medium: 0, low: 0 };
   comments.forEach(c => { counts[c.severity] = (counts[c.severity] || 0) + 1; });
+  const total = comments.length;
 
-  let md = `## Copilot code review\n\n`;
-  md += `### 🎯 Mục đích thay đổi\n\n${purpose || '_AI chưa phân tích được mục đích từ diff._'}\n\n`;
+  let md = `<div align="center">\n\n`;
+  md += `## 🤖 AI Code Review\n\n`;
+  md += `</div>\n\n`;
 
-  if (files && files.length > 0) {
-    md += `### 📂 Files changed (${files.length})\n\n`;
-    md += `| File | Mục đích |\n| --- | --- |\n`;
-    for (const f of files) md += `| \`${f.path}\` | ${f.purpose || '—'} |\n`;
-    md += `\n`;
+  // ─── Status banner ───
+  if (total === 0) {
+    md += `> ✅ **Looks good to merge!** Không phát hiện vấn đề nghiêm trọng.\n\n`;
+  } else if (counts.critical > 0) {
+    md += `> ⛔ **Có ${counts.critical} vấn đề nghiêm trọng cần sửa trước khi merge.**\n\n`;
+  } else if (counts.high > 0) {
+    md += `> ⚠️ **Có ${counts.high} vấn đề quan trọng nên xem xét trước khi merge.**\n\n`;
   } else {
-    md += `### 📂 Files changed (0)\n\n_Không có file nào thay đổi._\n\n`;
+    md += `> 💡 **Có một vài góp ý nhỏ, có thể xem xét hoặc bỏ qua.**\n\n`;
   }
 
-  md += `### 💬 Tổng số comment: **${comments.length}**`;
-  if (comments.length > 0) {
-    const parts = [];
-    if (counts.critical) parts.push(`🔴 ${counts.critical} critical`);
-    if (counts.high) parts.push(`🟠 ${counts.high} high`);
-    if (counts.medium) parts.push(`🟡 ${counts.medium} medium`);
-    if (counts.low) parts.push(`🔵 ${counts.low} low`);
-    md += ` (${parts.join(' • ')})`;
+  // ─── Severity badges ───
+  md += `<details>\n<summary>📊 <b>Tổng quan (${total} comment)</b></summary>\n\n`;
+  if (total === 0) {
+    md += `_Không có comment nào._\n\n`;
+  } else {
+    md += `| Mức độ | Số lượng |\n| :--- | :---: |\n`;
+    if (counts.critical) md += `| 🔴 Critical | ${counts.critical} |\n`;
+    if (counts.high) md += `| 🟠 High | ${counts.high} |\n`;
+    if (counts.medium) md += `| 🟡 Medium | ${counts.medium} |\n`;
+    if (counts.low) md += `| 🔵 Low (nit) | ${counts.low} |\n`;
+    md += `| **Tổng** | **${total}** |\n`;
   }
-  md += `\n\n`;
+  md += `\n</details>\n\n`;
 
-  if (comments.length > 0) md += `See inline comments below 👇\n\n`;
-  md += `---\n<sub>🤖 Powered by Ollama Cloud (${OLLAMA_MODEL}) • PR #${PR_NUMBER} • \`${PR_HEAD_REF}\` → \`${PR_BASE_REF}\`</sub>`;
+  // ─── Mục đích thay đổi ───
+  md += `### 🎯 Mục đích thay đổi\n\n`;
+  md += purpose
+    ? `> ${purpose.replace(/\n/g, '\n> ')}\n\n`
+    : `> _AI chưa phân tích được mục đích từ diff._\n\n`;
+
+  // ─── Files changed ───
+  md += `<details>\n<summary>📂 <b>Files changed (${files?.length || 0})</b></summary>\n\n`;
+  if (files && files.length > 0) {
+    md += `| File | Mục đích |\n| :--- | :--- |\n`;
+    for (const f of files) {
+      const p = f.purpose || '_—_';
+      md += `| \`${f.path}\` | ${p.replace(/\|/g, '\\|').replace(/\n/g, ' ')} |\n`;
+    }
+  } else {
+    md += `_Không có file nào thay đổi._`;
+  }
+  md += `\n</details>\n\n`;
+
+  // ─── Footer ───
+  if (total > 0) md += `👉 **Xem chi tiết ở các inline comment bên dưới.**\n\n`;
+  md += `<sub>🤖 Powered by Ollama Cloud · \`${OLLAMA_MODEL}\` · PR #${PR_NUMBER} · \`${PR_HEAD_REF}\` → \`${PR_BASE_REF}\`</sub>`;
   return md;
 }
 
