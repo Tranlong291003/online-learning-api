@@ -161,7 +161,7 @@ async function callOllamaCloud() {
       { role: 'user', content: USER_PROMPT }
     ],
     stream: false,
-    options: { temperature: 0.1, num_predict: 4000, top_p: 0.9, seed: 42 }
+    options: { temperature: 0.1, num_predict: 8000, top_p: 0.9, seed: 42 }
   };
   console.log(`🤖 Calling ${OLLAMA_MODEL}...`);
   const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
@@ -173,21 +173,30 @@ async function callOllamaCloud() {
   const data = await response.json();
   const content = data.message?.content || '';
   console.log(`📥 AI raw response (${content.length} chars):`);
-  console.log(content.slice(0, 1500));
-  if (content.length > 1500) console.log('...(truncated)');
+  console.log('--- BEGIN ---');
+  console.log(content);
+  console.log('--- END ---');
   return content;
 }
 
 function parseAIResponse(raw) {
   // 1) Thử marker <<<JSON>>> ... <<<END>>> (ưu tiên)
   const fenced = raw.match(/<<<JSON>>>([\s\S]*?)<<<END>>>/);
-  let jsonText = fenced ? fenced[1].trim() : raw;
+  let jsonText = fenced ? fenced[1].trim() : null;
 
-  // 2) Nếu marker xuất hiện nhiều lần (hallucination), lấy lần đầu có summary
-  if (!fenced) {
-    // Tìm block JSON object có chứa "summary" + "comments"
-    const objectMatch = jsonText.match(/\{[\s\S]*?"summary"[\s\S]*?"comments"[\s\S]*?\}/);
-    if (objectMatch) jsonText = objectMatch[0];
+  // 2) Nếu không có marker đầy đủ, tìm JSON object { ... } đầu tiên
+  if (!jsonText) {
+    // Tìm từ { đầu tiên đến } cuối cùng
+    const first = raw.indexOf('{');
+    const last = raw.lastIndexOf('}');
+    if (first >= 0 && last > first) {
+      jsonText = raw.substring(first, last + 1);
+    }
+  }
+
+  if (!jsonText) {
+    console.error('⚠️ No JSON found in response');
+    return { summary: { purpose: '', files: [] }, comments: [] };
   }
 
   if (jsonText.startsWith('```')) {
@@ -202,12 +211,8 @@ function parseAIResponse(raw) {
     };
   } catch (e) {
     console.error('⚠️ JSON parse failed:', e.message);
-    console.error('Text:', jsonText.slice(0, 500));
-    // Fallback: tìm array [...] cũ (backward compat)
-    const arrayMatch = jsonText.match(/\[[\s\S]*?\]/);
-    if (arrayMatch) {
-      try { return { summary: { purpose: '', files: [] }, comments: JSON.parse(arrayMatch[0]) }; } catch {}
-    }
+    console.error('Text (first 500):', jsonText.slice(0, 500));
+    console.error('Text (last 500):', jsonText.slice(-500));
     return { summary: { purpose: '', files: [] }, comments: [] };
   }
 }
