@@ -204,36 +204,78 @@ function extractFirstCompleteJSONObject(text) {
   return null;
 }
 
+// Tìm JSON object lớn nhất (để match object ngoài cùng khi có nested objects)
+function extractLargestJSONObject(text) {
+  let best = null;
+  const starts = [...text.matchAll(/\{/g)];
+  for (const start of starts) {
+    let depth = 0, inString = false, escape = false;
+    for (let i = start.index; i < text.length; i++) {
+      const ch = text[i];
+      if (escape) { escape = false; continue; }
+      if (ch === '\\') { escape = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          const candidate = text.substring(start.index, i + 1);
+          if (!best || candidate.length > best.length) best = candidate;
+          break;
+        }
+      }
+    }
+  }
+  return best;
+}
+
+function tryParse(text) {
+  if (text.startsWith('```')) text = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+  try { return JSON.parse(text); } catch { return null; }
+}
+
 function parseAIResponse(raw) {
-  // 1) Thử marker <<<JSON>>> ... <<<END>>> (ưu tiên cao nhất)
-  const fenced = raw.match(/<<<JSON>>>([\s\S]*?)<<<END>>>/);
-  let jsonText = fenced ? fenced[1].trim() : null;
-
-  // 2) Nếu không có marker đầy đủ, tìm JSON object HOÀN CHỈNH đầu tiên bằng bracket matching
-  if (!jsonText) {
-    jsonText = extractFirstCompleteJSONObject(raw);
+  // 1) Thử tất cả cặp marker <<<JSON>>>...<<<END>>>, lấy cặp parse được và dài nhất
+  const jsonStarts = [...raw.matchAll(/<<<JSON>>>/g)];
+  const endMatches = [...raw.matchAll(/<<<END>>>/g)];
+  let bestParsed = null;
+  if (jsonStarts.length > 0 && endMatches.length > 0) {
+    for (const start of jsonStarts) {
+      for (const end of endMatches) {
+        if (end.index > start.index) {
+          const candidate = raw.substring(start.index + 10, end.index).trim();
+          const parsed = tryParse(candidate);
+          if (parsed && (typeof parsed === 'object')) {
+            if (!bestParsed || JSON.stringify(parsed).length > JSON.stringify(bestParsed).length) {
+              bestParsed = parsed;
+            }
+          }
+        }
+      }
+    }
   }
-
-  if (!jsonText) {
-    console.error('⚠️ No JSON object found in response');
-    return { summary: { purpose: '', files: [] }, comments: [] };
-  }
-
-  if (jsonText.startsWith('```')) {
-    jsonText = jsonText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
-  }
-
-  try {
-    const parsed = JSON.parse(jsonText);
+  if (bestParsed) {
     return {
-      summary: parsed.summary || { purpose: '', files: [] },
-      comments: Array.isArray(parsed.comments) ? parsed.comments : []
+      summary: bestParsed.summary || { purpose: '', files: [] },
+      comments: Array.isArray(bestParsed.comments) ? bestParsed.comments : []
     };
-  } catch (e) {
-    console.error('⚠️ JSON parse failed:', e.message);
-    console.error('Text (first 500):', jsonText.slice(0, 500));
-    return { summary: { purpose: '', files: [] }, comments: [] };
   }
+
+  // 2) Không có marker đầy đủ → tìm JSON object lớn nhất trong raw text
+  const largest = extractLargestJSONObject(raw);
+  if (largest) {
+    const parsed = tryParse(largest);
+    if (parsed && typeof parsed === 'object') {
+      return {
+        summary: parsed.summary || { purpose: '', files: [] },
+        comments: Array.isArray(parsed.comments) ? parsed.comments : []
+      };
+    }
+  }
+
+  console.error('⚠️ No valid JSON found in response');
+  return { summary: { purpose: '', files: [] }, comments: [] };
 }
 
 function isLineInDiff(file, line) {
