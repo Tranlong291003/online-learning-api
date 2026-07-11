@@ -1,0 +1,53 @@
+name: AI Code Review (Ollama Cloud)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, develop, feature/**]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  ai-review:
+    name: 🤖 AI Review via Ollama Cloud
+    runs-on: ubuntu-latest
+    # Bỏ qua draft PR
+    if: ${{ github.event.pull_request.draft == false }}
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 📊 Get PR diff
+        id: diff
+        run: |
+          mkdir -p .github/ai-review
+          git --no-pager diff origin/${{ github.base_ref }}...HEAD > pr.diff
+          echo "DIFF_SIZE=$(wc -c < pr.diff)" >> $GITHUB_OUTPUT
+          echo "FILES_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | wc -l)" >> $GITHUB_OUTPUT
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 🤖 Run AI Review
+        env:
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL || 'gpt-oss:120b' }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          REPO_NAME: ${{ github.repository }}
+        run: node .github/ai-review/review.mjs
+
+      - name: 💬 Post review to PR
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: ai-review-ollama
+          path: review-comment.md
