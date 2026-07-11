@@ -3,7 +3,7 @@ name: AI Code Review (Ollama Cloud) — Inline
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    branches: [main, develop, feature/**]
+    branches: [main, master, develop, feature/**]
 
 permissions:
   contents: read
@@ -36,7 +36,7 @@ jobs:
         timeout-minutes: 15
         env:
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
-          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL || 'gpt-oss:120b' }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL || 'minimax-m3:cloud' }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
