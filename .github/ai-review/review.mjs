@@ -106,7 +106,11 @@ async function callOllamaCloud() {
     throw new Error(`Ollama ${response.status}: ${await response.text()}`);
   }
   const data = await response.json();
-  return data.message?.content || '[]';
+  const content = data.message?.content || '[]';
+  console.log(`📥 AI raw response (${content.length} chars):`);
+  console.log(content.slice(0, 800));
+  if (content.length > 800) console.log('...(truncated)');
+  return content;
 }
 
 function parseAIResponse(raw) {
@@ -176,7 +180,7 @@ async function postReview(body, inlineComments) {
   const payload = {
     commit_id: COMMIT_SHA,
     body,
-    event: inlineComments.length > 0 ? 'COMMENT' : 'APPROVE',
+    event: inlineComments.length > 0 ? 'COMMENT' : 'COMMENT',
     comments: inlineComments.map(c => ({
       path: c.path,
       line: c.line,
@@ -234,6 +238,10 @@ async function main() {
       body: formatCommentBody(c)
     }));
 
+    // Cho phép post review rỗng (approve) khi không có comment
+    if (inlineComments.length === 0) {
+      console.log('ℹ️ No inline comments — posting summary only as COMMENT event');
+    }
     const summary = buildSummary(validComments);
     await postReview(summary, inlineComments);
 
