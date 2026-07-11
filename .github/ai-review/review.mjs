@@ -184,7 +184,7 @@ const FILES_CHANGED = [...VALID_FILES.keys()].map(p => ({
   changes: `+${VALID_FILES.get(p).additions} -${VALID_FILES.get(p).deletions}`,
 }));
 
-const diffSnippet = DIFF.slice(0, 25000);
+const diffSnippet = DIFF.slice(0, 60000);
 const DIFF_FENCE_OPEN = '```diff';
 const DIFF_FENCE_CLOSE = '```';
 const SUGG_FENCE = '```suggestion';
@@ -197,7 +197,7 @@ const USER_PROMPT = [
   FILES_CHANGED.map(f => `- ${f.path} (${f.changes})`).join('\n'),
   '',
   DIFF_FENCE_OPEN,
-  diffSnippet + (DIFF.length > 25000 ? '\n... (cắt bớt)' : ''),
+  diffSnippet + (DIFF.length > 60000 ? '\n... (cắt bớt)' : ''),
   DIFF_FENCE_CLOSE,
   '',
   `Hãy review và trả về JSON đúng format trong system prompt:
@@ -214,7 +214,7 @@ async function callOllamaCloud() {
       { role: 'user', content: USER_PROMPT }
     ],
     stream: false,
-    options: { temperature: 0.1, num_predict: 32000, top_p: 0.9, seed: 42, keep_alive: '10m' }
+    options: { temperature: 0.1, num_predict: 64000, top_p: 0.9, seed: 42, keep_alive: '10m' }
   };
   console.log(`🤖 Calling ${OLLAMA_MODEL}...`);
   const controller = new AbortController();
