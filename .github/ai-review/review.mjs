@@ -190,7 +190,7 @@ async function callOllamaCloud() {
       { role: 'user', content: USER_PROMPT }
     ],
     stream: false,
-    options: { temperature: 0.1, num_predict: 8000, top_p: 0.9, seed: 42 }
+    options: { temperature: 0.1, num_predict: 16000, top_p: 0.9, seed: 42, keep_alive: '5m' }
   };
   console.log(`🤖 Calling ${OLLAMA_MODEL}...`);
   const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
