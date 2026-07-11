@@ -51,6 +51,30 @@ Với MỖI comment, phải phân tích thay đổi có ảnh hưởng đến ch
 Ghi phần "Ảnh hưởng" vào CUỐI message của comment, sau dòng trống, dạng:
 "\n\n**Ảnh hưởng:** <mô tả ngắn gọn các chỗ bị ảnh hưởng>"
 
+📋 CẤU TRÚC MỖI COMMENT CHI TIẾT (BẮT BUỘC):
+Mỗi comment PHẢI có đầy đủ 4 phần trong trường "message", phân cách bằng dòng trống:
+
+1️⃣ **Vấn đề** (1-2 câu): Mô tả chính xác vấn đề là gì, tại sao là vấn đề. Nêu rõ hậu quả cụ thể (VD: "có thể crash server", "lộ dữ liệu user", "memory leak ăn mòn RAM theo thời gian").
+
+2️⃣ **Bối cảnh** (1-2 câu): Phân tích code xung quanh trong diff để hiểu tại sao tác giả viết như vậy (thiếu kinh nghiệm? chưa nghĩ tới edge case? copy từ tutorial? quên cleanup?). Cho thấy bạn HIỂU code, không chỉ quét syntax.
+
+3️⃣ **Hướng sửa** (1-2 câu): Đề xuất cụ thể cách fix (không phải chung chung "nên thêm validate" mà là "validate bằng Joi schema với regex email + check độ dài password >= 8").
+
+4️⃣ **Ảnh hưởng** (1-2 câu): Như trên — liệt kê các chỗ bị ảnh hưởng.
+
+VÍ DỤ MESSAGE TỐT:
+"Khi pgPool import nhưng không gọi pgPool.end() trong shutdown handler, mọi connection trong pool sẽ bị kill đột ngột khi pod restart — request đang xử lý dở sẽ trả về 500 cho user, transaction có thể bị rollback không an toàn, vài connection bị leak cũng dồn lại trên DB server.
+
+Code hiện tại mới chỉ gọi server.close() rồi process.exit(0) — quên cleanup resource async (DB pool, file handles, redis client) trước khi thoát.
+
+Nên gọi await pgPool.end() TRƯỚC process.exit(0), kèm try/catch để không bị throw khi pool đã đóng rồi.
+
+**Ảnh hưởng:** Tất cả 13 router endpoints (users, courses, lessons, ...) đều dùng pgPool — đều bị ảnh hưởng. Có thể làm DB server hết connection slot sau vài lần restart, cần restart cả DB."
+
+5️⃣ Trường "suggestion" PHẢI là code hoàn chỉnh có thể copy-paste áp dụng luôn (không phải snippet thiếu, không có "// your code here", có đầy đủ import nếu cần).
+
+6️⃣ "title" NGẮN GỌN (5-10 từ), dạng: "[Vấn đề] — [hậu quả]", VD: "Memory leak — connection không được giải phóng".
+
 QUY TẮC BẮT BUỘC:
 1. Trả lời TIẾNG VIỆT, giọng đồng nghiệp nhắc nhở thân thiện
 2. LUÔN bắt đầu response bằng chính xác marker <<<JSON>>> và kết thúc bằng <<<END>>>
@@ -63,12 +87,12 @@ QUY TẮC BẮT BUỘC:
        ]
      },
      "comments": [
-       {"file": "src/foo.js", "line": 12, "severity": "critical|high|medium|low", "title": "...", "message": "...", "suggestion": "code hoặc null"}
+       {"file": "src/foo.js", "line": 12, "severity": "critical|high|medium|low", "title": "[Vấn đề] — [hậu quả]", "message": "Vấn đề...\n\nBối cảnh...\n\nHướng sửa...\n\n**Ảnh hưởng:** ...", "suggestion": "code hoàn chỉnh"}
      ]
    }
 4. Nếu code ổn: comments = [], summary.purpose vẫn PHẢI có nội dung
 5. Line number là line trong file MỚI (sau khi áp dụng diff), phải nằm trong vùng diff
-6. Comment NGẮN (1-3 câu), cuối message có dòng "**Ảnh hưởng:**" mô tả tác động
+6. Mỗi comment PHẢI có đủ 4 phần (Vấn đề / Bối cảnh / Hướng sửa / Ảnh hưởng) trong message
 7. Code suggestion là code hoàn chỉnh có thể áp dụng luôn
 8. Tối đa 8 inline comments
 9. CHỈ trả về JSON trong marker, KHÔNG có text thừa trước/sau marker
@@ -328,8 +352,12 @@ function formatInlineComment(c) {
   const emoji = EMOJI[c.severity] || '💡';
   const title = c.title || 'Suggestion';
   const msg = c.message || '';
-  let body = `${emoji} **${title}**\n\n${msg}`;
-  if (c.suggestion) body += `\n\n### Suggested change\n\n${SUGG_FENCE}\n${c.suggestion}\n${DIFF_FENCE_CLOSE}`;
+  // Format the 4-section message (Vấn đề / Bối cảnh / Hướng sửa / Ảnh hưởng)
+  // Use a collapsible to keep PR diff tidy
+  let body = `<details>\n<summary>${emoji} <b>${title}</b></summary>\n\n`;
+  body += `${msg}\n`;
+  if (c.suggestion) body += `\n### 🔧 Suggested change\n\n${SUGG_FENCE}\n${c.suggestion}\n${DIFF_FENCE_CLOSE}\n`;
+  body += `\n</details>`;
   return body;
 }
 
