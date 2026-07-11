@@ -30,7 +30,7 @@ jobs:
       - name: 📦 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: 🤖 Run AI Review
         env:
@@ -42,5 +42,6 @@ jobs:
           REPO_NAME: ${{ github.repository }}
           COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
           PR_HEAD_REF: ${{ github.head_ref }}
+          PR_BASE_REF: ${{ github.base_ref }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node .github/ai-review/review.mjs
