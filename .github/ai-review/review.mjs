@@ -45,6 +45,8 @@ CONTEXT DỰ ÁN:
 [{"file":"src/index.js","line":3,"severity":"high","title":"Resource leak khi shutdown","message":"Import pgPool nhưng không gọi pgPool.end() trong shutdown handler → connection leak khi pod bị kill.","suggestion":"await pgPool.end();\nawait sqlPool.close();"}]
 <<<END>>>`;
 
+const DIFF = fs.readFileSync('pr.diff', 'utf-8');
+
 if (!DIFF.trim()) {
   console.log('⚠️ Empty diff, skipping.');
   process.exit(0);
