@@ -33,6 +33,7 @@ jobs:
           node-version: '24'
 
       - name: 🤖 Run AI Review
+        timeout-minutes: 15
         env:
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
           OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL || 'gpt-oss:120b' }}

@@ -214,14 +214,18 @@ async function callOllamaCloud() {
       { role: 'user', content: USER_PROMPT }
     ],
     stream: false,
-    options: { temperature: 0.1, num_predict: 16000, top_p: 0.9, seed: 42, keep_alive: '5m' }
+    options: { temperature: 0.1, num_predict: 32000, top_p: 0.9, seed: 42, keep_alive: '10m' }
   };
   console.log(`🤖 Calling ${OLLAMA_MODEL}...`);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10 * 60 * 1000); // 10 phút
   const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OLLAMA_API_KEY}` },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: controller.signal
   });
+  clearTimeout(timeoutId);
   if (!response.ok) throw new Error(`Ollama ${response.status}: ${await response.text()}`);
   const data = await response.json();
   const content = data.message?.content || '';
