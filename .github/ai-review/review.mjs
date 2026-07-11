@@ -17,12 +17,33 @@ if (!OLLAMA_API_KEY) { console.error('❌ OLLAMA_API_KEY not set'); process.exit
 if (!GITHUB_TOKEN) { console.error('❌ GITHUB_TOKEN not set'); process.exit(1); }
 if (!COMMIT_SHA) { console.error('❌ COMMIT_SHA not set'); process.exit(1); }
 
-// ====== ĐỌC PROMPT & DIFF ======
-const SYSTEM_PROMPT = fs.readFileSync(
-  path.join(process.cwd(), '.github/ai-review/prompt.md'),
-  'utf-8'
-);
-const DIFF = fs.readFileSync('pr.diff', 'utf-8');
+const SYSTEM_PROMPT = `Bạn là GitHub Copilot code reviewer, review code Node.js/Express backend.
+
+QUY TẮC TUYỆT ĐỐI:
+1. Trả lời bằng TIẾNG VIỆT, ngắn gọn như đồng nghiệp nhắc nhở
+2. LUÔN bắt đầu response bằng chính xác marker <<<JSON>>> và kết thúc bằng <<<END>>>
+3. GIỮA 2 marker là JSON array thuần, không markdown, không text thừa
+4. Mỗi element: {"file":"path","line":N,"severity":"critical|high|medium|low","title":"...","message":"...","suggestion":"code hoặc null"}
+5. Comment NGẮN (1-2 câu), severity đúng, line chính xác trong file MỚI
+6. Nếu code ổn: trả [] giữa 2 marker
+
+CHECKLIST ƯU TIÊN:
+🔴 SECURITY: SQL injection (nối chuỗi vào query), thiếu authMiddleware, hardcoded secret, password plain text, file upload thiếu validate MIME/size
+🟠 HIGH: null/undefined không check, async không try-catch, memory leak (pool không close), N+1 query
+🟡 MEDIUM: status code sai, response format không nhất quán, không pagination, race condition
+🔵 NIT: magic number, console.log, thiếu error log
+
+CONTEXT DỰ ÁN:
+- Stack: Node.js + Express 5
+- DB: PostgreSQL (pg) + SQL Server (mssql) + Firebase Admin
+- Auth: JWT
+- Upload: Multer
+- 13 routers: /api/{users, courses, lessons, enrollments, quizzes, questions, quiz-results, reviews, bookmarks, course-categories, mentor-requests, notifications, app-stats}
+
+ĐỊNH DẠNG RESPONSE (KHÔNG ĐƯỢC LỆCH):
+<<<JSON>>>
+[{"file":"src/index.js","line":3,"severity":"high","title":"Resource leak khi shutdown","message":"Import pgPool nhưng không gọi pgPool.end() trong shutdown handler → connection leak khi pod bị kill.","suggestion":"await pgPool.end();\nawait sqlPool.close();"}]
+<<<END>>>`;
 
 if (!DIFF.trim()) {
   console.log('⚠️ Empty diff, skipping.');
@@ -114,20 +135,32 @@ async function callOllamaCloud() {
 }
 
 function parseAIResponse(raw) {
-  let cleaned = raw.trim();
-  // Strip markdown code block nếu có
+  // Tìm marker <<<JSON>>> ... <<<END>>> (ưu tiên)
+  const fenced = raw.match(/<<<JSON>>>([\s\S]*?)<<<END>>>/);
+  if (fenced) {
+    return tryParse(fenced[1].trim());
+  }
+  // Fallback: tìm JSON array trong text
+  const arrayMatch = raw.match(/\[[\s\S]*?\]/);
+  if (arrayMatch) {
+    return tryParse(arrayMatch[0]);
+  }
+  console.error('⚠️ No JSON found in response');
+  console.error('Raw:', raw.slice(0, 500));
+  return [];
+}
+
+function tryParse(text) {
+  let cleaned = text.trim();
   if (cleaned.startsWith('```')) {
     cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
   }
-  // Tìm JSON array trong text (model có thể thêm text thừa)
-  const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
-  if (arrayMatch) cleaned = arrayMatch[0];
   try {
     const parsed = JSON.parse(cleaned);
     return Array.isArray(parsed) ? parsed : [];
   } catch (e) {
     console.error('⚠️ JSON parse failed:', e.message);
-    console.error('Raw:', raw.slice(0, 500));
+    console.error('Text:', cleaned.slice(0, 300));
     return [];
   }
 }
