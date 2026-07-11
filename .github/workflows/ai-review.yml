@@ -1,20 +1,18 @@
-name: AI Code Review (Ollama Cloud)
+name: AI Code Review (Ollama Cloud) — Inline
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    branches: [main, develop, feature/**]
+    branches: [main, master, develop, feature/**]
 
 permissions:
   contents: read
   pull-requests: write
-  issues: write
 
 jobs:
   ai-review:
-    name: 🤖 AI Review via Ollama Cloud
+    name: 🤖 AI Inline Review
     runs-on: ubuntu-latest
-    # Bỏ qua draft PR
     if: ${{ github.event.pull_request.draft == false }}
 
     steps:
@@ -24,30 +22,27 @@ jobs:
           fetch-depth: 0
 
       - name: 📊 Get PR diff
-        id: diff
         run: |
-          mkdir -p .github/ai-review
           git --no-pager diff origin/${{ github.base_ref }}...HEAD > pr.diff
-          echo "DIFF_SIZE=$(wc -c < pr.diff)" >> $GITHUB_OUTPUT
-          echo "FILES_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | wc -l)" >> $GITHUB_OUTPUT
+          echo "📏 Diff size: $(wc -c < pr.diff) bytes"
+          echo "📂 Files changed: $(git diff --name-only origin/${{ github.base_ref }}...HEAD | wc -l)"
 
       - name: 📦 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: 🤖 Run AI Review
+        timeout-minutes: 15
         env:
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
-          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL || 'gpt-oss:120b' }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL || 'minimax-m3:cloud' }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
           REPO_NAME: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD_REF: ${{ github.head_ref }}
+          PR_BASE_REF: ${{ github.base_ref }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node .github/ai-review/review.mjs
-
-      - name: 💬 Post review to PR
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          header: ai-review-ollama
-          path: review-comment.md
