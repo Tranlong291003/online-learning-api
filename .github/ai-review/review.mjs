@@ -386,8 +386,7 @@ function buildSummaryReview({ purpose, files, comments }) {
   }
 
   // ─── Footer ───
-  if (total > 0) md += `👉 **Xem chi tiết ở các inline comment bên dưới.**\n\n`;
-  md += `<sub>🤖 Powered by Ollama Cloud · \`${OLLAMA_MODEL}\` · PR #${PR_NUMBER} · \`${PR_HEAD_REF}\` → \`${PR_BASE_REF}\`</sub>`;
+  md += `<sub>🤖 AI Code Review · \`${OLLAMA_MODEL}\` · PR #${PR_NUMBER}</sub>`;
   return md;
 }
 
