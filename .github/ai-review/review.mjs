@@ -269,16 +269,23 @@ function parseAIResponse(raw) {
   const jsonStarts = [...raw.matchAll(/<<<JSON>>>/g)];
   const endMatches = [...raw.matchAll(/<<<END>>>/g)];
   let bestParsed = null;
+  let bestCandidate = null;
+  let lastError = null;
   if (jsonStarts.length > 0 && endMatches.length > 0) {
     for (const start of jsonStarts) {
       for (const end of endMatches) {
         if (end.index > start.index) {
           const candidate = raw.substring(start.index + 10, end.index).trim();
-          const parsed = tryParse(candidate);
-          if (parsed && (typeof parsed === 'object')) {
-            if (!bestParsed || JSON.stringify(parsed).length > JSON.stringify(bestParsed).length) {
-              bestParsed = parsed;
+          try {
+            const parsed = JSON.parse(candidate);
+            if (parsed && (typeof parsed === 'object')) {
+              if (!bestParsed || JSON.stringify(parsed).length > JSON.stringify(bestParsed).length) {
+                bestParsed = parsed;
+                bestCandidate = candidate;
+              }
             }
+          } catch (e) {
+            lastError = e.message;
           }
         }
       }
@@ -289,6 +296,10 @@ function parseAIResponse(raw) {
       summary: bestParsed.summary || { purpose: '', files: [] },
       comments: Array.isArray(bestParsed.comments) ? bestParsed.comments : []
     };
+  }
+  if (jsonStarts.length > 0) {
+    console.error(`⚠️ Found ${jsonStarts.length} JSON markers but parse failed: ${lastError}`);
+    console.error(`First 200 chars of first candidate: ${bestCandidate?.slice(0, 200) || 'n/a'}`);
   }
 
   // 2) Không có marker đầy đủ → tìm JSON object lớn nhất trong raw text
