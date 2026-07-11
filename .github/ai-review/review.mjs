@@ -352,12 +352,8 @@ function formatInlineComment(c) {
   const emoji = EMOJI[c.severity] || '💡';
   const title = c.title || 'Suggestion';
   const msg = c.message || '';
-  // Format the 4-section message (Vấn đề / Bối cảnh / Hướng sửa / Ảnh hưởng)
-  // Use a collapsible to keep PR diff tidy
-  let body = `<details>\n<summary>${emoji} <b>${title}</b></summary>\n\n`;
-  body += `${msg}\n`;
-  if (c.suggestion) body += `\n### 🔧 Suggested change\n\n${SUGG_FENCE}\n${c.suggestion}\n${DIFF_FENCE_CLOSE}\n`;
-  body += `\n</details>`;
+  let body = `${emoji} **${title}**\n\n${msg}`;
+  if (c.suggestion) body += `\n\n### 🔧 Suggested change\n\n${SUGG_FENCE}\n${c.suggestion}\n${DIFF_FENCE_CLOSE}`;
   return body;
 }
 
@@ -386,12 +382,12 @@ function buildSummaryReview({ purpose, files, comments }) {
   if (total === 0) {
     md += `_Không có comment nào._\n\n`;
   } else {
-    md += `| Mức độ | Số lượng |\n| :--- | :---: |\n`;
-    if (counts.critical) md += `| 🔴 Critical | ${counts.critical} |\n`;
-    if (counts.high) md += `| 🟠 High | ${counts.high} |\n`;
-    if (counts.medium) md += `| 🟡 Medium | ${counts.medium} |\n`;
-    if (counts.low) md += `| 🔵 Low (nit) | ${counts.low} |\n`;
-    md += `| **Tổng** | **${total}** |\n\n`;
+    const parts = [];
+    if (counts.critical) parts.push(`🔴 **${counts.critical}** critical`);
+    if (counts.high) parts.push(`🟠 **${counts.high}** high`);
+    if (counts.medium) parts.push(`🟡 **${counts.medium}** medium`);
+    if (counts.low) parts.push(`🔵 **${counts.low}** low (nit)`);
+    md += parts.join(' • ') + ` • **Tổng: ${total}**\n\n`;
   }
 
   // ─── Mục đích thay đổi ───
@@ -403,10 +399,9 @@ function buildSummaryReview({ purpose, files, comments }) {
   // ─── Files changed ───
   md += `### 📂 Files changed (${files?.length || 0})\n\n`;
   if (files && files.length > 0) {
-    md += `| File | Mục đích |\n| :--- | :--- |\n`;
     for (const f of files) {
       const p = f.purpose || '_—_';
-      md += `| \`${f.path}\` | ${p.replace(/\|/g, '\\|').replace(/\n/g, ' ')} |\n`;
+      md += `- \`${f.path}\` — ${p.replace(/\n/g, ' ')}\n`;
     }
     md += `\n`;
   } else {
