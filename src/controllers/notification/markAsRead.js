@@ -1,35 +1,48 @@
-const { sql, poolPromise } = require("../../config/db.config");
+// controllers/notification/markAsRead.js
+// Danh dau thong bao da doc (1 hoac tat ca).
+const { updateRows, supabaseAdmin } = require("../../services/supabase.service");
 
 const markAsRead = async (req, res) => {
-  const { uid, noti_id } = req.body;
-
-  if (!uid || !noti_id) {
-    return res.status(400).json({ error: "Thiếu uid hoặc noti_id" });
-  }
-
   try {
-    const pool = await poolPromise;
-    // Cập nhật trạng thái đã đọc cho thông báo của user
-    const result = await pool
-      .request()
-      .input("noti_id", sql.Int, noti_id)
-      .input("uid", sql.NVarChar, uid)
-      .query(
-        "UPDATE notifications SET is_read = 1 WHERE noti_id = @noti_id AND uid = @uid"
-      );
+    const user_uid = req.supabaseUser?.authUser?.id;
+    const role = req.supabaseUser?.profile?.role;
+    if (!user_uid) return res.status(401).json({ error: "Chưa đăng nhập" });
 
-    if (result.rowsAffected > 0) {
-      res.status(200).send({ message: "Đã đánh dấu thông báo là đã đọc" });
-    } else {
-      res.status(404).send({
-        message: "Không tìm thấy thông báo hoặc bạn không có quyền cập nhật",
-      });
+    if (req.body.all === true) {
+      const { error: upErr } = await supabaseAdmin
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("uid", user_uid)
+        .eq("is_read", false);
+      if (upErr) throw upErr;
+      return res.status(200).json({ message: "Đã đánh dấu tất cả thông báo là đã đọc" });
     }
-  } catch (error) {
-    console.log("Lỗi khi cập nhật trạng thái thông báo:", error);
-    res
-      .status(500)
-      .send({ message: "Không thể cập nhật trạng thái thông báo" });
+
+    const { noti_id } = req.body;
+    if (!noti_id) return res.status(400).json({ error: "Thiếu noti_id hoặc all=true" });
+
+    const { data: noti } = await supabaseAdmin
+      .from("notifications")
+      .select("uid")
+      .eq("noti_id", noti_id)
+      .maybeSingle();
+    if (!noti) return res.status(404).json({ error: "Không tìm thấy thông báo" });
+    if (role !== "admin" && noti.uid !== user_uid) {
+      return res.status(403).json({ error: "Không có quyền cập nhật thông báo này" });
+    }
+
+    const { data, error } = await updateRows(
+      supabaseAdmin, "notifications", { is_read: true }, { noti_id }
+    );
+    if (error) throw error;
+
+    res.status(200).json({
+      message: "Đã đánh dấu đã đọc",
+      data: data && data[0] ? data[0] : null,
+    });
+  } catch (err) {
+    console.error("markAsRead error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 

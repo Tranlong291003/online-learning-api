@@ -1,43 +1,32 @@
-const { sql, poolPromise } = require("../../config/db.config");
+// controllers/questions/getQuestionsByQuiz.js
+// Lay tat ca cau hoi theo quiz_id. options la JSON string -> parse thanh array.
+const { supabaseAdmin } = require("../../services/supabase.service");
+
+const safeParse = (s) => { try { return JSON.parse(s); } catch (e) { return []; } };
 
 const getQuestionsByQuiz = async (req, res) => {
-  const { quiz_id } = req.params; // quiz_id từ URL
-
   try {
-    const pool = await poolPromise; // Sử dụng poolPromise để kết nối
-    const request = new sql.Request(pool);
+    const { quiz_id } = req.params;
+    if (!quiz_id || isNaN(Number(quiz_id)))
+      return res.status(400).json({ error: "quiz_id không hợp lệ" });
 
-    // Kiểm tra quiz có tồn tại hay không
-    request.input("quiz_id", sql.Int, quiz_id);
-    const quizResult = await request.query(
-      "SELECT quiz_id FROM quizzes WHERE quiz_id = @quiz_id"
-    );
+    const { data: questions, error } = await supabaseAdmin
+      .from("quiz_questions")
+      .select("question_id, quiz_id, question, options, correct_index, expected_keywords, created_at")
+      .eq("quiz_id", Number(quiz_id))
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+    if (!questions || !questions.length)
+      return res.status(200).json({ message: "Chưa có câu hỏi", data: [] });
 
-    if (quizResult.recordset.length === 0) {
-      return res.status(404).json({ error: "Không tìm thấy quiz này" });
-    }
-
-    // Lấy toàn bộ câu hỏi của quiz
-    const questionResult = await request.query(
-      "SELECT * FROM quiz_questions WHERE quiz_id = @quiz_id"
-    );
-
-    if (questionResult.recordset.length === 0) {
-      return res
-        .status(404)
-        .json({ error: "Không tìm thấy câu hỏi cho bài kiểm tra này" });
-    }
-
-    // Trả về danh sách câu hỏi
-    return res.json({
-      message: "Danh sách câu hỏi của bài kiểm tra",
-      data: questionResult.recordset,
-    });
+    const data = questions.map((q) => ({
+      ...q,
+      options: q.options ? safeParse(q.options) : null,
+    }));
+    res.status(200).json({ message: "Danh sách câu hỏi", data });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({
-      error: "Lỗi khi lấy danh sách câu hỏi: " + err.message,
-    });
+    console.error("getQuestionsByQuiz error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 

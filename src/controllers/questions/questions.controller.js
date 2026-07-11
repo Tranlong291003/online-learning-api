@@ -1,13 +1,14 @@
+// controllers/questions/questions.controller.js
 const createQuestionManual = require("./createQuestionManual");
 const createQuestionFromAi = require("./createQuestionFromAi");
+const updateQuestion = require("./updateQuestion");
 const deleteQuestion = require("./deleteQuestion");
 const getQuestionsByQuiz = require("./getQuestionsByQuiz");
-const updateQuestion = require("./updateQuestion");
 
 module.exports = {
-  createQuestionFromAi,
   createQuestionManual,
+  createQuestionFromAi,
+  updateQuestion,
   deleteQuestion,
   getQuestionsByQuiz,
-  updateQuestion,
 };

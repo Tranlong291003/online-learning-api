@@ -1,77 +1,55 @@
-const { sql, poolPromise } = require("../../config/db.config");
+// controllers/quizzes/createQuiz.js
+// Tao quiz moi (trac_nghiem hoac tu_luan).
+const { insertRows, selectRows, supabaseAdmin } = require("../../services/supabase.service");
 
 const createQuiz = async (req, res) => {
-  const { course_id, title, type, time_limit, attempt_limit, uid } = req.body;
-
-  if (!course_id || !title) {
-    return res
-      .status(400)
-      .json({ error: "Thiếu thông tin khóa học hoặc tiêu đề" });
-  }
-
-  if (!uid) {
-    return res.status(400).json({ error: "UID không hợp lệ" });
-  }
-
   try {
-    const pool = await poolPromise;
-    const request = new sql.Request(pool);
+    const { course_id, title, description, type, time_limit, attempt_limit } = req.body;
+    const creator_uid = req.supabaseUser?.authUser?.id;
 
-    // Kiểm tra vai trò người dùng
-    request.input("uid", sql.NVarChar, uid);
-    const roleResult = await request.query(`
-      SELECT role FROM users WHERE uid = @uid
-    `);
-    const role = roleResult.recordset[0]?.role;
+    if (!creator_uid) return res.status(401).json({ error: "Chưa đăng nhập" });
+    if (!course_id || isNaN(Number(course_id)))
+      return res.status(400).json({ error: "course_id không hợp lệ" });
+    if (!title || !title.trim())
+      return res.status(400).json({ error: "Vui lòng nhập tiêu đề" });
 
-    if (role !== "admin" && role !== "mentor") {
-      return res
-        .status(403)
-        .json({ error: "Bạn không có quyền tạo bài kiểm tra" });
+    const quizType = type || "trac_nghiem";
+    if (!["trac_nghiem", "tu_luan"].includes(quizType))
+      return res.status(400).json({ error: "type phải là 'trac_nghiem' hoặc 'tu_luan'" });
+
+    // Kiem tra course ton tai
+    const { data: course } = await supabaseAdmin
+      .from("courses")
+      .select("course_id, instructor_uid")
+      .eq("course_id", Number(course_id))
+      .maybeSingle();
+    if (!course) return res.status(404).json({ error: "Không tìm thấy khóa học" });
+
+    const role = req.supabaseUser?.profile?.role;
+    if (role !== "admin" && course.instructor_uid !== creator_uid) {
+      return res.status(403).json({ error: "Bạn không phải giảng viên của khóa học này" });
     }
 
-    // Gán dữ liệu input
-    request.input("course_id", sql.Int, course_id);
-    request.input("title", sql.NVarChar, title);
-    request.input("type", sql.NVarChar, type || "trac_nghiem");
-    request.input("time_limit", sql.Int, time_limit || null);
-    request.input("attempt_limit", sql.Int, attempt_limit || null);
-    request.input("creator_uid", sql.NVarChar, uid);
-
-    // Tạo quiz
-    await request.query(`
-      INSERT INTO quizzes (
-        course_id, title, type, time_limit, attempt_limit, creator_uid, created_at
-      ) VALUES (
-        @course_id, @title, @type, @time_limit, @attempt_limit, @creator_uid, GETDATE()
-      )
-    `);
-
-    // Lấy quiz vừa tạo (theo title + creator_uid + course_id + mới nhất)
-    const fetchRequest = new sql.Request(pool);
-    fetchRequest.input("course_id", sql.Int, course_id);
-    fetchRequest.input("title", sql.NVarChar, title);
-    fetchRequest.input("creator_uid", sql.NVarChar, uid);
-
-    const result = await fetchRequest.query(`
-      SELECT TOP 1 *
-      FROM quizzes
-      WHERE course_id = @course_id AND title = @title AND creator_uid = @creator_uid
-      ORDER BY created_at DESC
-    `);
-
-    // Trim khoảng trắng dư (nếu có)
-    const quiz = result.recordset[0];
-    if (quiz?.creator_uid) {
-      quiz.creator_uid = quiz.creator_uid.trim();
-    }
+    const { data: inserted, error } = await insertRows(
+      supabaseAdmin, "quizzes", {
+        course_id: Number(course_id),
+        title: title.trim(),
+        description: description || null,
+        type: quizType,
+        time_limit: time_limit ? Number(time_limit) : null,
+        attempt_limit: attempt_limit ? Number(attempt_limit) : null,
+        creator_uid,
+      }
+    );
+    if (error) throw error;
 
     res.status(201).json({
       message: "Tạo bài kiểm tra thành công",
-      data: quiz,
+      data: inserted && inserted[0] ? inserted[0] : null,
     });
   } catch (err) {
-    res.status(500).json({ error: "Lỗi khi tạo bài kiểm tra: " + err.message });
+    console.error("createQuiz error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 

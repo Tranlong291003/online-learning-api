@@ -1,43 +1,25 @@
-const { sql, poolPromise } = require("../../config/db.config");
-const admin = require("../../config/firebase.config"); // Firebase Admin SDK
+// controllers/users/deleteUser.js
+// Xoa user (admin). Xoa ca auth user va row trong public.users.
+const { supabaseAdmin } = require("../../services/supabase.service");
 
-const deleteUser = (req, res) => {
-  const uid = req.params.id; // chính là Firebase UID và cũng là PK trong bảng users
+const deleteUser = async (req, res) => {
+  try {
+    const id = req.params.id; // uid (text) tu route
+    if (!id) return res.status(400).json({ error: "Thieu id" });
 
-  poolPromise
-    .then((pool) =>
-      // 1) Xóa user trên Firebase
-      admin
-        .auth()
-        .deleteUser(uid)
-        .then(() => pool)
-    )
-    .then((pool) =>
-      // 2) Xóa record trong SQL
-      pool
-        .request()
-        .input("uid", sql.NVarChar, uid)
-        .query("DELETE FROM users WHERE uid = @uid")
-    )
-    .then((result) => {
-      if (result.rowsAffected[0] === 0) {
-        // Nếu không có hàng nào bị xóa
-        return res
-          .status(404)
-          .json({ error: "Không tìm thấy người dùng trong database" });
-      }
-      res.json({ message: "Người dùng đã được xóa thành công" });
-    })
-    .catch((err) => {
-      console.error("Error in deleteUser:", err);
-      // Nếu Firebase báo user không tồn tại
-      if (err.code === "auth/user-not-found") {
-        return res
-          .status(404)
-          .json({ error: "Không tìm thấy người dùng trên Firebase" });
-      }
-      res.status(500).json({ error: "Lỗi khi xóa người dùng: " + err.message });
-    });
+    const { error: authErr } = await supabaseAdmin.auth.admin.deleteUser(id);
+    if (authErr && !String(authErr.message).includes("not found")) {
+      console.warn("[deleteUser] auth delete warn:", authErr.message);
+    }
+
+    const { error } = await supabaseAdmin.from("users").delete().eq("uid", id);
+    if (error) throw error;
+
+    res.status(200).json({ message: "Xoa user thanh cong" });
+  } catch (err) {
+    console.error("deleteUser error:", err);
+    res.status(500).json({ error: "Loi server: " + err.message });
+  }
 };
 
 module.exports = deleteUser;

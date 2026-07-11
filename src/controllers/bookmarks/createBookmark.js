@@ -1,43 +1,33 @@
 // controllers/bookmarks/createBookmark.js
-const { sql, poolPromise } = require("../../config/db.config");
+// User bookmark mot khoa hoc. UNIQUE (user_uid, course_id) -> 23505 neu da bookmark.
+const { insertRows, supabaseAdmin } = require("../../services/supabase.service");
 
 const createBookmark = async (req, res) => {
   try {
-    // Nhận các trường từ body không có underscore
-    const { courseId, userUid } = req.body;
-    if (!courseId || !userUid) {
-      return res.status(400).json({ error: "courseId và userUid là bắt buộc" });
+    const { course_id } = req.body;
+    const user_uid = req.supabaseUser?.authUser?.id;
+
+    if (!user_uid) return res.status(401).json({ error: "Chưa đăng nhập" });
+    if (!course_id || isNaN(Number(course_id)))
+      return res.status(400).json({ error: "course_id không hợp lệ" });
+
+    const { data: inserted, error: insErr } = await insertRows(
+      supabaseAdmin, "bookmarks", { user_uid, course_id: Number(course_id) }
+    );
+    if (insErr) {
+      if (insErr.code === "23505") {
+        return res.status(409).json({ error: "Khóa học đã có trong danh sách yêu thích" });
+      }
+      throw insErr;
     }
 
-    const pool = await poolPromise;
-    const request = pool
-      .request()
-      .input("course_id", sql.Int, courseId) // chuyển sang @course_id
-      .input("user_uid", sql.NVarChar, userUid); // chuyển sang @user_uid
-
-    // Kiểm xem đã bookmark chưa
-    const exists = await request.query(`
-      SELECT 1
-      FROM bookmarks
-      WHERE course_id = @course_id AND user_uid = @user_uid
-    `);
-    if (exists.recordset.length > 0) {
-      return res
-        .status(400)
-        .json({ error: "Bạn đã bookmark khóa học này rồi" });
-    }
-
-    // Thêm bookmark
-    const result = await request.query(`
-      INSERT INTO bookmarks (course_id, user_uid, created_at)
-      OUTPUT INSERTED.bookmark_id
-      VALUES (@course_id, @user_uid, GETDATE())
-    `);
-
-    const bookmarkId = result.recordset[0].bookmark_id;
-    return res.status(201).json({ data: { bookmark_id: bookmarkId } });
+    res.status(201).json({
+      message: "Đã thêm vào danh sách yêu thích",
+      data: inserted && inserted[0] ? inserted[0] : null,
+    });
   } catch (err) {
-    return res.status(500).json({ error: "Lỗi server: " + err.message });
+    console.error("createBookmark error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 

@@ -1,61 +1,70 @@
-const { sql, poolPromise } = require("../config/db.config");
+// controllers/appStats.controller.js
+// Thong ke dashboard: admin (tong quan) hoac mentor (khoa hoc cua minh).
+const { supabaseAdmin } = require("../services/supabase.service");
 
-// API thống kê động theo role, chỉ nhận uid từ body hoặc query
-exports.getStats = async (req, res) => {
+const getStats = async (req, res) => {
   try {
-    // Lấy uid từ body hoặc query
-    const uid = req.body.uid || req.query.uid;
-    if (!uid) {
-      return res.status(400).json({ error: "Thiếu uid" });
+    const uid = req.supabaseUser.authUser.id;
+    const role = req.supabaseUser.profile?.role;
+    if (role !== "admin" && role !== "mentor") {
+      return res.status(403).json({ error: "Ban khong co quyen xem thong ke nay" });
     }
-
-    // Luôn kiểm tra role từ DB
-    const pool = await poolPromise;
-    const resultRole = await pool
-      .request()
-      .input("uid", sql.NVarChar, uid)
-      .query(`SELECT role FROM users WHERE uid = @uid`);
-    if (resultRole.recordset.length === 0) {
-      return res.status(404).json({ error: "Không tìm thấy user" });
-    }
-    const role = resultRole.recordset[0].role;
 
     if (role === "admin") {
-      const result = await pool.request().query(`
-        SELECT
-          (SELECT COUNT(*) FROM courses) AS total_courses,
-          (SELECT COUNT(*) FROM users) AS total_users,
-          (SELECT COUNT(*) FROM quizzes) AS total_quizzes,
-          (SELECT COUNT(*) FROM course_reviews) AS total_reviews
-      `);
-      return res.json({ role: "admin", ...result.recordset[0] });
-    } else if (role === "mentor") {
-      const result = await pool.request().input("uid", sql.NVarChar, uid)
-        .query(`
-          SELECT
-            (SELECT COUNT(*) FROM courses WHERE instructor_uid = @uid) AS total_courses,
-            (SELECT ISNULL(SUM(enroll_count),0) FROM (
-              SELECT COUNT(*) AS enroll_count FROM enrollments e
-              JOIN courses c ON c.course_id = e.course_id
-              WHERE c.instructor_uid = @uid
-              GROUP BY e.course_id
-            ) t) AS total_students,
-            (SELECT COUNT(*) FROM lessons l JOIN courses c ON l.course_id = c.course_id WHERE c.instructor_uid = @uid) AS total_lessons,
-            (SELECT ROUND(AVG(rating),1) FROM (
-              SELECT AVG(CAST(r.rating AS FLOAT)) AS rating
-              FROM course_reviews r
-              JOIN courses c ON r.course_id = c.course_id
-              WHERE c.instructor_uid = @uid
-              GROUP BY r.course_id
-            ) t) AS avg_rating
-        `);
-      return res.json({ role: "mentor", ...result.recordset[0] });
-    } else {
-      return res
-        .status(403)
-        .json({ error: "Bạn không có quyền xem thống kê này" });
+      const [c, u, q, r, e, b] = await Promise.all([
+        supabaseAdmin.from("courses").select("course_id", { count: "exact", head: true }),
+        supabaseAdmin.from("users").select("id", { count: "exact", head: true }),
+        supabaseAdmin.from("quizzes").select("quiz_id", { count: "exact", head: true }),
+        supabaseAdmin.from("course_reviews").select("review_id", { count: "exact", head: true }),
+        supabaseAdmin.from("enrollments").select("enrollment_id", { count: "exact", head: true }),
+        supabaseAdmin.from("bookmarks").select("bookmark_id", { count: "exact", head: true }),
+      ]);
+      return res.status(200).json({
+        role: "admin",
+        total_courses: c.count || 0,
+        total_users: u.count || 0,
+        total_quizzes: q.count || 0,
+        total_reviews: r.count || 0,
+        total_enrollments: e.count || 0,
+        total_bookmarks: b.count || 0,
+      });
     }
+
+    // Mentor: chi tinh trong cac khoa hoc cua ho
+    const { data: courses } = await supabaseAdmin
+      .from("courses")
+      .select("course_id")
+      .eq("instructor_uid", uid);
+    const courseIds = (courses || []).map((c) => c.course_id);
+    if (!courseIds.length)
+      return res.status(200).json({
+        role: "mentor",
+        total_courses: 0,
+        total_lessons: 0,
+        total_students: 0,
+        total_reviews: 0,
+        avg_rating: 0,
+      });
+
+    const [lessonsRes, reviewsRes, enrollsRes] = await Promise.all([
+      supabaseAdmin.from("lessons").select("lesson_id", { count: "exact", head: true }).in("course_id", courseIds),
+      supabaseAdmin.from("course_reviews").select("rating").in("course_id", courseIds),
+      supabaseAdmin.from("enrollments").select("user_uid", { count: "exact", head: true }).in("course_id", courseIds),
+    ]);
+    const ratings = (reviewsRes.data || []).map((r) => r.rating).filter(Number.isInteger);
+    const avg = ratings.length ? Math.round((ratings.reduce((s, x) => s + x, 0) / ratings.length) * 10) / 10 : 0;
+    return res.status(200).json({
+      role: "mentor",
+      total_courses: courseIds.length,
+      total_lessons: lessonsRes.count || 0,
+      total_students: enrollsRes.count || 0,
+      total_reviews: ratings.length,
+      avg_rating: avg,
+    });
   } catch (err) {
+    console.error("appStats error:", err);
     res.status(500).json({ error: err.message });
   }
 };
+
+module.exports = { getStats };

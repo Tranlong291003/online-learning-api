@@ -1,61 +1,69 @@
-const { sql, poolPromise } = require("../../config/db.config");
+// controllers/quizResults/gradeQuizResult.js
+// Mentor cham bai tu luan: cap nhat score, status='da_cham', graded_by, graded_at.
+// graded_by FK -> users.id (bigserial), lay tu profile.
+const { updateRows, selectRows, supabaseAdmin } = require("../../services/supabase.service");
 
 const gradeQuizResult = async (req, res) => {
-  const { result_id } = req.params; // result_id từ URL
-  const { explanation, score, uid } = req.body; // Lấy uid từ body
-
-  if (!explanation || score === undefined || !uid) {
-    return res
-      .status(400)
-      .json({ error: "Thiếu thông tin chấm điểm hoặc giải thích" });
-  }
-
   try {
-    const pool = await poolPromise; // Sử dụng poolPromise để kết nối
-    const request = new sql.Request(pool);
+    const { result_id } = req.params;
+    const { score, explanation } = req.body;
+    const user_uid = req.supabaseUser?.authUser?.id;
+    const role = req.supabaseUser?.profile?.role;
 
-    // Truy vấn lấy id và role của người chấm điểm dựa trên uid
-    request.input("uid", sql.NVarChar, uid);
-    const userResult = await request.query(
-      "SELECT id, role FROM users WHERE uid = @uid"
+    if (!user_uid) return res.status(401).json({ error: "Chưa đăng nhập" });
+    if (role !== "mentor" && role !== "admin")
+      return res.status(403).json({ error: "Chỉ giảng viên hoặc admin mới được chấm bài" });
+    if (!result_id || isNaN(Number(result_id)))
+      return res.status(400).json({ error: "result_id không hợp lệ" });
+    const s = Number(score);
+    if (!Number.isFinite(s) || s < 0 || s > 10)
+      return res.status(400).json({ error: "score phải là số từ 0 đến 10" });
+
+    const { data: result, error: findErr } = await selectRows(
+      supabaseAdmin, "quiz_results", "result_id,quiz_id,user_uid,status",
+      { eq: { result_id: Number(result_id) }, single: true }
     );
+    if (findErr) throw findErr;
+    if (!result) return res.status(404).json({ error: "Không tìm thấy kết quả" });
 
-    // Kiểm tra nếu không tìm thấy người dùng
-    if (userResult.recordset.length === 0) {
-      return res.status(404).json({ error: "Không tìm thấy người chấm điểm" });
+    if (role === "mentor") {
+      // Mentor chi duoc cham bai thuoc quiz cua minh
+      const { data: quiz } = await supabaseAdmin
+        .from("quizzes")
+        .select("creator_uid")
+        .eq("quiz_id", result.quiz_id)
+        .maybeSingle();
+      if (!quiz || quiz.creator_uid !== user_uid)
+        return res.status(403).json({ error: "Bạn không phải giảng viên phụ trách bài này" });
     }
 
-    const graded_by = userResult.recordset[0].id; // ID của người chấm điểm
-    const userRole = userResult.recordset[0].role; // Role của người dùng
+    // Lay users.id (int) de gan graded_by
+    const { data: grader } = await supabaseAdmin
+      .from("users")
+      .select("id")
+      .eq("uid", user_uid)
+      .maybeSingle();
+    if (!grader) return res.status(404).json({ error: "Không tìm thấy hồ sơ người chấm" });
 
-    // Kiểm tra quyền chấm điểm (chỉ admin hoặc giảng viên mới có quyền)
-    if (userRole !== "admin" && userRole !== "giang_vien") {
-      return res.status(403).json({
-        error: "Bạn không có quyền chấm điểm bài kiểm tra",
-      });
-    }
-
-    // Khai báo các tham số cần thiết
-    request.input("result_id", sql.Int, result_id); // Sử dụng result_id
-    request.input("explanation", sql.NVarChar, explanation);
-    request.input("score", sql.Float, score);
-    request.input("graded_by", sql.Int, graded_by);
-
-    // Thực hiện cập nhật điểm và trạng thái bài làm
-    const result = await request.query(
-      "UPDATE quiz_results SET explanation = @explanation, score = @score, status = 'da_cham', graded_by = @graded_by, graded_at = GETDATE() WHERE result_id = @result_id" // Cập nhật với result_id
+    const { data: updated, error: updErr } = await updateRows(
+      supabaseAdmin, "quiz_results", {
+        score: s,
+        status: "da_cham",
+        explanation: explanation ? String(explanation).trim() : null,
+        graded_by: grader.id,
+        graded_at: new Date().toISOString(),
+      },
+      { result_id: Number(result_id) }
     );
+    if (updErr) throw updErr;
 
-    if (result.rowsAffected[0] === 0) {
-      return res.status(404).json({ error: "Kết quả không tồn tại" });
-    }
-
-    res.status(200).json({ message: "Chấm điểm bài kiểm tra thành công" });
+    res.status(200).json({
+      message: "Chấm bài thành công",
+      data: updated && updated[0] ? updated[0] : null,
+    });
   } catch (err) {
-    console.error(err);
-    res
-      .status(500)
-      .json({ error: "Lỗi khi chấm điểm bài kiểm tra: " + err.message });
+    console.error("gradeQuizResult error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 

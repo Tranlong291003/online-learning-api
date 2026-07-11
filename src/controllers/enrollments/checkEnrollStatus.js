@@ -1,41 +1,35 @@
-// controllers/checkEnrollStatus.js
-const { sql, poolPromise } = require("../../config/db.config");
+// controllers/enrollments/checkEnrollStatus.js
+// Kiem tra user da dang ky khoa hoc hay chua.
+const { supabaseAdmin } = require("../../services/supabase.service");
 
 const checkEnrollStatus = async (req, res) => {
-  const { uid, course_id } = req.params; // Dùng uid và course_id từ tham số đường dẫn
-
-  if (!uid || !course_id) {
-    return res.status(400).json({ error: "Thiếu uid hoặc course_id" });
-  }
-
   try {
-    const pool = await poolPromise;
-    const request = new sql.Request(pool);
+    const { course_id } = req.params;
+    const user_uid = req.supabaseUser?.authUser?.id;
 
-    // Kiểm tra khóa học có tồn tại
-    request.input("course_id", sql.Int, course_id);
-    const courseResult = await request.query(`
-      SELECT course_id FROM courses WHERE course_id = @course_id
-    `);
+    if (!user_uid) return res.status(401).json({ error: "Chưa đăng nhập" });
+    if (!course_id || isNaN(Number(course_id)))
+      return res.status(400).json({ error: "course_id không hợp lệ" });
 
-    if (courseResult.recordset.length === 0) {
-      return res.status(404).json({ error: "Khóa học không tồn tại" });
-    }
+    const { data, error } = await supabaseAdmin
+      .from("enrollments")
+      .select("enrollment_id, enrolled_at")
+      .eq("user_uid", user_uid)
+      .eq("course_id", Number(course_id))
+      .maybeSingle();
+    if (error) throw error;
 
-    // Kiểm tra người dùng đã đăng ký khóa học chưa
-    request.input("user_uid", sql.NVarChar, uid);
-    const enrollResult = await request.query(`
-      SELECT * FROM enrollments
-      WHERE user_uid = @user_uid AND course_id = @course_id
-    `);
-
-    if (enrollResult.recordset.length > 0) {
-      return res.status(200).json({ enrolled: true });
-    } else {
-      return res.status(200).json({ enrolled: false });
-    }
+    res.status(200).json({
+      message: "Kiểm tra trạng thái đăng ký",
+      data: {
+        course_id: Number(course_id),
+        enrolled: !!data,
+        enrollment: data || null,
+      },
+    });
   } catch (err) {
-    res.status(500).json({ error: "Lỗi kiểm tra đăng ký: " + err.message });
+    console.error("checkEnrollStatus error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 

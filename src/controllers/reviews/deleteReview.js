@@ -1,44 +1,35 @@
 // controllers/reviews/deleteReview.js
-const { sql, poolPromise } = require("../../config/db.config");
+const { deleteRows, selectRows, supabaseAdmin } = require("../../services/supabase.service");
 
 const deleteReview = async (req, res) => {
   try {
-    const { reviewId } = req.params;
-    const { user_uid } = req.body;
+    const { review_id } = req.params;
+    if (!review_id || isNaN(Number(review_id)))
+      return res.status(400).json({ error: "review_id không hợp lệ" });
 
-    if (!user_uid) {
-      return res.status(400).json({ error: "user_uid không được bỏ trống" });
+    const user_uid = req.supabaseUser?.authUser?.id;
+    const role = req.supabaseUser?.profile?.role;
+    if (!user_uid) return res.status(401).json({ error: "Chưa đăng nhập" });
+
+    const { data: review, error: findErr } = await selectRows(
+      supabaseAdmin, "course_reviews", "review_id,user_uid",
+      { eq: { review_id: Number(review_id) }, single: true }
+    );
+    if (findErr) throw findErr;
+    if (!review) return res.status(404).json({ error: "Không tìm thấy đánh giá" });
+    if (role !== "admin" && review.user_uid !== user_uid) {
+      return res.status(403).json({ error: "Không có quyền xóa đánh giá này" });
     }
 
-    const pool = await poolPromise;
+    const { error: delErr } = await deleteRows(
+      supabaseAdmin, "course_reviews", { review_id: Number(review_id) }
+    );
+    if (delErr) throw delErr;
 
-    // 1. Kiểm tra tồn tại và chủ sở hữu
-    const chk = await pool
-      .request()
-      .input("reviewId", sql.Int, reviewId)
-      .query(
-        `SELECT user_uid
-         FROM course_reviews
-         WHERE review_id = @reviewId`
-      );
-    if (chk.recordset.length === 0) {
-      return res.status(404).json({ error: "Không tìm thấy review" });
-    }
-    if (chk.recordset[0].user_uid !== user_uid) {
-      return res
-        .status(403)
-        .json({ error: "Bạn không có quyền xóa review này" });
-    }
-
-    // 2. Thực hiện xóa
-    await pool
-      .request()
-      .input("reviewId", sql.Int, reviewId)
-      .query(`DELETE FROM course_reviews WHERE review_id = @reviewId`);
-
-    return res.status(200).json({ message: "✅ Xóa thành công" });
+    res.status(200).json({ message: "Xóa đánh giá thành công" });
   } catch (err) {
-    return res.status(500).json({ error: "Lỗi server: " + err.message });
+    console.error("deleteReview error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 

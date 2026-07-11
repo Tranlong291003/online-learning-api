@@ -1,192 +1,69 @@
-const { sql, poolPromise } = require("../../config/db.config");
+// controllers/questions/updateQuestion.js
+const { updateRows, selectRows, supabaseAdmin } = require("../../services/supabase.service");
 
 const updateQuestion = async (req, res) => {
-  const { question_id } = req.params; // Lấy question_id từ URL
-  const {
-    type: submittedType, // nếu client có gửi kèm để so sánh
-    question,
-    options,
-    correct_index,
-    expected_keywords,
-    uid, // UID để kiểm tra quyền người dùng
-  } = req.body;
-
-  if (!uid) {
-    return res.status(400).json({ error: "UID không hợp lệ" });
-  }
-
   try {
-    const pool = await poolPromise; // Sử dụng poolPromise để kết nối
-    const request = new sql.Request(pool);
+    const { question_id } = req.params;
+    if (!question_id || isNaN(Number(question_id)))
+      return res.status(400).json({ error: "question_id không hợp lệ" });
 
-    // Kiểm tra quyền của người dùng
-    request.input("uid", sql.NVarChar, uid);
-    const roleQuery = await request.query(
-      `SELECT role FROM users WHERE uid = @uid`
+    const user_uid = req.supabaseUser?.authUser?.id;
+    const role = req.supabaseUser?.profile?.role;
+    if (!user_uid) return res.status(401).json({ error: "Chưa đăng nhập" });
+
+    const { data: question, error: findErr } = await selectRows(
+      supabaseAdmin, "quiz_questions", "question_id,quiz_id",
+      { eq: { question_id: Number(question_id) }, single: true }
     );
+    if (findErr) throw findErr;
+    if (!question) return res.status(404).json({ error: "Không tìm thấy câu hỏi" });
 
-    const userRole = roleQuery.recordset[0]?.role;
-
-    // Kiểm tra quyền cập nhật câu hỏi (Admin hoặc Giảng viên)
-    if (userRole !== "admin" && userRole !== "mentor") {
-      return res.status(403).json({
-        error: "Bạn không có quyền cập nhật câu hỏi",
-      });
+    const { data: quiz } = await supabaseAdmin
+      .from("quizzes")
+      .select("creator_uid, type")
+      .eq("quiz_id", question.quiz_id)
+      .maybeSingle();
+    if (role !== "admin" && (!quiz || quiz.creator_uid !== user_uid)) {
+      return res.status(403).json({ error: "Không có quyền sửa câu hỏi này" });
     }
 
-    // 1. Lấy thông tin câu hỏi dựa trên question_id
-    request.input("question_id", sql.Int, question_id);
-    const questionData = await request.query(`
-      SELECT qq.question_id, qq.quiz_id, qq.question,
-             qq.options, qq.correct_index, qq.expected_keywords
-      FROM quiz_questions qq
-      WHERE qq.question_id = @question_id
-    `);
-
-    if (questionData.recordset.length === 0) {
-      return res.status(404).json({
-        message: "Câu hỏi không tồn tại hoặc đã bị xóa.",
-      });
+    const patch = {};
+    if (req.body.question !== undefined) {
+      if (!req.body.question || !String(req.body.question).trim())
+        return res.status(400).json({ error: "Nội dung câu hỏi không được để trống" });
+      patch.question = String(req.body.question).trim();
     }
-
-    // Lấy quiz_id từ câu hỏi để xác định quiz
-    const currentQuestion = questionData.recordset[0];
-    const quiz_id = currentQuestion.quiz_id;
-
-    // 2. Kiểm tra quiz có tồn tại và lấy type
-    request.input("quiz_id", sql.Int, quiz_id);
-    const quizResult = await request.query(`
-      SELECT [type]
-      FROM quizzes
-      WHERE quiz_id = @quiz_id
-    `);
-
-    if (quizResult.recordset.length === 0) {
-      return res.status(404).json({
-        message: "Quiz tương ứng với câu hỏi không tồn tại.",
-      });
+    if (req.body.options !== undefined) {
+      if (!Array.isArray(req.body.options))
+        return res.status(400).json({ error: "options phải là mảng chuỗi" });
+      patch.options = JSON.stringify(req.body.options);
     }
-
-    const quizType = quizResult.recordset[0].type;
-
-    // 3. So sánh với submittedType (nếu client gửi lên)
-    if (submittedType && submittedType !== quizType) {
-      return res.status(400).json({
-        message: `Sai loại quiz. Quiz trong DB là '${quizType}', nhưng bạn gửi '${submittedType}'.`,
-      });
+    if (req.body.correct_index !== undefined) {
+      const ci = Number(req.body.correct_index);
+      if (!Number.isInteger(ci) || ci < 0)
+        return res.status(400).json({ error: "correct_index phải là số nguyên >= 0" });
+      patch.correct_index = ci;
     }
-
-    // 4. Áp dụng ràng buộc tuỳ loại quiz
-    if (quizType === "trac_nghiem") {
-      // Bắt buộc phải có options và correct_index
-      if (!options || correct_index === undefined) {
-        return res.status(400).json({
-          message: "Câu hỏi trắc nghiệm cần có 'options' và 'correct_index'.",
-        });
-      }
-    } else if (quizType === "tu_luan") {
-      // Tự luận chỉ cần expected_keywords, còn lại để null
-      // (Tuỳ theo bạn có bắt buộc expected_keywords hay không)
-      // Ví dụ: nếu bạn muốn bắt buộc
-      // if (!expected_keywords) {
-      //   return res.status(400).json({
-      //     message: "Câu hỏi tự luận cần có 'expected_keywords'."
-      //   });
-      // }
-    } else {
-      return res.status(400).json({
-        message: `Loại quiz không hợp lệ: ${quizType}`,
-      });
+    if (req.body.expected_keywords !== undefined) {
+      patch.expected_keywords = req.body.expected_keywords
+        ? String(req.body.expected_keywords).trim() : null;
     }
+    if (Object.keys(patch).length === 0)
+      return res.status(400).json({ error: "Không có trường nào để cập nhật" });
+    patch.updated_at = new Date().toISOString();
 
-    // 5. Kiểm tra trùng lặp câu hỏi (question) trong cùng quiz,
-    //    ngoại trừ chính câu hỏi này (question_id hiện tại)
-    if (question) {
-      request.input("new_question", sql.NVarChar, question);
-      const duplicateCheck = await request.query(`
-        SELECT question_id
-        FROM quiz_questions
-        WHERE quiz_id = @quiz_id
-          AND question = @new_question
-          AND question_id <> @question_id
-      `);
-      if (duplicateCheck.recordset.length > 0) {
-        return res.status(400).json({
-          message: "Câu hỏi này đã tồn tại trong quiz.",
-        });
-      }
-    }
-
-    // 6. Chuẩn bị tham số cập nhật
-    // - Trắc nghiệm => lưu options, correct_index; expected_keywords = null
-    // - Tự luận => lưu expected_keywords; options, correct_index = null
-    // - Tùy bạn muốn cho phép sửa "question" hay không; ở đây cho phép.
-    let finalOptions = null;
-    let finalCorrectIndex = null;
-    let finalExpectedKeywords = null;
-
-    if (quizType === "trac_nghiem") {
-      // stringify options nếu nó là array/object
-      finalOptions = options ? JSON.stringify(options) : null;
-      finalCorrectIndex = correct_index;
-      // Tự luận => null
-      finalExpectedKeywords = null;
-    } else {
-      // tu_luan
-      finalOptions = null;
-      finalCorrectIndex = null;
-      finalExpectedKeywords = expected_keywords || null;
-    }
-
-    request.input(
-      "updated_question",
-      sql.NVarChar,
-      question || currentQuestion.question
+    const { data: updated, error: updErr } = await updateRows(
+      supabaseAdmin, "quiz_questions", patch, { question_id: Number(question_id) }
     );
-    request.input("updated_options", sql.NVarChar, finalOptions);
-    request.input("updated_correct_index", sql.Int, finalCorrectIndex);
-    request.input(
-      "updated_expected_keywords",
-      sql.NVarChar,
-      finalExpectedKeywords
-    );
+    if (updErr) throw updErr;
 
-    // 7. Thực hiện UPDATE
-    const updateResult = await request.query(`
-      UPDATE quiz_questions
-      SET
-        question = @updated_question,
-        options = @updated_options,
-        correct_index = @updated_correct_index,
-        expected_keywords = @updated_expected_keywords,
-        updated_at = GETDATE()
-      WHERE question_id = @question_id
-    `);
-
-    if (updateResult.rowsAffected[0] === 0) {
-      return res.status(404).json({
-        message: "Cập nhật không thành công. Câu hỏi có thể đã bị xóa.",
-      });
-    }
-
-    // 8. Lấy lại dữ liệu sau update
-    const updatedData = await request.query(`
-      SELECT *
-      FROM quiz_questions
-      WHERE question_id = @question_id
-    `);
-
-    // 9. Trả về kết quả
-    return res.status(200).json({
-      message: `Cập nhật câu hỏi thành công. Loại quiz là '${quizType}'.`,
-      data: updatedData.recordset[0],
+    res.status(200).json({
+      message: "Cập nhật câu hỏi thành công",
+      data: updated && updated[0] ? updated[0] : null,
     });
   } catch (err) {
-    console.error(err);
-    // Không hiển thị lỗi chi tiết, chỉ báo chung chung
-    return res.status(500).json({
-      message: "Đã xảy ra lỗi khi cập nhật câu hỏi. Vui lòng thử lại sau.",
-    });
+    console.error("updateQuestion error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 

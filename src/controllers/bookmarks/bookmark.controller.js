@@ -1,10 +1,10 @@
-// controllers/courseCategories/courseCategories.controller.js
-const getBookmarksByUser = require("./getBookmarksByUser");
+// controllers/bookmarks/bookmark.controller.js
 const createBookmark = require("./createBookmark");
 const deleteBookmark = require("./deleteBookmark");
+const getBookmarksByUser = require("./getBookmarksByUser");
 
 module.exports = {
-  getBookmarksByUser,
   createBookmark,
   deleteBookmark,
+  getBookmarksByUser,
 };

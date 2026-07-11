@@ -1,104 +1,52 @@
 // controllers/courseCategories/createCategory.js
-const path = require("path");
-const { sql, poolPromise } = require("../../config/db.config");
-const { sendNotification } = require("../../services/notificationService");
+const { insertRows, selectRows, supabaseAdmin } = require("../../services/supabase.service");
+const { uploadBuffer, removeObject } = require("../../services/supabaseStorage.service");
+
+const randomStr = () => Math.random().toString(36).slice(2, 8);
 
 const createCategory = async (req, res) => {
+  let uploadedKey = null;
   try {
-    const { name, description, uid } = req.body;
-    const iconFile = req.file;
+    const { name, description } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: "Vui lòng nhập tên danh mục" });
 
-    if (!name)
-      return res
-        .status(400)
-        .json({ error: "Tên danh mục không được bỏ trống" });
-    if (!uid) return res.status(400).json({ error: "UID không được bỏ trống" });
+    // Kiem tra trung ten
+    const { data: existed, error: findErr } = await supabaseAdmin
+      .from("course_categories")
+      .select("category_id")
+      .ilike("name", name.trim())
+      .maybeSingle();
+    if (findErr) throw findErr;
+    if (existed) return res.status(409).json({ error: "Tên danh mục đã tồn tại" });
 
-    const pool = await poolPromise;
-
-    // 1. Kiểm quyền user
-    const reqRole = new sql.Request(pool);
-    reqRole.input("uid", sql.NVarChar, uid);
-    const roleQ = await reqRole.query(
-      "SELECT role FROM users WHERE uid = @uid"
-    );
-    const userRole = roleQ.recordset[0]?.role;
-    if (userRole !== "mentor" && userRole !== "admin") {
-      return res.status(403).json({ error: "Bạn không có quyền tạo danh mục" });
+    let image_url = null;
+    if (req.file && req.file.buffer) {
+      const ext = (req.file.originalname || "").split(".").pop() || "jpg";
+      const key = `categories/${Date.now()}-${randomStr()}.${ext}`;
+      uploadedKey = key;
+      const contentType = req.file.mimetype || "image/jpeg";
+      image_url = await uploadBuffer("uploads", key, req.file.buffer, contentType);
     }
 
-    // 2. Chèn category vào DB
-    const iconPath = iconFile
-      ? `/uploads/categories/${iconFile.filename}`
-      : null;
-
-    const reqIns = new sql.Request(pool);
-    reqIns.input("name", sql.NVarChar, name);
-    reqIns.input("desc", sql.NVarChar, description);
-    reqIns.input("icon", sql.NVarChar, iconPath);
-    await reqIns.query(`
-      INSERT INTO course_categories (name, description, icon, created_at)
-      VALUES (@name, @desc, @icon, GETDATE())
-    `);
-
-    // 3. Lấy FCM token của user
-    const reqUser = new sql.Request(pool);
-    reqUser.input("uid", sql.NVarChar, uid);
-    const userQ = await reqUser.query(
-      "SELECT fcm_token FROM users WHERE uid = @uid"
-    );
-    const fcmToken = userQ.recordset[0]?.fcm_token;
-
-    // 4. Tạo record notification
-    const notificationTitle = "Tạo danh mục thành công";
-    const notificationBody = `Danh mục ${name} đã được tạo thành công.`;
-    const reqNoti = new sql.Request(pool);
-    reqNoti
-      .input("uid", sql.NVarChar, uid)
-      .input("title", sql.NVarChar, notificationTitle)
-      .input("content", sql.NVarChar, notificationBody)
-      .input("icon", sql.NVarChar, "category")
-      .input("color", sql.NVarChar, "#2196f3")
-      .input("is_read", sql.Bit, false)
-      .input("created_at", sql.DateTime, new Date());
-    const notiResult = await reqNoti.query(`
-      INSERT INTO notifications (uid, title, content, icon, color, is_read, created_at)
-      OUTPUT INSERTED.noti_id
-      VALUES (@uid, @title, @content, @icon, @color, @is_read, @created_at)
-    `);
-    const noti_id = notiResult.recordset[0].noti_id;
-
-    // 5. Gửi FCM notification (nếu có token)
-    let sent = false;
-    if (fcmToken) {
-      await sendNotification(
-        fcmToken,
-        noti_id,
-        uid,
-        notificationTitle,
-        notificationBody,
-        "category",
-        "#2196f3"
-      );
-      sent = true;
+    const { data: inserted, error: insErr } = await insertRows(supabaseAdmin, "course_categories", {
+      name: name.trim(),
+      description: description ? description.trim() : null,
+      image_url,
+    });
+    if (insErr) {
+      if (uploadedKey) await removeObject("uploads", uploadedKey).catch(() => {});
+      throw insErr;
     }
-
-    // 6. Trả về client, có cả thông tin notification đã gửi
-    return res.status(201).json({
-      message: "✅ Tạo danh mục thành công",
-      notification: {
-        noti_id,
-        title: notificationTitle,
-        body: notificationBody,
-        sent,
-      },
+    res.status(201).json({
+      message: "Tạo danh mục thành công",
+      data: inserted && inserted[0] ? inserted[0] : null,
     });
   } catch (err) {
+    if (uploadedKey) await removeObject("uploads", uploadedKey).catch(() => {});
     console.error("createCategory error:", err);
-    return res
-      .status(500)
-      .json({ error: "❌ Lỗi tạo danh mục: " + err.message });
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 
 module.exports = createCategory;
+

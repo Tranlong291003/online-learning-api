@@ -1,35 +1,22 @@
-const { sql, poolPromise } = require("../../config/db.config");
+// controllers/notification/deleteNotification.js
+// Xoa notification theo noti_id (cua user dang dang nhap).
+const { supabaseAdmin } = require("../../services/supabase.service");
 
-const deleteNotification = async (req, res) => {
-  const { uid } = req.body; // Lấy uid từ body
-  const notiId = req.params.id;
-
-  if (!uid) {
-    return res.status(400).json({ error: "Thiếu uid" });
-  }
-
+module.exports = async function deleteNotification(req, res) {
   try {
-    const pool = await poolPromise;
-    // Xóa thông báo chỉ khi nó thuộc về user đó
-    const result = await pool
-      .request()
-      .input("noti_id", sql.Int, notiId)
-      .input("uid", sql.NVarChar, uid)
-      .query(
-        "DELETE FROM notifications WHERE noti_id = @noti_id AND uid = @uid"
-      );
+    const uid = req.supabaseUser.authUser.id;
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "Thieu noti_id" });
 
-    if (result.rowsAffected > 0) {
-      res.status(200).send({ message: "Thông báo đã bị xóa" });
-    } else {
-      res.status(404).send({
-        message: "Không tìm thấy thông báo hoặc bạn không có quyền xóa",
-      });
-    }
-  } catch (error) {
-    console.log("Lỗi khi xóa thông báo:", error);
-    res.status(500).send({ message: "Không thể xóa thông báo" });
+    const { error } = await supabaseAdmin
+      .from("notifications")
+      .delete()
+      .eq("noti_id", id)
+      .eq("uid", uid);
+    if (error) throw error;
+    res.status(200).json({ message: "Da xoa thong bao" });
+  } catch (err) {
+    console.error("deleteNotification error:", err);
+    res.status(500).json({ error: err.message });
   }
 };
-
-module.exports = deleteNotification;

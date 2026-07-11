@@ -1,31 +1,25 @@
-const { sql, poolPromise } = require("../../config/db.config");
-const admin = require("../../config/firebase.config"); // Firebase Admin SDK
+// controllers/users/getUserById.js
+// :id co the la uid (text) hoac id (bigserial int). Tu dong nhan biet.
+const { selectRows, supabaseAdmin } = require("../../services/supabase.service");
 
-// Promise-based handler, dùng uid thay cho user_id
 const getUserById = async (req, res) => {
-  const { id: uid } = req.params; // uid từ URL
-
   try {
-    const pool = await poolPromise;
-    const result = await pool.request().input("uid", sql.NVarChar, uid).query(`
-        SELECT *
-        FROM users
-        WHERE uid = @uid
-      `);
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "Thiếu tham số id" });
 
-    if (result.recordset.length === 0) {
-      return res.status(404).json({ error: "Không tìm thấy người dùng" });
+    let result;
+    if (/^\d+$/.test(id)) {
+      result = await supabaseAdmin.from("users").select("*").eq("id", Number(id)).maybeSingle();
+    } else {
+      result = await supabaseAdmin.from("users").select("*").eq("uid", id).maybeSingle();
     }
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json({ error: "Không tìm thấy người dùng" });
 
-    res.json({
-      message: "Chi tiết người dùng",
-      user: result.recordset[0],
-    });
+    res.status(200).json({ message: "Chi tiết người dùng", user: result.data });
   } catch (err) {
-    console.error("Error in getUserById:", err);
-    res
-      .status(500)
-      .json({ error: "Lỗi khi lấy chi tiết người dùng: " + err.message });
+    console.error("getUserById error:", err);
+    res.status(500).json({ error: "Lỗi khi lấy chi tiết người dùng: " + err.message });
   }
 };
 

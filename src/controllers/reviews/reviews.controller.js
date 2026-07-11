@@ -1,11 +1,12 @@
+// controllers/reviews/reviews.controller.js
 const createReview = require("./createReview");
-const getReviewsByCourse = require("./getReviewsByCourse");
-const deleteReview = require("./deleteReview");
 const updateReview = require("./updateReview");
+const deleteReview = require("./deleteReview");
+const getReviewsByCourse = require("./getReviewsByCourse");
 
 module.exports = {
   createReview,
-  getReviewsByCourse,
-  deleteReview,
   updateReview,
+  deleteReview,
+  getReviewsByCourse,
 };

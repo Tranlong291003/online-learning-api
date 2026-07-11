@@ -1,31 +1,69 @@
-const jwt = require("jsonwebtoken");
+// =============================================================
+// Auth middleware — dùng Supabase JWT
+// =============================================================
+// Đọc Bearer token từ header, verify với Supabase auth.getUser(),
+// gắn thông tin user vào req.user + req.supabaseUser.
+// =============================================================
+const { supabaseAdmin } = require("../config/supabase.config");
 
-// Danh sách blacklist token (demo, lưu trong RAM)
-const blacklist = new Set([
-  // Token bạn muốn vô hiệu hóa:
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiJENFBRTXdXOEo0VldvT2ZuMVJFOFlxSEFGMGsxIiwiZW1haWwiOiJhZG1AZ21haWwuY29tIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNzQ3OTc3MzQ1LCJleHAiOjE3NDg1ODIxNDV9.wI2RcLPdxAkL52PxWwDETZMSfuIPMpRnFGv-7RVQubg",
-]);
-
-module.exports = (req, res, next) => {
+module.exports = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Token không hợp lệ" });
-  }
-  const token = authHeader.split(" ")[1];
-  // Kiểm tra blacklist
-  if (blacklist.has(token)) {
-    return res.status(401).json({ error: "Token đã bị thu hồi" });
-  }
-  try {
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "your_secret_key"
-    );
-    req.user = decoded;
-    next();
-  } catch (err) {
     return res
       .status(401)
-      .json({ error: "Token không hợp lệ hoặc đã hết hạn" });
+      .json({ error: "Thiếu hoặc sai định dạng Authorization header" });
   }
+  const accessToken = authHeader.split(" ")[1];
+
+  try {
+    const { data, error } = await supabaseAdmin.auth.getUser(accessToken);
+    if (error || !data || !data.user) {
+      return res
+        .status(401)
+        .json({ error: "Token không hợp lệ hoặc đã hết hạn" });
+    }
+
+    const { data: profile, error: profileErr } = await supabaseAdmin
+      .from("users")
+      .select("id, uid, name, role, is_active, avatar_url")
+      .eq("uid", data.user.id)
+      .maybeSingle();
+
+    if (profileErr) {
+      return res
+        .status(500)
+        .json({ error: "Không lấy được profile: " + profileErr.message });
+    }
+    if (!profile) {
+      return res
+        .status(401)
+        .json({ error: "User chưa có profile trong hệ thống" });
+    }
+    if (profile.is_active === false) {
+      return res.status(403).json({ error: "Tài khoản đã bị vô hiệu hoá" });
+    }
+
+    req.user = profile;
+    req.supabaseUser = { accessToken, authUser: data.user };
+    next();
+  } catch (err) {
+    console.error("[authMiddleware] error:", err);
+    res
+      .status(500)
+      .json({ error: "Lỗi xác thực: " + (err.message || "unknown") });
+  }
+};
+
+module.exports.requireRole = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ error: "Chưa xác thực" });
+    }
+    if (!allowedRoles.includes(req.user.role)) {
+      return res
+        .status(403)
+        .json({ error: `Cần role: ${allowedRoles.join(" hoặc ")}` });
+    }
+    next();
+  };
 };

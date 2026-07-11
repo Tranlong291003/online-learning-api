@@ -1,13 +1,15 @@
+// controllers/notification/notification.controller.js
 const createNotification = require("./createNotification");
-const getNotifications = require("./getNotifications");
 const updateNotification = require("./updateNotification");
 const deleteNotification = require("./deleteNotification");
+const getNotifications = require("./getNotifications");
 const markAsRead = require("./markAsRead");
 
 module.exports = {
   createNotification,
-  getNotifications,
   updateNotification,
   deleteNotification,
+  getNotifications,
   markAsRead,
 };
+

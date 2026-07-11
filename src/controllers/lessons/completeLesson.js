@@ -1,95 +1,80 @@
-// src/controllers/lesson/completeLesson.js
-const { sql, poolPromise } = require("../../config/db.config");
+// controllers/lessons/completeLesson.js
+// User danh dau hoan thanh bai hoc. Insert vao lesson_progress (UNIQUE user+course+lesson).
+const { insertRows, supabaseAdmin } = require("../../services/supabase.service");
 
 const completeLesson = async (req, res) => {
-  const { userUid, courseId, lessonId } = req.body;
-
-  // 1. Validate input
-  if (!userUid || !courseId || !lessonId) {
-    return res
-      .status(400)
-      .json({ error: "Thiếu userUid, courseId hoặc lessonId" });
-  }
-  if (!Number.isInteger(courseId) || !Number.isInteger(lessonId)) {
-    return res.status(400).json({ error: "courseId và lessonId phải là số" });
-  }
-
   try {
-    const pool = await poolPromise;
-    const rq = new sql.Request(pool);
+    const { courseId, lessonId } = req.body;
+    const user_uid = req.supabaseUser?.authUser?.id;
 
-    rq.input("user_uid", sql.NVarChar, userUid);
-    rq.input("course_id", sql.Int, courseId);
-    rq.input("lesson_id", sql.Int, lessonId);
-
-    /* 2. Kiểm tra lesson thuộc course */
-    const lessonCheck = await rq.query(`
-      SELECT TOP 1 1
-      FROM lessons
-      WHERE lesson_id = @lesson_id
-        AND course_id = @course_id
-    `);
-    if (!lessonCheck.recordset.length) {
-      return res
-        .status(404)
-        .json({ error: "Bài học không thuộc khóa học này" });
+    if (!user_uid) return res.status(401).json({ error: "Chưa đăng nhập" });
+    if (!courseId || !lessonId) {
+      return res.status(400).json({ error: "Thiếu courseId hoặc lessonId" });
+    }
+    if (!Number.isInteger(Number(courseId)) || !Number.isInteger(Number(lessonId))) {
+      return res.status(400).json({ error: "courseId và lessonId phải là số" });
     }
 
-    /* 3. Tuỳ chọn: kiểm tra user đã ghi danh (nếu có bảng enrollments) */
-    const enroll = await rq.query(`
-      SELECT 1 FROM enrollments
-      WHERE user_uid=@user_uid AND course_id=@course_id
-    `);
-    if (!enroll.recordset.length) {
-      return res.status(403).json({ error: "Chưa ghi danh khóa học" });
+    const cid = Number(courseId);
+    const lid = Number(lessonId);
+
+    // Kiem tra lesson thuoc course
+    const { data: lessonRow } = await supabaseAdmin
+      .from("lessons")
+      .select("lesson_id")
+      .eq("lesson_id", lid)
+      .eq("course_id", cid)
+      .maybeSingle();
+    if (!lessonRow) return res.status(404).json({ error: "Bài học không thuộc khóa học này" });
+
+    // Kiem tra user da enroll
+    const { data: enrolls } = await supabaseAdmin
+      .from("enrollments")
+      .select("enrollment_id")
+      .eq("user_uid", user_uid)
+      .eq("course_id", cid)
+      .limit(1);
+    if (!enrolls || !enrolls.length) {
+      return res.status(403).json({ error: "Chưa đăng ký khóa học" });
     }
 
-    /* 4. Upsert trong transaction */
-    const trans = new sql.Transaction(pool);
-    await trans.begin();
+    const { error: insErr } = await insertRows(
+      supabaseAdmin, "lesson_progress", {
+        user_uid,
+        course_id: cid,
+        lesson_id: lid,
+        is_completed: true,
+        completed_at: new Date().toISOString(),
+      }
+    );
+    const alreadyCompleted = insErr && insErr.code === "23505";
+    if (insErr && !alreadyCompleted) throw insErr;
 
-    const trRq = new sql.Request(trans);
-    trRq.input("user_uid", sql.NVarChar, userUid);
-    trRq.input("course_id", sql.Int, courseId);
-    trRq.input("lesson_id", sql.Int, lessonId);
+    const { count: totalCount } = await supabaseAdmin
+      .from("lessons")
+      .select("lesson_id", { count: "exact", head: true })
+      .eq("course_id", cid);
+    const { count: completedCount } = await supabaseAdmin
+      .from("lesson_progress")
+      .select("progress_id", { count: "exact", head: true })
+      .eq("user_uid", user_uid)
+      .eq("course_id", cid)
+      .eq("is_completed", true);
+    const total = totalCount || 0;
+    const done = completedCount || 0;
+    const progress = total > 0 ? Math.floor((done / total) * 100) : 0;
 
-    const mergeResult = await trRq.query(`
-      MERGE lesson_progress AS tgt
-      USING (SELECT @user_uid AS user_uid,
-                    @course_id AS course_id,
-                    @lesson_id AS lesson_id) AS src
-      ON  tgt.user_uid  = src.user_uid
-      AND tgt.course_id = src.course_id
-      AND tgt.lesson_id = src.lesson_id
-      WHEN MATCHED THEN
-        UPDATE SET is_completed = 1, completed_at = GETDATE()
-      WHEN NOT MATCHED THEN
-        INSERT (user_uid, course_id, lesson_id, is_completed, completed_at)
-        VALUES (@user_uid, @course_id, @lesson_id, 1, GETDATE())
-      OUTPUT
-        $action AS action;
-    `);
+    const message = alreadyCompleted
+      ? "Bạn đã hoàn thành bài học này rồi"
+      : "Đánh dấu hoàn thành bài học thành công";
 
-    await trans.commit();
-
-    const action = mergeResult.recordset[0]?.action || "UNKNOWN";
-    let message = "Đã đánh dấu hoàn thành bài học";
-    if (action === "UPDATE") message = "Cập nhật trạng thái hoàn thành";
-    if (action === "INSERT") message = "Hoàn thành bài học (lần đầu)";
-    if (action === "UPDATE" && mergeResult.rowsAffected[0] === 0) {
-      // trường hợp đã completed trước đó
-      message = "Bạn đã học bài này rồi";
-    }
-
-    return res.status(200).json({
-      status: action.toLowerCase(), // insert | update
+    res.status(200).json({
       message,
+      data: { lesson_id: lid, course_id: cid, progress, total_lessons: total, completed_lessons: done },
     });
   } catch (err) {
-    console.error(err);
-    return res
-      .status(500)
-      .json({ error: "Lỗi đánh dấu hoàn thành: " + err.message });
+    console.error("completeLesson error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 

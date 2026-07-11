@@ -1,59 +1,47 @@
-// src/controllers/progress/getCourseProgressForUser.js
-const { sql, poolPromise } = require("../../config/db.config");
+// controllers/enrollments/getCourseProgressForUser.js
+// Tinh progress chi tiet cua user cho mot khoa hoc (lesson_progress).
+const { supabaseAdmin } = require("../../services/supabase.service");
 
 const getCourseProgressForUser = async (req, res) => {
-  /* Lấy từ body thay vì params */
-  const { userUid, courseId } = req.body;
-
-  if (!userUid || !courseId) {
-    return res
-      .status(400)
-      .json({ error: "Thiếu userUid hoặc courseId trong body JSON" });
-  }
-
   try {
-    const pool = await poolPromise;
-    const rq = new sql.Request(pool);
+    const { course_id } = req.params;
+    const user_uid = req.supabaseUser?.authUser?.id;
 
-    rq.input("uid", sql.NVarChar, userUid);
-    rq.input("course_id", sql.Int, Number(courseId));
+    if (!user_uid) return res.status(401).json({ error: "Chưa đăng nhập" });
+    if (!course_id || isNaN(Number(course_id)))
+      return res.status(400).json({ error: "course_id không hợp lệ" });
 
-    /* 1. Tổng số bài học của khoá */
-    const total = await rq.query(`
-      SELECT COUNT(*) AS total_lessons
-      FROM lessons
-      WHERE course_id = @course_id
-    `);
-    const totalLessons = total.recordset[0]?.total_lessons ?? 0;
+    const { count: totalCount } = await supabaseAdmin
+      .from("lessons")
+      .select("lesson_id", { count: "exact", head: true })
+      .eq("course_id", Number(course_id));
 
-    /* 2. Số bài đã hoàn thành (không cần JOIN) */
-    const done = await rq.query(`
-      SELECT COUNT(*) AS completed_lessons
-      FROM lesson_progress
-      WHERE user_uid     = @uid
-        AND course_id    = @course_id
-        AND is_completed = 1
-    `);
-    const completedLessons = done.recordset[0]?.completed_lessons ?? 0;
+    const { data: completedRows, error: progErr } = await supabaseAdmin
+      .from("lesson_progress")
+      .select("lesson_id, completed_at")
+      .eq("user_uid", user_uid)
+      .eq("course_id", Number(course_id))
+      .eq("is_completed", true);
+    if (progErr) throw progErr;
 
-    /* 3. Tính % tiến độ */
-    const progressPercent =
-      totalLessons > 0
-        ? Math.floor((completedLessons / totalLessons) * 100)
-        : 0;
+    const total = totalCount || 0;
+    const done = (completedRows || []).length;
+    const progress = total > 0 ? Math.floor((done / total) * 100) : 0;
+    const completed_lesson_ids = (completedRows || []).map((r) => r.lesson_id);
 
-    return res.status(200).json({
-      message: "Lấy tiến độ học tập thành công",
+    res.status(200).json({
+      message: "Lấy tiến độ khóa học",
       data: {
-        total_lessons: totalLessons,
-        completed_lessons: completedLessons,
-        progress_percent: progressPercent,
+        course_id: Number(course_id),
+        total_lessons: total,
+        completed_lessons: done,
+        progress_percent: progress,
+        completed_lesson_ids,
       },
     });
   } catch (err) {
-    return res
-      .status(500)
-      .json({ error: "Lỗi lấy tiến độ học tập: " + err.message });
+    console.error("getCourseProgressForUser error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 

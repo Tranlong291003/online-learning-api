@@ -4,20 +4,54 @@ const mentorRequestController = require("../controllers/mentorRequest.controller
 const authMiddleware = require("../middleware/auth.middleware");
 const uploadMentorRequestImage = require("../config/multer.mentorRequest.config");
 
-// Tất cả các route đều cần token
+/**
+ * @swagger
+ * tags: [{ name: MentorRequests, description: Yeu cau nang cap len Mentor } ]
+ */
 router.use(authMiddleware);
 
-// User gửi yêu cầu nâng cấp (gửi kèm file ảnh minh chứng)
+/**
+ * @swagger
+ * /api/mentor-requests:
+ *   post:
+ *     summary: User gui yeu cau nang cap (kem anh minh chung)
+ *     tags: [MentorRequests]
+ *     requestBody:
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [image]
+ *             properties:
+ *               reason: { type: string }
+ *               image: { type: string, format: binary }
+ *     responses: { 201: { description: Created } }
+ */
 router.post(
   "/",
   uploadMentorRequestImage.single("image"),
   mentorRequestController.createRequest
 );
 
-// Admin duyệt hoặc từ chối yêu cầu (yêu cầu đăng nhập)
+/**
+ * @swagger
+ * /api/mentor-requests/{id}/status:
+ *   put:
+ *     summary: Admin duyet/tu choi
+ *     tags: [MentorRequests]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+ *     responses: { 200: { description: OK } }
+ */
 router.put("/:id/status", mentorRequestController.updateStatusRequest);
 
-// Lấy danh sách yêu cầu nâng cấp
+/**
+ * @swagger
+ * /api/mentor-requests:
+ *   get:
+ *     summary: Lay danh sach yeu cau (admin)
+ *     tags: [MentorRequests]
+ *     responses: { 200: { description: OK } }
+ */
 router.get("/", mentorRequestController.getRequests);
 
 module.exports = router;

@@ -3,19 +3,53 @@ const router = express.Router();
 const quizResultsController = require("../controllers/quizResults/quizResults.controller");
 const authMiddleware = require("../middleware/auth.middleware");
 
-// Tất cả các route đều cần token
+/**
+ * @swagger
+ * tags: [{ name: QuizResults, description: Ket qua nop bai quiz } ]
+ */
 router.use(authMiddleware);
 
-// Route để nộp bài làm
+/**
+ * @swagger
+ * /api/quiz-results/submit:
+ *   post:
+ *     summary: Nop bai quiz
+ *     tags: [QuizResults]
+ *     responses: { 201: { description: Created } }
+ */
 router.post("/submit", quizResultsController.submitQuizResult);
 
-// Route để xem kết quả chi tiết của bài làm theo ID kết quả bài làm (quiz_result_id)
+/**
+ * @swagger
+ * /api/quiz-results/{result_id}:
+ *   get:
+ *     summary: Xem chi tiet ket qua theo id
+ *     tags: [QuizResults]
+ *     parameters: [{ in: path, name: result_id, required: true, schema: { type: integer } }]
+ *     responses: { 200: { description: OK } }
+ */
 router.get("/:result_id", quizResultsController.getQuizResultById);
 
-// Route để lấy kết quả của người học theo user_id
+/**
+ * @swagger
+ * /api/quiz-results/users/{user_uid}/results:
+ *   get:
+ *     summary: Lay cac ket qua cua user
+ *     tags: [QuizResults]
+ *     parameters: [{ in: path, name: user_uid, required: true, schema: { type: string } }]
+ *     responses: { 200: { description: OK } }
+ */
 router.get("/users/:user_uid/results", quizResultsController.getResultsByUser);
 
-// Route để chấm bài tự luận theo quiz_result_id
+/**
+ * @swagger
+ * /api/quiz-results/quiz-results/{result_id}/grade:
+ *   patch:
+ *     summary: Cham bai tu luan
+ *     tags: [QuizResults]
+ *     parameters: [{ in: path, name: result_id, required: true, schema: { type: integer } }]
+ *     responses: { 200: { description: OK } }
+ */
 router.patch(
   "/quiz-results/:result_id/grade",
   quizResultsController.gradeQuizResult

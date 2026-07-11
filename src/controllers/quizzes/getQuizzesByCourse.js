@@ -1,68 +1,46 @@
-const { sql, poolPromise } = require("../../config/db.config");
+// controllers/quizzes/getQuizzesByCourse.js
+// Lay danh sach quiz theo course. Khong kem correct_index/expected_keywords neu chua submit.
+const { supabaseAdmin } = require("../../services/supabase.service");
 
 const getQuizzesByCourse = async (req, res) => {
-  const { course_id } = req.params;
-
-  if (!course_id) {
-    return res.status(400).json({ error: "Thiếu course_id" });
-  }
-
   try {
-    const pool = await poolPromise;
-    const request = new sql.Request(pool);
-    request.input("course_id", sql.Int, course_id);
+    const { course_id } = req.params;
+    if (!course_id || isNaN(Number(course_id)))
+      return res.status(400).json({ error: "course_id không hợp lệ" });
 
-    const result = await request.query(`
-      SELECT
-        q.quiz_id,
-        q.title,
-        q.description,
-        q.type,
-        q.time_limit,
-        q.attempt_limit,
-        q.creator_uid,
-        q.created_at,
-        q.updated_at,
-        COUNT(DISTINCT qq.question_id) as total_questions,
-        CAST(AVG(CAST(qr.score AS FLOAT)) AS DECIMAL(5,2)) as average_score,
-        CAST(
-          CASE
-            WHEN COUNT(qr.result_id) > 0
-            THEN (COUNT(CASE WHEN qr.score >= 5 THEN 1 END) * 100.0 / COUNT(qr.result_id))
-            ELSE 0
-          END
-        AS DECIMAL(5,2)) as passing_rate
-      FROM quizzes q
-      LEFT JOIN quiz_questions qq ON q.quiz_id = qq.quiz_id
-      LEFT JOIN quiz_results qr ON q.quiz_id = qr.quiz_id
-      WHERE q.course_id = @course_id
-      GROUP BY
-        q.quiz_id,
-        q.title,
-        q.description,
-        q.type,
-        q.time_limit,
-        q.attempt_limit,
-        q.creator_uid,
-        q.created_at,
-        q.updated_at
-    `);
+    const { data: quizzes, error } = await supabaseAdmin
+      .from("quizzes")
+      .select("quiz_id, course_id, title, description, type, time_limit, attempt_limit, created_at")
+      .eq("course_id", Number(course_id))
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+    if (!quizzes || !quizzes.length)
+      return res.status(200).json({ message: "Chưa có bài kiểm tra", data: [] });
 
-    if (result.recordset.length === 0) {
-      return res.status(404).json({
-        error: "Không tìm thấy bài kiểm tra cho khóa học này",
+    const quizIds = quizzes.map((q) => q.quiz_id);
+    const { data: questions } = await supabaseAdmin
+      .from("quiz_questions")
+      .select("question_id, quiz_id, question, options")
+      .in("quiz_id", quizIds);
+    const qMap = {};
+    for (const q of questions || []) {
+      if (!qMap[q.quiz_id]) qMap[q.quiz_id] = [];
+      qMap[q.quiz_id].push({
+        question_id: q.question_id,
+        question: q.question,
+        options: q.options ? safeParseJSON(q.options, []) : [],
       });
     }
-
-    res.status(200).json({
-      message: "📋 Danh sách bài kiểm tra của khóa học",
-      data: result.recordset,
-    });
+    const data = quizzes.map((qz) => ({ ...qz, questions: qMap[qz.quiz_id] || [] }));
+    res.status(200).json({ message: "Danh sách bài kiểm tra", data });
   } catch (err) {
-    res.status(500).json({
-      error: "Lỗi khi lấy danh sách bài kiểm tra: " + err.message,
-    });
+    console.error("getQuizzesByCourse error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
+
+function safeParseJSON(str, fallback) {
+  try { return JSON.parse(str); } catch (e) { return fallback; }
+}
 
 module.exports = getQuizzesByCourse;

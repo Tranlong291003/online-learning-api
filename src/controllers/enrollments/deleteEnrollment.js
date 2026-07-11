@@ -1,26 +1,25 @@
-const { sql, poolPromise } = require("../../config/db.config");
+// controllers/enrollments/deleteEnrollment.js
+// User huy dang ky khoa hoc. Xoa row enrollments (schema khong co cot status).
+const { deleteRows, supabaseAdmin } = require("../../services/supabase.service");
 
 const deleteEnrollment = async (req, res) => {
   try {
-    const { enrollment_id } = req.params; // Sử dụng `enrollment_id` thay vì `id` để tránh nhầm lẫn
+    const { course_id } = req.body;
+    const user_uid = req.supabaseUser?.authUser?.id;
 
-    const pool = await poolPromise; // Sử dụng poolPromise để kết nối
-    const request = new sql.Request(pool);
-    request.input("enrollment_id", sql.Int, enrollment_id);
+    if (!user_uid) return res.status(401).json({ error: "Chưa đăng nhập" });
+    if (!course_id || isNaN(Number(course_id)))
+      return res.status(400).json({ error: "course_id không hợp lệ" });
 
-    const result = await request.query(
-      "DELETE FROM enrollments WHERE enrollment_id = @enrollment_id"
+    const { error: delErr } = await deleteRows(
+      supabaseAdmin, "enrollments", { user_uid, course_id: Number(course_id) }
     );
+    if (delErr) throw delErr;
 
-    if (result.rowsAffected[0] === 0) {
-      return res
-        .status(404)
-        .json({ error: "❌ Không tìm thấy đăng ký để huỷ" });
-    }
-
-    res.json({ message: "🗑️ Huỷ đăng ký thành công" });
+    res.status(200).json({ message: "Hủy đăng ký khóa học thành công" });
   } catch (err) {
-    res.status(500).json({ error: "Lỗi huỷ đăng ký: " + err.message });
+    console.error("deleteEnrollment error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 

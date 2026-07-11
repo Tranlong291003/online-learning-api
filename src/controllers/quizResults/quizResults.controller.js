@@ -1,11 +1,12 @@
-const getQuizResultById = require("./getQuizResultById");
-const getResultsByUser = require("./getResultsByUser");
-const gradeQuizResult = require("./gradeQuizResult");
+// controllers/quizResults/quizResults.controller.js
 const submitQuizResult = require("./submitQuizResult");
+const getResultsByUser = require("./getResultsByUser");
+const getQuizResultById = require("./getQuizResultById");
+const gradeQuizResult = require("./gradeQuizResult");
 
 module.exports = {
-  getQuizResultById,
-  getResultsByUser,
-  gradeQuizResult,
   submitQuizResult,
+  getResultsByUser,
+  getQuizResultById,
+  gradeQuizResult,
 };

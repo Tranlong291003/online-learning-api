@@ -1,99 +1,81 @@
-const { sql, poolPromise } = require("../../config/db.config");
-const path = require("path");
+// controllers/courses/updateCourse.js
+const { updateRows, selectRows, supabaseAdmin } = require("../../services/supabase.service");
+const { uploadBuffer, removeObject } = require("../../services/supabaseStorage.service");
+
+const randomStr = () => Math.random().toString(36).slice(2, 8);
 
 const updateCourse = async (req, res) => {
-  const { course_id } = req.params;
-  const {
-    title,
-    description,
-    level,
-    price,
-    discount_price,
-    language,
-    tags,
-    uid, // người cập nhật
-  } = req.body;
-
+  let uploadedKey = null;
   try {
-    const pool = await poolPromise;
-    const request = new sql.Request(pool);
+    const { course_id } = req.params;
+    const { title, description, category_id, price, level, discount_price, status } = req.body;
+    const userUid = req.supabaseUser?.authUser?.id;
 
-    request.input("uid", sql.NVarChar, uid);
-    const roleQuery = await request.query(`
-      SELECT role FROM users WHERE uid = @uid
-    `);
+    if (!userUid) return res.status(401).json({ error: "Chưa đăng nhập" });
 
-    const userRole = roleQuery.recordset[0]?.role;
+    const { data: course, error: findErr } = await selectRows(
+      supabaseAdmin, "courses", "*",
+      { eq: { course_id: Number(course_id) }, single: true }
+    );
+    if (findErr) throw findErr;
+    if (!course) return res.status(404).json({ error: "Không tìm thấy khóa học" });
 
-    if (userRole !== "admin" && userRole !== "mentor") {
-      return res.status(403).json({ error: "Bạn không có quyền sửa khóa học" });
+    if (course.instructor_uid !== userUid)
+      return res.status(403).json({ error: "Bạn không có quyền sửa khóa học này" });
+
+    // Reject neu dang approved va mentor muon doi category (admin cho phep)
+    if (category_id && category_id !== course.category_id && course.status === "approved")
+      return res.status(400).json({ error: "Khóa học đã được duyệt, không thể đổi danh mục" });
+
+    if (category_id) {
+      const { data: cat } = await selectRows(
+        supabaseAdmin, "course_categories", "category_id",
+        { eq: { category_id: Number(category_id) }, single: true }
+      );
+      if (!cat) return res.status(404).json({ error: "Danh mục không tồn tại" });
     }
 
-    // Lấy dữ liệu khóa học hiện tại
-    request.input("course_id", sql.Int, course_id);
-    const currentResult = await request.query(`
-      SELECT * FROM courses WHERE course_id = @course_id
-    `);
+    const patch = { updated_at: new Date().toISOString() };
+    if (title && title.trim()) patch.title = title.trim();
+    if (description && description.trim()) patch.description = description.trim();
+    if (category_id) patch.category_id = Number(category_id);
+    if (price !== undefined) patch.price = Number(price) || 0;
+    if (discount_price !== undefined) patch.discount_price = discount_price ? Number(discount_price) : null;
+    if (level) patch.level = level;
+    if (status) patch.status = status;
 
-    if (currentResult.recordset.length === 0) {
-      return res.status(404).json({ error: "Không tìm thấy khóa học" });
+    // Replace thumbnail neu co file moi
+    if (req.file && req.file.buffer) {
+      const ext = (req.file.originalname || "").split(".").pop() || "jpg";
+      const key = `courses/${Date.now()}-${randomStr()}.${ext}`;
+      uploadedKey = key;
+      const contentType = req.file.mimetype || "image/jpeg";
+      const newUrl = await uploadBuffer("uploads", key, req.file.buffer, contentType);
+      patch.thumbnail_url = newUrl;
+      // Xoa anh cu (best-effort)
+      if (course.thumbnail_url) await removeObject("uploads", course.thumbnail_url).catch(() => {});
     }
 
-    const current = currentResult.recordset[0];
+    const { error: updErr } = await updateRows(
+      supabaseAdmin, "courses", patch, { course_id: Number(course_id) }
+    );
+    if (updErr) {
+      if (uploadedKey) await removeObject("uploads", uploadedKey).catch(() => {});
+      throw updErr;
+    }
 
-    // Nếu có ảnh mới → dùng ảnh mới, còn không thì giữ nguyên
-    const newThumbnailUrl = req.file
-      ? `/uploads/courses/${req.file.filename}`
-      : current.thumbnail_url;
-
-    // Merge dữ liệu
-    const updatedTitle = title ?? current.title;
-    const updatedDescription = description ?? current.description;
-    const updatedLevel = level ?? current.level;
-    const updatedPrice = price ?? current.price;
-    const updatedDiscountPrice = discount_price ?? current.discount_price;
-    const updatedLanguage = language ?? current.language;
-    const updatedTags = tags ?? current.tags;
-
-    const updateRequest = new sql.Request(pool);
-    updateRequest.input("course_id", sql.Int, course_id);
-    updateRequest.input("title", sql.NVarChar, updatedTitle);
-    updateRequest.input("description", sql.NVarChar, updatedDescription);
-    updateRequest.input("level", sql.NVarChar, updatedLevel);
-    updateRequest.input("price", sql.Int, updatedPrice);
-    updateRequest.input("discount_price", sql.Int, updatedDiscountPrice);
-    updateRequest.input("language", sql.NVarChar, updatedLanguage);
-    updateRequest.input("tags", sql.NVarChar, updatedTags);
-    updateRequest.input("thumbnail_url", sql.NVarChar, newThumbnailUrl);
-
-    await updateRequest.query(`
-      UPDATE courses
-      SET
-        title = @title,
-        description = @description,
-        level = @level,
-        price = @price,
-        discount_price = @discount_price,
-        language = @language,
-        tags = @tags,
-        thumbnail_url = @thumbnail_url,
-        updated_at = GETDATE()
-      WHERE course_id = @course_id
-    `);
-
-    const finalResult = await updateRequest.query(`
-      SELECT * FROM courses WHERE course_id = @course_id
-    `);
-
-    res.status(200).json({
-      message: "Cập nhật khóa học thành công",
-      data: finalResult.recordset[0],
-    });
+    // Tra ve ban ghi moi
+    const { data: fresh } = await selectRows(
+      supabaseAdmin, "courses", "*",
+      { eq: { course_id: Number(course_id) }, single: true }
+    );
+    res.status(200).json({ message: "Cập nhật khóa học thành công", data: fresh });
   } catch (err) {
-    res.status(500).json({
-      error: "Lỗi cập nhật khóa học: " + err.message,
-    });
+    if (uploadedKey) await removeObject("uploads", uploadedKey).catch(() => {});
+    console.error("updateCourse error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 
 module.exports = updateCourse;
+

@@ -1,13 +1,15 @@
-const getCoursesByUser = require("./getCoursesByUser");
-const deleteEnrollment = require("./deleteEnrollment");
+// controllers/enrollments/enrollments.controller.js
+// Gom cac handler thanh 1 object de routes/enrollments.router.js co the goi .method
 const enrollCourse = require("./enrollCourse");
-const getCourseProgressForUser = require("./getCourseProgressForUser");
+const deleteEnrollment = require("./deleteEnrollment");
+const getCoursesByUser = require("./getCoursesByUser");
 const checkEnrollStatus = require("./checkEnrollStatus");
+const getCourseProgressForUser = require("./getCourseProgressForUser");
 
 module.exports = {
-  getCoursesByUser,
-  deleteEnrollment,
   enrollCourse,
-  getCourseProgressForUser,
+  deleteEnrollment,
+  getCoursesByUser,
   checkEnrollStatus,
+  getCourseProgressForUser,
 };

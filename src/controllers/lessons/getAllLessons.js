@@ -1,68 +1,56 @@
-// controllers/getAllLessons.js
-const { sql, poolPromise } = require("../../config/db.config");
+// controllers/lessons/getAllLessons.js
+// Lay tat ca bai hoc theo course_id, sap xep theo "order".
+// Neu co user_uid (auth) se kem is_completed tu lesson_progress.
+const { supabaseAdmin } = require("../../services/supabase.service");
 
 const getAllLessons = async (req, res) => {
-  const { course_id, userUid } = req.params;
-
-  // Validate input
-  if (!course_id || isNaN(+course_id)) {
-    return res.status(400).json({ error: "Tham số course_id không hợp lệ" });
-  }
-  if (!userUid) {
-    return res.status(400).json({ error: "Tham số userUid bắt buộc" });
-  }
-
   try {
-    const pool = await poolPromise;
-    const request = new sql.Request(pool);
+    const course_id = req.params.course_id || req.query.course_id;
+    const user_uid = req.query.userUid || req.supabaseUser?.authUser?.id;
 
-    request.input("courseId", sql.Int, +course_id);
-    request.input("userUid", sql.NVarChar(50), userUid);
+    if (!course_id || isNaN(Number(course_id)))
+      return res.status(400).json({ error: "Tham số course_id không hợp lệ" });
 
-    // Lấy tất cả lessons với đầy đủ thông tin
-    const result = await request.query(`
-      SELECT
-        l.lesson_id,
-        l.course_id,
-        l.title,
-        l.video_url,
-        l.video_id,
-        l.video_duration,
-        l.pdf_url,
-        l.slide_url,
-        l.content,
-        l.[order],
-        l.created_at,
-        l.updated_at,
-        l.creator_uid,
-        CASE
-          WHEN lp.is_completed = 1 THEN 1
-          ELSE 0
-        END AS is_completed,
-        u.name AS creator_name,
-        u.avatar_url AS creator_avatar
-      FROM lessons AS l
-      LEFT JOIN lesson_progress AS lp
-        ON lp.lesson_id = l.lesson_id
-       AND lp.user_uid = @userUid
-      LEFT JOIN users AS u
-        ON l.creator_uid = u.uid
-      WHERE l.course_id = @courseId
-      ORDER BY l.[order] ASC
-    `);
+    const { data: lessons, error } = await supabaseAdmin
+      .from("lessons")
+      .select("*")
+      .eq("course_id", Number(course_id))
+      .order("order", { ascending: true });
+    if (error) throw error;
 
-    // Trả về kết quả mặc dù không có bài học nào
-    if (result.recordset.length === 0) {
-      return res.status(200).json({
-        message: "Không có bài học cho khóa học này.",
-        data: [],
-      });
+    if (!lessons || !lessons.length) {
+      return res.status(200).json({ message: "Không có bài học cho khóa học này", data: [] });
     }
 
-    res.status(200).json({
-      message: "Lấy danh sách bài học thành công",
-      data: result.recordset,
-    });
+    let progressMap = {};
+    if (user_uid) {
+      const lessonIds = lessons.map((l) => l.lesson_id);
+      const { data: progress } = await supabaseAdmin
+        .from("lesson_progress")
+        .select("lesson_id, is_completed")
+        .eq("user_uid", user_uid)
+        .in("lesson_id", lessonIds);
+      for (const p of progress || []) progressMap[p.lesson_id] = p.is_completed;
+    }
+
+    const creatorUids = [...new Set(lessons.map((l) => l.creator_uid).filter(Boolean))];
+    let creatorMap = {};
+    if (creatorUids.length) {
+      const { data: users } = await supabaseAdmin
+        .from("users")
+        .select("uid, name, avatar_url")
+        .in("uid", creatorUids);
+      for (const u of users || []) creatorMap[u.uid] = u;
+    }
+
+    const data = lessons.map((l) => ({
+      ...l,
+      is_completed: !!progressMap[l.lesson_id],
+      creator_name: creatorMap[l.creator_uid]?.name || null,
+      creator_avatar: creatorMap[l.creator_uid]?.avatar_url || null,
+    }));
+
+    res.status(200).json({ message: "Lấy danh sách bài học thành công", data });
   } catch (err) {
     console.error("getAllLessons error:", err);
     res.status(500).json({ error: "Lỗi server: " + err.message });

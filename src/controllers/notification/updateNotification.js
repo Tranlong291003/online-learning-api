@@ -1,23 +1,43 @@
-const { sql, poolPromise } = require("../../config/db.config");
+// controllers/notification/updateNotification.js
+const { updateRows, selectRows, supabaseAdmin } = require("../../services/supabase.service");
 
 const updateNotification = async (req, res) => {
-  const notiId = req.params.id;
-
   try {
-    const pool = await poolPromise;
-    const result = await pool
-      .request()
-      .input("noti_id", sql.UniqueIdentifier, notiId)
-      .query("UPDATE notifications SET is_read = 1 WHERE noti_id = @noti_id");
+    const { noti_id } = req.params;
+    if (!noti_id) return res.status(400).json({ error: "Thiếu noti_id" });
 
-    if (result.rowsAffected > 0) {
-      res.status(200).send({ message: "Đã đánh dấu thông báo là đã đọc" });
-    } else {
-      res.status(404).send({ message: "Không tìm thấy thông báo" });
+    const user_uid = req.supabaseUser?.authUser?.id;
+    const role = req.supabaseUser?.profile?.role;
+    if (!user_uid) return res.status(401).json({ error: "Chưa đăng nhập" });
+
+    const { data: noti, error: findErr } = await selectRows(
+      supabaseAdmin, "notifications", "noti_id,uid",
+      { eq: { noti_id }, single: true }
+    );
+    if (findErr) throw findErr;
+    if (!noti) return res.status(404).json({ error: "Không tìm thấy thông báo" });
+    if (role !== "admin" && noti.uid !== user_uid) {
+      return res.status(403).json({ error: "Không có quyền sửa thông báo này" });
     }
-  } catch (error) {
-    console.log("Lỗi khi cập nhật thông báo:", error);
-    res.status(500).send({ message: "Không thể cập nhật thông báo" });
+
+    const allowed = ["title", "content", "icon", "color", "is_read"];
+    const patch = {};
+    for (const k of allowed) if (req.body[k] !== undefined) patch[k] = req.body[k];
+    if (Object.keys(patch).length === 0)
+      return res.status(400).json({ error: "Không có trường nào để cập nhật" });
+
+    const { data: updated, error: updErr } = await updateRows(
+      supabaseAdmin, "notifications", patch, { noti_id }
+    );
+    if (updErr) throw updErr;
+
+    res.status(200).json({
+      message: "Cập nhật thông báo thành công",
+      data: updated && updated[0] ? updated[0] : null,
+    });
+  } catch (err) {
+    console.error("updateNotification error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 

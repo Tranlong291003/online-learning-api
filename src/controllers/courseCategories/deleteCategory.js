@@ -1,46 +1,36 @@
 // controllers/courseCategories/deleteCategory.js
-const { sql, poolPromise } = require("../../config/db.config");
+const {
+  selectRows,
+  deleteRows,
+  supabaseAdmin,
+} = require("../../services/supabase.service");
 
 const deleteCategory = async (req, res) => {
   try {
-    const { category_id } = req.params; // Lấy category_id từ params
-    const { uid } = req.body; // Lấy uid từ body
+    const { category_id } = req.params;
+    const { uid } = req.body;
 
     if (!uid) return res.status(400).json({ error: "UID không được bỏ trống" });
 
-    // Kết nối đến cơ sở dữ liệu bằng poolPromise
-    const pool = await poolPromise; // Đảm bảo rằng kết nối đã sẵn sàng
-    const request = new sql.Request(pool); // Tạo một request từ pool kết nối
-
-    // Truy vấn vai trò của người dùng từ bảng users
-    request.input("uid", sql.NVarChar, uid);
-    const roleQuery = await request.query(
-      `SELECT role FROM users WHERE uid = @uid` // Truy vấn lấy role của người dùng từ bảng users
+    const { data: user, error: uErr } = await selectRows(
+      supabaseAdmin,
+      "users",
+      "role",
+      { eq: { uid }, single: true }
     );
-
-    // Kiểm tra xem người dùng có tồn tại không và lấy role
-    if (roleQuery.recordset.length === 0) {
+    if (uErr) throw uErr;
+    if (!user)
       return res.status(404).json({ error: "Không tìm thấy người dùng" });
-    }
-
-    const userRole = roleQuery.recordset[0]?.role; // Lấy vai trò người dùng từ kết quả truy vấn
-
-    // Kiểm tra vai trò của người dùng
-    if (userRole !== "admin" && userRole !== "giang_vien") {
+    if (user.role !== "admin" && user.role !== "mentor") {
       return res.status(403).json({ error: "Bạn không có quyền xóa danh mục" });
     }
 
-    // Nếu vai trò hợp lệ, tiếp tục xóa danh mục
-    request.input("category_id", sql.Int, category_id);
-    const result = await request.query(
-      "DELETE FROM course_categories WHERE category_id = @category_id"
+    const { error: delErr } = await deleteRows(
+      supabaseAdmin,
+      "course_categories",
+      { category_id: Number(category_id) }
     );
-
-    if (result.rowsAffected[0] === 0) {
-      return res
-        .status(404)
-        .json({ error: "❌ Không tìm thấy danh mục để xoá" });
-    }
+    if (delErr) throw delErr;
 
     res.status(200).json({ message: "🗑️ Xóa danh mục thành công" });
   } catch (err) {

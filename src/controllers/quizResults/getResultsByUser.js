@@ -1,44 +1,39 @@
-// /controllers/quiz/getQuizResultsByUser.js
-const { sql, poolPromise } = require("../../config/db.config");
+// controllers/quizResults/getResultsByUser.js
+const { supabaseAdmin } = require("../../services/supabase.service");
 
-const getQuizResultsByUser = async (req, res) => {
-  const { user_uid } = req.params;
-  if (!user_uid) return res.status(400).json({ error: "Thiếu user_uid" });
-
+const getResultsByUser = async (req, res) => {
   try {
-    const pool = await poolPromise;
-    const request = new sql.Request(pool);
-    request.input("user_uid", sql.NVarChar, user_uid);
+    const user_uid = req.supabaseUser?.authUser?.id;
+    if (!user_uid) return res.status(401).json({ error: "Chưa đăng nhập" });
 
-    /* Trả về thông tin tối cần thiết */
-    const listRes = await request.query(`
-      SELECT
-        qr.result_id,
-        q.title,
-        qr.score,
-        CASE WHEN qr.score >= 5.0 THEN 1 ELSE 0 END AS passed,
-        qr.submitted_at
-      FROM quiz_results qr
-      JOIN quizzes q ON q.quiz_id = qr.quiz_id
-      WHERE qr.user_uid = @user_uid
-      ORDER BY qr.submitted_at DESC
-    `);
+    const targetUid = req.query.uid || user_uid;
+    if (targetUid !== user_uid) {
+      const role = req.supabaseUser?.profile?.role;
+      if (role !== "admin") return res.status(403).json({ error: "Không có quyền xem" });
+    }
 
-    return res.json({
-      user_uid,
-      total: listRes.recordset.length,
-      results: listRes.recordset.map((r) => ({
-        ...r,
-        passed: !!r.passed, // ép về boolean cho frontend
-        submitted_at: r.submitted_at.toISOString(),
-      })),
-    });
+    const { data: results, error } = await supabaseAdmin
+      .from("quiz_results")
+      .select("result_id, quiz_id, score, status, submitted_at, graded_at")
+      .eq("user_uid", targetUid)
+      .order("submitted_at", { ascending: false });
+    if (error) throw error;
+    if (!results || !results.length)
+      return res.status(200).json({ message: "Chưa có kết quả", data: [] });
+
+    const quizIds = [...new Set(results.map((r) => r.quiz_id))];
+    const { data: quizzes } = await supabaseAdmin
+      .from("quizzes")
+      .select("quiz_id, course_id, title, type")
+      .in("quiz_id", quizIds);
+    const qMap = Object.fromEntries((quizzes || []).map((q) => [q.quiz_id, q]));
+
+    const data = results.map((r) => ({ ...r, quiz: qMap[r.quiz_id] || null }));
+    res.status(200).json({ message: "Danh sách kết quả", data });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({
-      error: "Lỗi khi lấy danh sách kết quả: " + err.message,
-    });
+    console.error("getResultsByUser error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 
-module.exports = getQuizResultsByUser;
+module.exports = getResultsByUser;

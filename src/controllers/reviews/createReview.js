@@ -1,50 +1,51 @@
 // controllers/reviews/createReview.js
-const { sql, poolPromise } = require("../../config/db.config");
+// User danh gia khoa hoc. UNIQUE (user_uid, course_id) -> 23505 neu da review.
+const { insertRows, supabaseAdmin } = require("../../services/supabase.service");
 
 const createReview = async (req, res) => {
   try {
-    const { course_id, user_uid, rating, comment } = req.body;
-    if (!course_id || !user_uid || rating == null) {
-      return res
-        .status(400)
-        .json({ error: "course_id, user_uid và rating không được bỏ trống" });
+    const { course_id, rating, comment } = req.body;
+    const user_uid = req.supabaseUser?.authUser?.id;
+
+    if (!user_uid) return res.status(401).json({ error: "Chưa đăng nhập" });
+    if (!course_id || isNaN(Number(course_id)))
+      return res.status(400).json({ error: "course_id không hợp lệ" });
+    const r = Number(rating);
+    if (!Number.isInteger(r) || r < 1 || r > 5)
+      return res.status(400).json({ error: "rating phải là số nguyên từ 1 đến 5" });
+
+    // Kiem tra user da enroll
+    const { data: enrolled } = await supabaseAdmin
+      .from("enrollments")
+      .select("enrollment_id")
+      .eq("user_uid", user_uid)
+      .eq("course_id", Number(course_id))
+      .limit(1);
+    if (!enrolled || !enrolled.length)
+      return res.status(403).json({ error: "Cần đăng ký khóa học trước khi đánh giá" });
+
+    const { data: inserted, error: insErr } = await insertRows(
+      supabaseAdmin, "course_reviews", {
+        user_uid,
+        course_id: Number(course_id),
+        rating: r,
+        comment: comment ? String(comment).trim() : null,
+      }
+    );
+    if (insErr) {
+      if (insErr.code === "23505") {
+        return res.status(409).json({ error: "Bạn đã đánh giá khóa học này rồi. Vui lòng dùng chức năng cập nhật." });
+      }
+      throw insErr;
     }
 
-    const pool = await poolPromise;
-
-    // 1. Kiểm tra xem user đã review khóa này chưa
-    const check = await pool
-      .request()
-      .input("course_id", sql.Int, course_id)
-      .input("user_uid", sql.NVarChar, user_uid).query(`
-        SELECT 1
-        FROM course_reviews
-        WHERE course_id = @course_id
-          AND user_uid  = @user_uid
-      `);
-    if (check.recordset.length > 0) {
-      return res.status(400).json({ error: "Bạn đã review khóa học này rồi" });
-    }
-
-    // 2. Chèn review mới
-    const result = await pool
-      .request()
-      .input("course_id", sql.Int, course_id)
-      .input("user_uid", sql.NVarChar, user_uid)
-      .input("rating", sql.TinyInt, rating)
-      .input("comment", sql.NVarChar, comment || null)
-      .input("created_at", sql.DateTime, new Date()).query(`
-        INSERT INTO course_reviews
-          (course_id, user_uid, rating, comment, created_at)
-        OUTPUT INSERTED.review_id
-        VALUES
-          (@course_id, @user_uid, @rating, @comment, @created_at)
-      `);
-
-    const newId = result.recordset[0].review_id;
-    return res.status(201).json({ data: { review_id: newId } });
+    res.status(201).json({
+      message: "Đánh giá khóa học thành công",
+      data: inserted && inserted[0] ? inserted[0] : null,
+    });
   } catch (err) {
-    return res.status(500).json({ error: "Lỗi server: " + err.message });
+    console.error("createReview error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 

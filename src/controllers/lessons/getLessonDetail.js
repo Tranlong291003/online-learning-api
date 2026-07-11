@@ -1,53 +1,35 @@
-// controllers/getLessonDetail.js
-const { sql, poolPromise } = require("../../config/db.config");
+// controllers/lessons/getLessonDetail.js
+// Lay chi tiet mot bai hoc theo lesson_id.
+const { selectRows, supabaseAdmin } = require("../../services/supabase.service");
 
 const getLessonDetail = async (req, res) => {
-  const { lessonId } = req.params;
-
-  // 1. Kiểm tra nếu lessonId hợp lệ
-  if (!lessonId || isNaN(lessonId)) {
-    return res.status(400).json({ error: "lessonId không hợp lệ" });
-  }
-
   try {
-    const pool = await poolPromise;
-    const request = new sql.Request(pool);
+    const { lesson_id } = req.params;
+    if (!lesson_id || isNaN(Number(lesson_id)))
+      return res.status(400).json({ error: "lesson_id không hợp lệ" });
 
-    // Đưa lessonId vào parameter để truy vấn
-    request.input("lessonId", sql.Int, lessonId);
+    const { data: lesson, error } = await selectRows(
+      supabaseAdmin, "lessons", "*",
+      { eq: { lesson_id: Number(lesson_id) }, single: true }
+    );
+    if (error) throw error;
+    if (!lesson) return res.status(404).json({ error: "Không tìm thấy bài học" });
 
-    // 2. Query chi tiết bài học lấy hết các cột
-    const result = await request.query(`
-      SELECT
-        lesson_id,
-        course_id,
-        title,
-        video_url,
-        pdf_url,
-        slide_url,
-        [content],
-        [order],
-        created_at,
-        updated_at,
-        creator_uid,
-        video_id,
-        video_duration
-      FROM lessons
-      WHERE lesson_id = @lessonId
-    `);
-
-    // 3. Kiểm tra nếu không có bài học nào với lessonId này
-    if (result.recordset.length === 0) {
-      return res.status(404).json({ error: "Không tìm thấy bài học này" });
+    let creator = null;
+    if (lesson.creator_uid) {
+      const { data: u } = await supabaseAdmin
+        .from("users")
+        .select("uid, name, avatar_url, bio")
+        .eq("uid", lesson.creator_uid)
+        .maybeSingle();
+      creator = u || null;
     }
 
-    // 4. Trả về kết quả thành công
     res.status(200).json({
       message: "Lấy chi tiết bài học thành công",
-      data: result.recordset[0],
+      data: { ...lesson, creator },
     });
   } catch (err) {
-    // 5. Nếu có lỗi server xảy ra
     console.error("getLessonDetail error:", err);
     res.status(500).json({ error: "Lỗi server: " + err.message });
   }

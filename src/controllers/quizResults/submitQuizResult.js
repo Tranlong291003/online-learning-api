@@ -1,150 +1,93 @@
-const { sql, poolPromise } = require("../../config/db.config");
-const { OpenAI } = require("openai");
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// controllers/quizResults/submitQuizResult.js
+// User noi bai: trac_nghiem tu cham, tu_luan status='cho_cham'.
+// answers: array [{question_id, selected_index/answer}], luu thanh JSON string.
+const { insertRows, selectRows, supabaseAdmin } = require("../../services/supabase.service");
 
-/**
- * POST /api/quiz/submit
- * Body: { uid, quiz_id, answers: { [question_id]: index|null }, explanation? }
- */
+const safeParse = (s) => { try { return JSON.parse(s); } catch (e) { return []; } };
+
 const submitQuizResult = async (req, res) => {
-  const { uid, quiz_id, answers = {}, explanation } = req.body;
-
-  if (!uid || !quiz_id || !answers) {
-    return res
-      .status(400)
-      .json({ error: "Thiếu user_uid, quiz_id hoặc câu trả lời" });
-  }
-
   try {
-    /* 1. Kết nối DB */
-    const pool = await poolPromise;
-    const request = new sql.Request(pool);
+    const { quiz_id, answers, explanation } = req.body;
+    const user_uid = req.supabaseUser?.authUser?.id;
 
-    /* 2. Lấy loại quiz */
-    request.input("quiz_id", sql.Int, quiz_id);
-    const quizRow = await request.query(`
-      SELECT [type] FROM quizzes WHERE quiz_id = @quiz_id
-    `);
-    if (quizRow.recordset.length === 0)
-      return res.status(404).json({ error: "Không tìm thấy bài kiểm tra" });
+    if (!user_uid) return res.status(401).json({ error: "Chưa đăng nhập" });
+    if (!quiz_id || isNaN(Number(quiz_id)))
+      return res.status(400).json({ error: "quiz_id không hợp lệ" });
+    if (!Array.isArray(answers) || answers.length === 0)
+      return res.status(400).json({ error: "answers phải là mảng không rỗng" });
 
-    const quizType = quizRow.recordset[0].type; // 'trac_nghiem' | ...
+    const { data: quiz, error: qErr } = await selectRows(
+      supabaseAdmin, "quizzes", "quiz_id,course_id,type,attempt_limit",
+      { eq: { quiz_id: Number(quiz_id) }, single: true }
+    );
+    if (qErr) throw qErr;
+    if (!quiz) return res.status(404).json({ error: "Không tìm thấy bài kiểm tra" });
 
-    /* 3. Lấy tất cả câu hỏi của quiz  (để chấm & giải thích) */
-    const qRows = await request.query(`
-      SELECT question_id, question, options, correct_index
-      FROM quiz_questions
-      WHERE quiz_id = @quiz_id
-    `);
-
-    const questionMap = {}; // { id: {question, options[], correct_index} }
-    qRows.recordset.forEach((q) => {
-      questionMap[q.question_id] = {
-        text: q.question,
-        options: JSON.parse(q.options),
-        correct: q.correct_index,
-      };
-    });
-
-    /* 4. Chấm điểm + gom dữ liệu cho AI */
-    let correctCount = 0;
-    let totalAnswered = 0;
-    const invalidQuestions = [];
-    const questionDetails = []; // push để trả client
-
-    for (const [qidStr, userAns] of Object.entries(answers)) {
-      const qid = parseInt(qidStr, 10);
-      const qInfo = questionMap[qid];
-
-      if (!qInfo) {
-        invalidQuestions.push(qid);
-        continue;
-      }
-
-      totalAnswered++;
-      const isCorrect = userAns !== null && userAns === qInfo.correct;
-      if (isCorrect) correctCount++;
-
-      questionDetails.push({
-        question_id: qid,
-        question: qInfo.text,
-        options: qInfo.options,
-        correct_answer: qInfo.correct,
-        user_answer: userAns, // null nếu bỏ qua
-        is_correct: isCorrect,
-      });
+    // Kiem tra user da enroll
+    const { data: enrolled } = await supabaseAdmin
+      .from("enrollments")
+      .select("enrollment_id")
+      .eq("user_uid", user_uid)
+      .eq("course_id", quiz.course_id)
+      .limit(1);
+    if (!enrolled || !enrolled.length) {
+      return res.status(403).json({ error: "Cần đăng ký khóa học trước khi làm bài" });
     }
 
-    /* 5. Gọi OpenAI để giải thích từng câu (cả sai & bỏ qua) */
-    await Promise.all(
-      questionDetails.map(async (q) => {
-        const prompt = `
-Bạn là trợ lý giáo dục, giải thích ngắn gọn và dễ hiểu.
-Câu hỏi: ${q.question}
-Các lựa chọn: ${q.options.map((o, i) => `${i + 1}. ${o}`).join("  |  ")}
-Đáp án đúng: ${q.correct_answer + 1}. ${q.options[q.correct_answer]}
-Người học ${
-          q.user_answer === null
-            ? "chưa chọn đáp án"
-            : `đã chọn: ${q.user_answer + 1}. ${q.options[q.user_answer]}`
-        }.
-Hãy giải thích vì sao đáp án đúng là lựa chọn trên (nêu ngắn gọn).`;
+    // Kiem tra attempt_limit
+    if (quiz.attempt_limit) {
+      const { count } = await supabaseAdmin
+        .from("quiz_results")
+        .select("result_id", { count: "exact", head: true })
+        .eq("user_uid", user_uid)
+        .eq("quiz_id", Number(quiz_id));
+      if ((count || 0) >= quiz.attempt_limit) {
+        return res.status(429).json({ error: "Bạn đã hết lượt làm bài" });
+      }
+    }
 
-        try {
-          const aiRes = await openai.chat.completions.create({
-            model: "gpt-3.5-turbo",
-            messages: [{ role: "user", content: prompt }],
-            max_tokens: 120,
-          });
-          q.ai_explanation = aiRes.choices[0].message.content.trim();
-        } catch {
-          q.ai_explanation = "Không thể lấy giải thích từ AI.";
-        }
-      })
+    // Lay danh sach cau hoi
+    const { data: questions } = await supabaseAdmin
+      .from("quiz_questions")
+      .select("question_id, options, correct_index, expected_keywords")
+      .eq("quiz_id", Number(quiz_id));
+    if (!questions || !questions.length)
+      return res.status(400).json({ error: "Bài kiểm tra chưa có câu hỏi" });
+
+    let score = 0;
+    const total = questions.length;
+
+    if (quiz.type === "trac_nghiem") {
+      const answerMap = new Map(
+        answers.map((a) => [Number(a.question_id), Number(a.selected_index)])
+      );
+      for (const q of questions) {
+        if (q.correct_index !== null && answerMap.get(q.question_id) === q.correct_index) score += 1;
+      }
+    }
+
+    const insertPayload = {
+      user_uid,
+      quiz_id: Number(quiz_id),
+      score: quiz.type === "trac_nghiem" ? (score / total) * 10 : null,
+      answers: JSON.stringify(answers),
+      explanation: explanation ? String(explanation).trim() : null,
+      status: quiz.type === "trac_nghiem" ? "da_cham" : "cho_cham",
+      submitted_at: new Date().toISOString(),
+    };
+
+    const { data: inserted, error: insErr } = await insertRows(
+      supabaseAdmin, "quiz_results", insertPayload
     );
+    if (insErr) throw insErr;
 
-    /* 6. Điểm */
-    const rawScore = totalAnswered ? (correctCount / totalAnswered) * 10 : 0;
-    const finalScore = Math.round(rawScore * 10) / 10;
-
-    /* 7. Lưu kết quả (không lưu AI-explanation) */
-    const insertReq = new sql.Request(pool);
-    insertReq.input("user_uid", sql.NVarChar, uid);
-    insertReq.input("quiz_id", sql.Int, quiz_id);
-    insertReq.input("score", sql.Float, finalScore);
-    insertReq.input("answers", sql.NVarChar, JSON.stringify(answers));
-    insertReq.input("explanation", sql.NVarChar, explanation || "");
-    const insertRes = await insertReq.query(`
-      INSERT INTO quiz_results (
-        user_uid, quiz_id, score, submitted_at,
-        answers, explanation, status
-      )
-      OUTPUT INSERTED.result_id
-      VALUES (
-        @user_uid, @quiz_id, @score, GETDATE(), @answers, @explanation,
-        '${quizType === "trac_nghiem" ? "da_cham" : "cho_cham"}'
-      )
-    `);
-    const resultId = insertRes.recordset[0].result_id;
-
-    /* 8. Trả phản hồi */
-    return res.status(201).json({
-      message:
-        quizType === "trac_nghiem"
-          ? "Nộp bài và chấm điểm tự động thành công"
-          : "Bài làm đã được nộp, chờ giảng viên chấm điểm",
-      result_id: resultId,
-      score: finalScore,
-      total_answered: totalAnswered,
-      correct_answers: correctCount,
-      invalid_question_ids: invalidQuestions,
-      questions: questionDetails, // chứa ai_explanation
+    res.status(201).json({
+      message: "Nộp bài thành công",
+      data: inserted && inserted[0] ? inserted[0] : null,
     });
   } catch (err) {
-    console.error(err);
-    return res
-      .status(500)
-      .json({ error: "Lỗi khi nộp bài làm: " + err.message });
+    console.error("submitQuizResult error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 

@@ -1,119 +1,67 @@
-const { sql, poolPromise } = require("../../config/db.config");
-const path = require("path");
+// controllers/courses/createCourse.js
+// Mentor tao khoa hoc moi (trang thai mac dinh: pending)
+const { insertRows, selectRows, supabaseAdmin } = require("../../services/supabase.service");
+const { uploadBuffer, removeObject } = require("../../services/supabaseStorage.service");
+
+const randomStr = () => Math.random().toString(36).slice(2, 8);
 
 const createCourse = async (req, res) => {
-  const {
-    title,
-    description,
-    category_id,
-    level,
-    price,
-    discount_price,
-    language,
-    tags,
-    uid, // instructor_uid
-  } = req.body;
-
-  if (!title || !category_id) {
-    return res.status(400).json({ error: "Tên và danh mục là bắt buộc" });
-  }
-
-  if (!uid) {
-    return res.status(400).json({ error: "UID không được bỏ trống" });
-  }
-
+  let uploadedKey = null;
   try {
-    const pool = await poolPromise;
-    const request = new sql.Request(pool);
+    const { title, description, category_id, price, level, discount_price } = req.body;
+    const instructor_uid = req.supabaseUser?.authUser?.id;
 
-    request.input("uid", sql.NVarChar, uid);
-    const userQuery = await request.query(
-      `SELECT name, role FROM users WHERE uid = @uid`
+    if (!instructor_uid) return res.status(401).json({ error: "Chưa đăng nhập" });
+    if (!title || !title.trim()) return res.status(400).json({ error: "Vui lòng nhập tiêu đề khóa học" });
+    if (!description || !description.trim()) return res.status(400).json({ error: "Vui lòng nhập mô tả" });
+    if (!category_id) return res.status(400).json({ error: "Vui lòng chọn danh mục" });
+
+    // Kiem tra danh muc ton tai
+    const { data: cat, error: catErr } = await selectRows(
+      supabaseAdmin, "course_categories", "category_id",
+      { eq: { category_id: Number(category_id) }, single: true }
     );
+    if (catErr) throw catErr;
+    if (!cat) return res.status(404).json({ error: "Danh mục không tồn tại" });
 
-    if (userQuery.recordset.length === 0) {
-      return res.status(404).json({ error: "Không tìm thấy người dùng" });
-    }
-
-    const { name: instructor_name, role: userRole } = userQuery.recordset[0];
-
-    if (userRole !== "admin" && userRole !== "mentor") {
-      return res.status(403).json({ error: "Bạn không có quyền tạo khóa học" });
-    }
-
-    // Xử lý ảnh thumbnail nếu có
+    // Upload thumbnail neu co
     let thumbnail_url = null;
-    if (req.file) {
-      thumbnail_url = `/uploads/courses/${req.file.filename}`;
+    if (req.file && req.file.buffer) {
+      const ext = (req.file.originalname || "").split(".").pop() || "jpg";
+      const key = `courses/${Date.now()}-${randomStr()}.${ext}`;
+      uploadedKey = key;
+      const contentType = req.file.mimetype || "image/jpeg";
+      thumbnail_url = await uploadBuffer("uploads", key, req.file.buffer, contentType);
     }
 
-    // Gán input
-    request.input("title", sql.NVarChar, title);
-    request.input("description", sql.NVarChar, description || null);
-    request.input("instructor_uid", sql.NVarChar, uid);
-    request.input("category_id", sql.Int, category_id);
-    request.input("level", sql.NVarChar, level || null);
-    request.input("price", sql.Int, price || null);
-    request.input("discount_price", sql.Int, discount_price || null);
-    request.input("status", sql.NVarChar, "pending");
-    request.input("rejection_reason", sql.NVarChar, null);
-    request.input("language", sql.NVarChar, language || null);
-    request.input("tags", sql.NVarChar, tags || null);
-    request.input("thumbnail_url", sql.NVarChar, thumbnail_url);
-
-    await request.query(`
-      INSERT INTO courses (
-        title,
-        description,
+    const { data: inserted, error: insErr } = await insertRows(
+      supabaseAdmin, "courses", {
+        title: title.trim(),
+        description: description.trim(),
+        category_id: Number(category_id),
         instructor_uid,
-        category_id,
-        level,
-        price,
-        discount_price,
-        status,
-        rejection_reason,
-        language,
-        tags,
+        price: price ? Number(price) : 0,
+        discount_price: discount_price ? Number(discount_price) : null,
+        level: level || "beginner",
         thumbnail_url,
-        created_at,
-        updated_at
-      )
-      VALUES (
-        @title,
-        @description,
-        @instructor_uid,
-        @category_id,
-        @level,
-        @price,
-        @discount_price,
-        @status,
-        @rejection_reason,
-        @language,
-        @tags,
-        @thumbnail_url,
-        GETDATE(),
-        GETDATE()
-      )
-    `);
-
-    const courseQuery = await request.query(`
-      SELECT * FROM courses
-      WHERE title = @title AND instructor_uid = @uid
-      ORDER BY created_at DESC
-    `);
-
-    const course = courseQuery.recordset[0];
+        status: "pending",
+      }
+    );
+    if (insErr) {
+      if (uploadedKey) await removeObject("uploads", uploadedKey).catch(() => {});
+      throw insErr;
+    }
 
     res.status(201).json({
-      message: "Tạo khóa học mới thành công",
-      course: {
-        ...course,
-        instructor_name,
-      },
+      message: "Tạo khóa học thành công, đang chờ duyệt",
+      data: inserted && inserted[0] ? inserted[0] : null,
     });
   } catch (err) {
-    res.status(500).json({ error: "Lỗi tạo khóa học: " + err.message });
+    if (uploadedKey) await removeObject("uploads", uploadedKey).catch(() => {});
+    console.error("createCourse error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 
 module.exports = createCourse;
+

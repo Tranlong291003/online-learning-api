@@ -1,81 +1,67 @@
 // controllers/courseCategories/updateCategory.js
-const { sql, poolPromise } = require("../../config/db.config");
-const fs = require("fs");
-const path = require("path");
+const { updateRows, selectRows, supabaseAdmin } = require("../../services/supabase.service");
+const { uploadBuffer, removeObject } = require("../../services/supabaseStorage.service");
 
-const removeOldIcon = (oldIconPath) => {
-  if (!oldIconPath) return;
-  const fullPath = path.join(__dirname, "../public", oldIconPath);
-  if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
-};
+const randomStr = () => Math.random().toString(36).slice(2, 8);
 
 const updateCategory = async (req, res) => {
+  let uploadedKey = null;
   try {
     const { category_id } = req.params;
-    const { name, description, uid } = req.body;
-    const iconFile = req.file;
+    const { name, description } = req.body;
 
-    if (!name)
-      return res
-        .status(400)
-        .json({ error: "Tên danh mục không được bỏ trống" });
-    if (!uid) return res.status(400).json({ error: "UID không được bỏ trống" });
-
-    const pool = await poolPromise;
-
-    // 1. Kiểm quyền
-    const reqRole = new sql.Request(pool);
-    reqRole.input("uid", sql.NVarChar, uid);
-    const roleQ = await reqRole.query(
-      "SELECT role FROM users WHERE uid = @uid"
+    const { data: cat, error: findErr } = await selectRows(
+      supabaseAdmin, "course_categories", "*",
+      { eq: { category_id: Number(category_id) }, single: true }
     );
-    const user = roleQ.recordset[0];
-    if (!user)
-      return res.status(404).json({ error: "Không tìm thấy người dùng" });
-    if (user.role !== "admin" && user.role !== "giang_vien")
-      return res
-        .status(403)
-        .json({ error: "Bạn không có quyền thay đổi danh mục" });
+    if (findErr) throw findErr;
+    if (!cat) return res.status(404).json({ error: "Không tìm thấy danh mục" });
 
-    // 2. Lấy và xóa icon cũ (nếu có file mới)
-    if (iconFile) {
-      const reqSelect = new sql.Request(pool);
-      reqSelect.input("category_id", sql.Int, category_id);
-      const sel = await reqSelect.query(
-        "SELECT icon FROM course_categories WHERE category_id = @category_id"
-      );
-      const oldIcon = sel.recordset[0]?.icon;
-      if (oldIcon) removeOldIcon(oldIcon);
+    if (name && name.trim() && name.trim() !== cat.name) {
+      const { data: dup } = await supabaseAdmin
+        .from("course_categories")
+        .select("category_id")
+        .ilike("name", name.trim())
+        .neq("category_id", Number(category_id))
+        .maybeSingle();
+      if (dup) return res.status(409).json({ error: "Tên danh mục đã tồn tại" });
     }
 
-    // 3. Cập nhật
-    const reqUpd = new sql.Request(pool);
-    reqUpd.input("category_id", sql.Int, category_id);
-    reqUpd.input("name", sql.NVarChar, name);
-    reqUpd.input("desc", sql.NVarChar, description);
+    const patch = {};
+    if (name && name.trim()) patch.name = name.trim();
+    if (description !== undefined) patch.description = description ? description.trim() : null;
 
-    const sets = [
-      "name = @name",
-      "description = @desc",
-      "updated_at = GETDATE()",
-    ];
-    if (iconFile) {
-      const newIcon = `/uploads/categories/${iconFile.filename}`;
-      reqUpd.input("icon", sql.NVarChar, newIcon);
-      sets.push("icon = @icon");
+    if (req.file && req.file.buffer) {
+      const ext = (req.file.originalname || "").split(".").pop() || "jpg";
+      const key = `categories/${Date.now()}-${randomStr()}.${ext}`;
+      uploadedKey = key;
+      const contentType = req.file.mimetype || "image/jpeg";
+      const newUrl = await uploadBuffer("uploads", key, req.file.buffer, contentType);
+      patch.image_url = newUrl;
+      if (cat.image_url) await removeObject("uploads", cat.image_url).catch(() => {});
     }
 
-    const sqlUpdate = `
-      UPDATE course_categories
-      SET ${sets.join(", ")}
-      WHERE category_id = @category_id
-    `;
-    await reqUpd.query(sqlUpdate);
+    if (!Object.keys(patch).length) return res.status(200).json({ message: "Không có thay đổi", data: cat });
 
-    return res.status(200).json({ message: "✅ Cập nhật thành công" });
+    const { error: updErr } = await updateRows(
+      supabaseAdmin, "course_categories", patch, { category_id: Number(category_id) }
+    );
+    if (updErr) {
+      if (uploadedKey) await removeObject("uploads", uploadedKey).catch(() => {});
+      throw updErr;
+    }
+
+    const { data: fresh } = await selectRows(
+      supabaseAdmin, "course_categories", "*",
+      { eq: { category_id: Number(category_id) }, single: true }
+    );
+    res.status(200).json({ message: "Cập nhật danh mục thành công", data: fresh });
   } catch (err) {
-    return res.status(500).json({ error: "❌ Lỗi cập nhật: " + err.message });
+    if (uploadedKey) await removeObject("uploads", uploadedKey).catch(() => {});
+    console.error("updateCategory error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 
 module.exports = updateCategory;
+

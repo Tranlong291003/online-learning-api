@@ -1,21 +1,25 @@
-const createUser = require("./createUser");
-const deleteUser = require("./deleteUser");
+// controllers/users/users.controller.js
+// Gom cac handler thanh 1 object de routes/user.router.js co the goi .method
 const getAllUsers = require("./getAllUsers");
 const getUserById = require("./getUserById");
-const updateUserStatus = require("./updateUserStatus");
-const loginUser = require("./loginUser");
-const updateUser = require("./updateUser");
 const getAllMentors = require("./getAllMentors");
+const updateUser = require("./updateUser");
+const updateUserStatus = require("./updateUserStatus");
+const checkUserStatus = require("./checkUserStatus");
+const createUser = require("./createUser");
+const loginUser = require("./loginUser");
+const deleteUser = require("./deleteUser");
 const updateRole = require("./updateRole");
 
 module.exports = {
-  createUser,
-  deleteUser,
   getAllUsers,
   getUserById,
-  updateUserStatus,
-  loginUser,
-  updateUser,
   getAllMentors,
+  updateUser,
+  updateUserStatus,
+  checkUserStatus,
+  createUser,
+  loginUser,
+  deleteUser,
   updateRole,
 };

@@ -1,63 +1,52 @@
 // controllers/reviews/updateReview.js
-const { sql, poolPromise } = require("../../config/db.config");
+const { updateRows, selectRows, supabaseAdmin } = require("../../services/supabase.service");
 
 const updateReview = async (req, res) => {
   try {
-    const { reviewId } = req.params;
-    const { user_uid, rating, comment } = req.body;
+    const { review_id } = req.params;
+    if (!review_id || isNaN(Number(review_id)))
+      return res.status(400).json({ error: "review_id không hợp lệ" });
 
-    if (!user_uid) {
-      return res.status(400).json({ error: "user_uid không được bỏ trống" });
-    }
-    if (rating == null && comment == null) {
-      return res.status(400).json({ error: "Không có dữ liệu để cập nhật" });
-    }
+    const user_uid = req.supabaseUser?.authUser?.id;
+    const role = req.supabaseUser?.profile?.role;
+    if (!user_uid) return res.status(401).json({ error: "Chưa đăng nhập" });
 
-    const pool = await poolPromise;
-
-    // 1. Kiểm tra tồn tại và chủ sở hữu
-    const chk = await pool
-      .request()
-      .input("reviewId", sql.Int, reviewId)
-      .query(
-        `SELECT user_uid
-         FROM course_reviews
-         WHERE review_id = @reviewId`
-      );
-    if (chk.recordset.length === 0) {
-      return res.status(404).json({ error: "Không tìm thấy review" });
-    }
-    if (chk.recordset[0].user_uid !== user_uid) {
-      return res
-        .status(403)
-        .json({ error: "Bạn không có quyền cập nhật review này" });
+    const { data: review, error: findErr } = await selectRows(
+      supabaseAdmin, "course_reviews", "review_id,user_uid",
+      { eq: { review_id: Number(review_id) }, single: true }
+    );
+    if (findErr) throw findErr;
+    if (!review) return res.status(404).json({ error: "Không tìm thấy đánh giá" });
+    if (role !== "admin" && review.user_uid !== user_uid) {
+      return res.status(403).json({ error: "Không có quyền sửa đánh giá này" });
     }
 
-    // 2. Xây dựng câu lệnh UPDATE
-    const sets = [];
-    const reqDb = pool.request().input("reviewId", sql.Int, reviewId);
-
-    if (rating != null) {
-      sets.push("rating = @rating");
-      reqDb.input("rating", sql.TinyInt, rating);
+    const patch = {};
+    if (req.body.rating !== undefined) {
+      const r = Number(req.body.rating);
+      if (!Number.isInteger(r) || r < 1 || r > 5)
+        return res.status(400).json({ error: "rating phải là số nguyên từ 1 đến 5" });
+      patch.rating = r;
     }
-    if (comment != null) {
-      sets.push("comment = @comment");
-      reqDb.input("comment", sql.NVarChar, comment);
+    if (req.body.comment !== undefined) {
+      patch.comment = req.body.comment ? String(req.body.comment).trim() : null;
     }
-    sets.push("updated_at = GETDATE()");
+    if (Object.keys(patch).length === 0)
+      return res.status(400).json({ error: "Không có trường nào để cập nhật" });
+    patch.updated_at = new Date().toISOString();
 
-    const sqlUpdate = `
-      UPDATE course_reviews
-      SET ${sets.join(", ")}
-      WHERE review_id = @reviewId
-    `;
+    const { data: updated, error: updErr } = await updateRows(
+      supabaseAdmin, "course_reviews", patch, { review_id: Number(review_id) }
+    );
+    if (updErr) throw updErr;
 
-    const result = await reqDb.query(sqlUpdate);
-
-    return res.status(200).json({ message: "✅ Cập nhật thành công" });
+    res.status(200).json({
+      message: "Cập nhật đánh giá thành công",
+      data: updated && updated[0] ? updated[0] : null,
+    });
   } catch (err) {
-    return res.status(500).json({ error: "Lỗi server: " + err.message });
+    console.error("updateReview error:", err);
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 
