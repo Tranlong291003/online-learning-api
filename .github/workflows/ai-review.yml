@@ -3,7 +3,7 @@ name: AI Code Review (Ollama Cloud) — Inline
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    branches: [main, master, develop, feature/**]
+    branches: [master, develop, feature/**]
 
 permissions:
   contents: read

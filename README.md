@@ -217,7 +217,7 @@ Authorization: Bearer <jwt_token>
 
 ## 🤖 AI Code Review
 
-Mỗi Pull Request vào `main` / `master` / `develop` / `feature/**` sẽ **tự động** được review bởi **Ollama Cloud** (model `minimax-m3:cloud`).
+Mỗi Pull Request vào `master` / `develop` / `feature/**` sẽ **tự động** được review bởi **Ollama Cloud** (model `minimax-m3:cloud`).
 
 ### Cấu hình trên repo
 
@@ -280,8 +280,7 @@ Chi tiết: xem [`.github/ai-review/`](.github/ai-review).
 
 | Branch | Mục đích |
 | --- | --- |
-| `main` | Production — bản stable, chỉ merge từ `develop` |
-| `master` | Mirror của `main` (tương thích tooling cũ) |
+| `master` | Production — bản stable, chỉ merge từ `develop` |
 | `develop` | Branch phát triển chính — default branch |
 | `feature/*` | Tính năng mới |
 | `fix/*` | Sửa bug |
