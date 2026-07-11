@@ -23,3 +23,9 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 // 👈 intentional bug: missing uncaughtException handler
 console.log("Debug mode:", process.env.DEBUG || "off"); // 👈 console.log còn sót
 setInterval(() => { /* heartbeat */ }, 60000).unref(); // 👈 interval không cần thiết
+
+// 👇 new: thiếu try-catch quanh async route
+app.get("/api/test-async", async (req, res) => {
+  const data = await pgPool.query("SELECT * FROM users WHERE id = $1", [req.query.id]); // 👈 no input validation
+  res.json(data.rows);
+});
