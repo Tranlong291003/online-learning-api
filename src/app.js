@@ -7,477 +7,636 @@ const path = require("path");
 app.use(cors());
 app.use(express.json());
 
-// Swagger UI - custom HTML + CSS toi uu cho Vercel serverless
-// (swagger-ui-express's static files khong hoat dong tren Vercel)
-// Giao dien tieng Viet co dau, dark mode + glassmorphism
+// Swagger UI - custom HTML/CSS cho Vercel serverless
+// Theme: Slate + Indigo (chuyen nghiep, sang trong), ho tro Light + Dark mode
 const swaggerHtml = `<!DOCTYPE html>
-<html lang="vi">
+<html lang="vi" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Tài liệu API - Hệ thống Học trực tuyến</title>
   <link rel="icon" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/favicon-32x32.png">
   <style>
-    :root {
-      --bg-primary: #0a0e27;
-      --bg-secondary: #131938;
-      --bg-card: rgba(30, 41, 82, 0.6);
-      --border-card: rgba(99, 102, 241, 0.2);
-      --accent: #6366f1;
-      --accent-hover: #818cf8;
-      --accent-2: #ec4899;
-      --accent-3: #14b8a6;
-      --text-primary: #f1f5f9;
-      --text-secondary: #94a3b8;
-      --text-muted: #64748b;
-      --success: #10b981;
-      --warning: #f59e0b;
-      --danger: #ef4444;
-      --info: #3b82f6;
+    /* ============ THEME VARIABLES ============ */
+    html[data-theme="light"] {
+      --bg: #f8fafc;
+      --bg-elevated: #ffffff;
+      --bg-subtle: #f1f5f9;
+      --border: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --text: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #94a3b8;
+      --accent: #4f46e5;
+      --accent-hover: #4338ca;
+      --accent-light: #eef2ff;
+      --accent-text: #4338ca;
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+      --shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+      --shadow-lg: 0 10px 30px -10px rgba(15, 23, 42, 0.15), 0 4px 8px -4px rgba(15, 23, 42, 0.08);
       --code-bg: #0f172a;
+      --code-text: #e2e8f0;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif;
-      background: var(--bg-primary);
-      color: var(--text-primary);
+    html[data-theme="dark"] {
+      --bg: #0b1120;
+      --bg-elevated: #111827;
+      --bg-subtle: #1f2937;
+      --border: #1e293b;
+      --border-strong: #334155;
+      --text: #f1f5f9;
+      --text-secondary: #cbd5e1;
+      --text-muted: #64748b;
+      --accent: #818cf8;
+      --accent-hover: #a5b4fc;
+      --accent-light: rgba(129, 140, 248, 0.12);
+      --accent-text: #a5b4fc;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2);
+      --shadow-lg: 0 10px 30px -10px rgba(0, 0, 0, 0.5), 0 4px 8px -4px rgba(0, 0, 0, 0.3);
+      --code-bg: #020617;
+      --code-text: #e2e8f0;
+    }
+    /* ============ METHOD COLORS ============ */
+    :root {
+      --get: #10b981;       --get-bg: #d1fae5;     --get-bg-dark: rgba(16, 185, 129, 0.15);
+      --post: #3b82f6;      --post-bg: #dbeafe;    --post-bg-dark: rgba(59, 130, 246, 0.15);
+      --put: #f59e0b;       --put-bg: #fef3c7;     --put-bg-dark: rgba(245, 158, 11, 0.15);
+      --patch: #f97316;     --patch-bg: #ffedd5;   --patch-bg-dark: rgba(249, 115, 22, 0.15);
+      --delete: #ef4444;    --delete-bg: #fee2e2;  --delete-bg-dark: rgba(239, 68, 68, 0.15);
+    }
+    html[data-theme="dark"] {
+      --get-bg: rgba(16, 185, 129, 0.15);
+      --post-bg: rgba(59, 130, 246, 0.15);
+      --put-bg: rgba(245, 158, 11, 0.15);
+      --patch-bg: rgba(249, 115, 22, 0.15);
+      --delete-bg: rgba(239, 68, 68, 0.15);
+    }
+    /* ============ RESET ============ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
       line-height: 1.6;
       min-height: 100vh;
+      transition: background 0.2s ease, color 0.2s ease;
     }
-    body::before {
-      content: "";
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background:
-        radial-gradient(circle at 20% 30%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
-        radial-gradient(circle at 80% 70%, rgba(236, 72, 153, 0.1) 0%, transparent 50%),
-        radial-gradient(circle at 50% 50%, rgba(20, 184, 166, 0.08) 0%, transparent 50%);
-      pointer-events: none;
-      z-index: -1;
+    code { font-family: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", monospace; }
+    /* ============ TOP BAR ============ */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: var(--bg-elevated);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(12px);
     }
+    .topbar-inner {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 16px;
+      color: var(--text);
+      text-decoration: none;
+    }
+    .brand-logo {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--accent), #ec4899);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 800;
+    }
+    .topbar-spacer { flex: 1; }
+    .topbar-actions { display: flex; gap: 8px; align-items: center; }
+    .icon-btn {
+      width: 36px; height: 36px;
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      border-radius: 8px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      transition: all 0.15s;
+    }
+    .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn {
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
+    /* ============ HERO ============ */
     .hero {
       max-width: 1280px;
       margin: 0 auto;
-      padding: 80px 24px 60px;
-      text-align: center;
+      padding: 56px 24px 40px;
     }
-    .hero-badge {
+    .hero-eyebrow {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 6px 16px;
-      background: var(--bg-card);
-      border: 1px solid var(--border-card);
+      padding: 5px 12px;
+      background: var(--accent-light);
+      color: var(--accent-text);
       border-radius: 999px;
-      font-size: 13px;
-      color: var(--accent-hover);
-      backdrop-filter: blur(10px);
-      margin-bottom: 24px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 20px;
     }
-    .hero-badge .dot {
-      width: 8px; height: 8px;
-      background: var(--success);
+    .hero-eyebrow .dot {
+      width: 6px; height: 6px;
+      background: var(--get);
       border-radius: 50%;
-      animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(1.3); }
+      box-shadow: 0 0 0 3px var(--get-bg);
     }
     .hero h1 {
-      font-size: clamp(36px, 6vw, 64px);
+      font-size: 40px;
       font-weight: 800;
-      line-height: 1.1;
-      margin-bottom: 20px;
-      background: linear-gradient(135deg, #f1f5f9 0%, #818cf8 50%, #ec4899 100%);
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 12px;
+      color: var(--text);
     }
     .hero p {
-      font-size: 18px;
+      font-size: 16px;
       color: var(--text-secondary);
       max-width: 720px;
-      margin: 0 auto 40px;
     }
     .stats {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 20px;
-      max-width: 960px;
-      margin: 0 auto 60px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 24px 40px;
     }
     .stat-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-card);
-      border-radius: 16px;
-      padding: 24px;
-      backdrop-filter: blur(20px);
-      transition: all 0.3s ease;
-    }
-    .stat-card:hover {
-      transform: translateY(-4px);
-      border-color: var(--accent);
-    }
-    .stat-value {
-      font-size: 36px;
-      font-weight: 800;
-      background: linear-gradient(135deg, var(--accent-hover), var(--accent-2));
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
     }
     .stat-label {
-      font-size: 14px;
+      font-size: 12px;
+      font-weight: 500;
       color: var(--text-muted);
-      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
+    .stat-value {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text);
+      margin-top: 4px;
+      letter-spacing: -0.02em;
+    }
+    .stat-value.accent { color: var(--accent); }
+    /* ============ SEARCH + FILTERS ============ */
+    .toolbar {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 24px 24px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .search-box {
+      flex: 1;
+      min-width: 280px;
+      padding: 10px 14px 10px 40px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      transition: all 0.15s;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>");
+      background-repeat: no-repeat;
+      background-position: 14px center;
+    }
+    .search-box:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
+    .search-box::placeholder { color: var(--text-muted); }
+    .filter-group {
+      display: flex;
+      gap: 6px;
+      padding: 4px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    .filter-chip {
+      padding: 6px 12px;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .filter-chip:hover { background: var(--bg-subtle); color: var(--text); }
+    .filter-chip.active { background: var(--accent); color: #fff; }
+    /* ============ ENDPOINTS ============ */
     .container {
       max-width: 1280px;
       margin: 0 auto;
       padding: 0 24px 80px;
     }
-    .section-title {
-      font-size: 24px;
+    .tag-group { margin-bottom: 36px; }
+    .tag-header {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .tag-name {
+      font-size: 18px;
       font-weight: 700;
-      margin-bottom: 24px;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .tag-count {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+    .endpoints-list { display: flex; flex-direction: column; gap: 6px; }
+    .endpoint-card {
       display: flex;
       align-items: center;
-      gap: 12px;
-    }
-    .section-title::before {
-      content: "";
-      width: 4px; height: 28px;
-      background: linear-gradient(180deg, var(--accent), var(--accent-2));
-      border-radius: 2px;
-    }
-    .endpoints-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-      gap: 16px;
-    }
-    .endpoint-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-card);
-      border-radius: 14px;
-      padding: 20px;
-      transition: all 0.3s ease;
+      gap: 14px;
+      padding: 14px 16px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 10px;
       cursor: pointer;
-      backdrop-filter: blur(20px);
-      position: relative;
-      overflow: hidden;
-    }
-    .endpoint-card::before {
-      content: "";
-      position: absolute;
-      top: 0; left: 0;
-      width: 4px; height: 100%;
-      background: var(--method-color, var(--accent));
-      transition: width 0.3s ease;
+      transition: all 0.15s;
+      text-align: left;
+      width: 100%;
+      font-family: inherit;
+      color: inherit;
     }
     .endpoint-card:hover {
-      transform: translateY(-2px);
       border-color: var(--accent);
-      box-shadow: 0 12px 40px rgba(99, 102, 241, 0.15);
-    }
-    .endpoint-card:hover::before { width: 6px; }
-    .endpoint-header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 10px;
+      box-shadow: var(--shadow);
+      transform: translateY(-1px);
     }
     .method-badge {
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 64px;
       padding: 4px 10px;
       border-radius: 6px;
       font-size: 11px;
       font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.05em;
       color: #fff;
+      flex-shrink: 0;
     }
-    .method-GET    { background: linear-gradient(135deg, #10b981, #059669); --method-color: #10b981; }
-    .method-POST   { background: linear-gradient(135deg, #3b82f6, #2563eb); --method-color: #3b82f6; }
-    .method-PUT    { background: linear-gradient(135deg, #f59e0b, #d97706); --method-color: #f59e0b; }
-    .method-PATCH  { background: linear-gradient(135deg, #f59e0b, #d97706); --method-color: #f59e0b; }
-    .method-DELETE { background: linear-gradient(135deg, #ef4444, #dc2626); --method-color: #ef4444; }
+    .method-GET    { background: var(--get); }
+    .method-POST   { background: var(--post); }
+    .method-PUT    { background: var(--put); }
+    .method-PATCH  { background: var(--patch); }
+    .method-DELETE { background: var(--delete); }
+    .endpoint-body { flex: 1; min-width: 0; }
     .endpoint-path {
-      font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
-      font-size: 14px;
-      color: var(--text-primary);
+      font-family: "SF Mono", Monaco, monospace;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
       word-break: break-all;
     }
     .endpoint-summary {
-      font-size: 14px;
+      font-size: 13px;
       color: var(--text-secondary);
-      margin-top: 8px;
-      line-height: 1.5;
+      margin-top: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
-    .tag-group {
-      margin-bottom: 48px;
-    }
-    .tag-header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 20px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid var(--border-card);
-    }
-    .tag-name {
-      font-size: 20px;
-      font-weight: 700;
-      color: var(--accent-hover);
-    }
-    .tag-count {
-      padding: 2px 10px;
-      background: var(--bg-card);
-      border: 1px solid var(--border-card);
-      border-radius: 999px;
-      font-size: 12px;
+    .endpoint-arrow {
       color: var(--text-muted);
+      font-size: 18px;
+      flex-shrink: 0;
+      transition: transform 0.15s, color 0.15s;
     }
-    .toolbar {
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      background: rgba(10, 14, 39, 0.85);
-      backdrop-filter: blur(20px);
-      border-bottom: 1px solid var(--border-card);
-      padding: 16px 0;
-      margin-bottom: 40px;
-    }
-    .toolbar-inner {
-      max-width: 1280px;
-      margin: 0 auto;
-      padding: 0 24px;
-      display: flex;
-      gap: 12px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    .search-box {
-      flex: 1;
-      min-width: 240px;
-      padding: 10px 16px;
-      background: var(--bg-card);
-      border: 1px solid var(--border-card);
-      border-radius: 10px;
-      color: var(--text-primary);
-      font-size: 14px;
-      outline: none;
-      transition: border-color 0.2s;
-    }
-    .search-box:focus { border-color: var(--accent); }
-    .search-box::placeholder { color: var(--text-muted); }
-    .btn {
-      padding: 10px 18px;
-      background: var(--bg-card);
-      border: 1px solid var(--border-card);
-      border-radius: 10px;
-      color: var(--text-primary);
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .btn:hover { border-color: var(--accent); background: rgba(99, 102, 241, 0.1); }
-    .btn-primary {
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      border: none;
-      color: #fff;
-    }
-    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4); }
-    .footer {
-      text-align: center;
-      padding: 40px 24px;
-      color: var(--text-muted);
-      font-size: 14px;
-      border-top: 1px solid var(--border-card);
-      margin-top: 60px;
-    }
-    .footer a { color: var(--accent-hover); text-decoration: none; }
+    .endpoint-card:hover .endpoint-arrow { color: var(--accent); transform: translateX(2px); }
+    /* ============ MODAL ============ */
     .modal-overlay {
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.7);
-      z-index: 1000;
-      align-items: center;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      align-items: flex-start;
       justify-content: center;
-      padding: 20px;
-      backdrop-filter: blur(8px);
+      padding: 40px 20px;
+      overflow-y: auto;
     }
     .modal-overlay.active { display: flex; }
     .modal {
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-card);
-      border-radius: 16px;
-      max-width: 900px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 14px;
       width: 100%;
-      max-height: 90vh;
-      overflow-y: auto;
-      padding: 32px;
+      max-width: 900px;
+      box-shadow: var(--shadow-lg);
+      overflow: hidden;
     }
     .modal-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
       display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 24px;
-    }
-    .modal-title { font-size: 22px; font-weight: 700; }
-    .modal-close {
-      background: none;
-      border: none;
-      color: var(--text-muted);
-      font-size: 28px;
-      cursor: pointer;
-      line-height: 1;
-    }
-    .modal-close:hover { color: var(--text-primary); }
-    .modal-section { margin-bottom: 20px; }
-    .modal-section h4 {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--accent-hover);
-      margin-bottom: 8px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .param-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 14px;
-    }
-    .param-table th, .param-table td {
-      text-align: left;
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border-card);
-    }
-    .param-table th { color: var(--text-muted); font-weight: 500; font-size: 12px; text-transform: uppercase; }
-    .param-table code {
-      background: var(--code-bg);
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 13px;
-      color: var(--accent-hover);
-    }
-    .try-it {
-      display: flex;
-      flex-direction: column;
+      align-items: center;
       gap: 12px;
     }
+    .modal-title-wrap { flex: 1; min-width: 0; }
+    .modal-endpoint {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .modal-path {
+      font-family: "SF Mono", Monaco, monospace;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      word-break: break-all;
+    }
+    .modal-close {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 24px;
+      line-height: 1;
+      width: 32px; height: 32px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-close:hover { background: var(--bg-subtle); color: var(--text); }
+    .modal-body { padding: 24px; }
+    .modal-section { margin-bottom: 24px; }
+    .modal-section:last-child { margin-bottom: 0; }
+    .modal-section h4 {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 10px;
+    }
+    .modal-desc {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+    .param-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .param-table th, .param-table td {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .param-table th {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .param-table code {
+      background: var(--bg-subtle);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: var(--accent-text);
+    }
+    .response-list { display: flex; flex-direction: column; gap: 6px; }
+    .response-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: var(--bg-subtle);
+      border-radius: 8px;
+      font-size: 13px;
+    }
+    .response-code {
+      font-weight: 700;
+      font-family: "SF Mono", Monaco, monospace;
+      min-width: 36px;
+    }
+    .response-code.success { color: var(--get); }
+    .response-code.client { color: var(--put); }
+    .response-code.error { color: var(--delete); }
+    .response-desc { color: var(--text-secondary); }
+    .try-it { display: flex; flex-direction: column; gap: 10px; }
+    .try-it label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
     .try-it input, .try-it textarea {
       width: 100%;
-      padding: 10px 12px;
-      background: var(--code-bg);
-      border: 1px solid var(--border-card);
+      padding: 8px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
       border-radius: 8px;
-      color: var(--text-primary);
+      color: var(--text);
       font-family: "SF Mono", Monaco, monospace;
       font-size: 13px;
       outline: none;
+      transition: border-color 0.15s;
+      resize: vertical;
     }
-    .try-it input:focus, .try-it textarea:focus { border-color: var(--accent); }
+    .try-it input:focus, .try-it textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
     .response-box {
       background: var(--code-bg);
-      border: 1px solid var(--border-card);
+      color: var(--code-text);
       border-radius: 8px;
-      padding: 16px;
+      padding: 14px;
       max-height: 400px;
       overflow: auto;
       font-family: "SF Mono", Monaco, monospace;
       font-size: 12px;
+      line-height: 1.5;
       white-space: pre-wrap;
-      color: var(--text-secondary);
+      word-break: break-word;
     }
-    .hidden { display: none !important; }
+    /* ============ FOOTER ============ */
+    .footer {
+      text-align: center;
+      padding: 32px 24px;
+      color: var(--text-muted);
+      font-size: 13px;
+      border-top: 1px solid var(--border);
+    }
+    .footer a { color: var(--accent); text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-muted);
+    }
+    .empty-state-icon { font-size: 40px; margin-bottom: 12px; }
+    @media (max-width: 640px) {
+      .hero h1 { font-size: 28px; }
+      .hero { padding: 32px 20px 24px; }
+      .stats, .toolbar, .container { padding-left: 16px; padding-right: 16px; }
+      .modal-overlay { padding: 0; }
+      .modal { border-radius: 0; max-height: 100vh; }
+      .topbar-inner { padding: 12px 16px; }
+    }
   </style>
 </head>
 <body>
+  <!-- Top Bar -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="/api-docs" class="brand">
+        <div class="brand-logo">E</div>
+        <span>Edu API</span>
+      </a>
+      <div class="topbar-spacer"></div>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="theme-toggle" title="Chuyển theme" onclick="toggleTheme()">
+          <span id="theme-icon">🌙</span>
+        </button>
+        <a class="btn" href="/api-docs.json" target="_blank">JSON</a>
+        <button class="btn btn-primary" onclick="openAuth()">🔓 Đăng nhập</button>
+      </div>
+    </div>
+  </header>
+
   <!-- Hero -->
   <section class="hero">
-    <div class="hero-badge">
+    <div class="hero-eyebrow">
       <span class="dot"></span>
-      API đang hoạt động • v1.0.0
+      <span>API đang hoạt động • v1.0.0</span>
     </div>
     <h1>Tài liệu API<br>Hệ thống Học trực tuyến</h1>
     <p>REST API toàn diện cho hệ thống e-learning: khóa học, bài học, quiz, đánh giá, thanh toán, mentor và thông báo. Xác thực bằng Supabase Auth JWT.</p>
-    <div class="stats" id="stats">
-      <div class="stat-card">
-        <div class="stat-value" id="stat-endpoints">–</div>
-        <div class="stat-label">Tổng số Endpoint</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value" id="stat-tags">–</div>
-        <div class="stat-label">Nhóm chức năng</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value" id="stat-methods">–</div>
-        <div class="stat-label">Phương thức HTTP</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value">JWT</div>
-        <div class="stat-label">Xác thực Supabase</div>
-      </div>
-    </div>
   </section>
+
+  <!-- Stats -->
+  <div class="stats" id="stats">
+    <div class="stat-card">
+      <div class="stat-label">Tổng endpoint</div>
+      <div class="stat-value accent" id="stat-endpoints">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Nhóm chức năng</div>
+      <div class="stat-value" id="stat-tags">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Phương thức HTTP</div>
+      <div class="stat-value" id="stat-methods">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Xác thực</div>
+      <div class="stat-value accent" style="font-size:18px;line-height:36px;">Supabase JWT</div>
+    </div>
+  </div>
 
   <!-- Toolbar -->
   <div class="toolbar">
-    <div class="toolbar-inner">
-      <input type="text" class="search-box" id="search-box" placeholder="🔍  Tìm kiếm endpoint, tag hoặc mô tả..." />
-      <button class="btn" onclick="filterByMethod('all')">Tất cả</button>
-      <button class="btn" onclick="filterByMethod('GET')">GET</button>
-      <button class="btn" onclick="filterByMethod('POST')">POST</button>
-      <button class="btn" onclick="filterByMethod('PUT')">PUT</button>
-      <button class="btn" onclick="filterByMethod('DELETE')">DELETE</button>
-      <button class="btn btn-primary" onclick="openAuth()">🔓 Đăng nhập</button>
+    <input type="text" class="search-box" id="search-box" placeholder="Tìm kiếm endpoint, tag, mô tả..." />
+    <div class="filter-group">
+      <button class="filter-chip active" data-method="all">Tất cả</button>
+      <button class="filter-chip" data-method="GET">GET</button>
+      <button class="filter-chip" data-method="POST">POST</button>
+      <button class="filter-chip" data-method="PUT">PUT</button>
+      <button class="filter-chip" data-method="PATCH">PATCH</button>
+      <button class="filter-chip" data-method="DELETE">DELETE</button>
     </div>
   </div>
 
   <!-- Endpoints -->
   <div class="container" id="endpoints-container">
-    <div style="text-align:center; padding:60px 0; color: var(--text-muted);">Đang tải tài liệu API...</div>
+    <div class="empty-state">
+      <div class="empty-state-icon">⏳</div>
+      <div>Đang tải tài liệu API...</div>
+    </div>
   </div>
 
   <footer class="footer">
     <p>📚 Hệ thống Học trực tuyến • Triển khai trên Vercel Serverless</p>
-    <p style="margin-top:8px;">
-      <a href="/api-docs.json">OpenAPI JSON</a> •
-      <a href="/">Trang chủ</a> •
-      <a href="https://github.com/Tranlong291003/online-learning-api" target="_blank">GitHub</a>
+    <p style="margin-top:6px;">
+      <a href="/api-docs.json">OpenAPI JSON</a> • <a href="/">Trang chủ</a> • <a href="https://github.com/Tranlong291003/online-learning-api" target="_blank">GitHub</a>
     </p>
   </footer>
 
-  <!-- Modal -->
+  <!-- Modal: Endpoint -->
   <div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this) closeModal()">
-    <div class="modal" id="modal">
+    <div class="modal">
       <div class="modal-header">
-        <div>
-          <div class="modal-title" id="modal-title">Endpoint</div>
+        <div class="modal-title-wrap">
+          <div class="modal-endpoint">
+            <span class="method-badge" id="modal-method">GET</span>
+            <span class="modal-path" id="modal-path">/api/...</span>
+          </div>
         </div>
         <button class="modal-close" onclick="closeModal()">&times;</button>
       </div>
-      <div id="modal-body">Đang tải...</div>
+      <div class="modal-body" id="modal-body">Đang tải...</div>
     </div>
   </div>
 
-  <!-- Auth Modal -->
+  <!-- Modal: Auth -->
   <div class="modal-overlay" id="auth-overlay" onclick="if(event.target===this) closeAuth()">
     <div class="modal" style="max-width:480px;">
       <div class="modal-header">
-        <div class="modal-title">🔓 Đăng nhập để xác thực</div>
+        <div class="modal-title-wrap">
+          <div class="modal-endpoint">
+            <span class="modal-path" style="font-size:15px;">🔓 Đăng nhập để xác thực</span>
+          </div>
+        </div>
         <button class="modal-close" onclick="closeAuth()">&times;</button>
       </div>
-      <div class="try-it">
-        <label style="font-size:13px;color:var(--text-muted);">Email</label>
-        <input type="email" id="auth-email" value="mentor.demo@onlinelearning.vn" />
-        <label style="font-size:13px;color:var(--text-muted);">Mật khẩu</label>
-        <input type="password" id="auth-password" value="Demo@12345" />
-        <button class="btn btn-primary" onclick="doLogin()">Đăng nhập</button>
-        <div id="auth-result" class="response-box" style="display:none;"></div>
+      <div class="modal-body">
+        <div class="try-it">
+          <label>Email</label>
+          <input type="email" id="auth-email" value="mentor.demo@onlinelearning.vn" />
+          <label>Mật khẩu</label>
+          <input type="password" id="auth-password" value="Demo@12345" />
+          <button class="btn btn-primary" onclick="doLogin()" style="margin-top:6px;">Đăng nhập</button>
+          <div id="auth-result" class="response-box" style="display:none;"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -497,12 +656,31 @@ const swaggerHtml = `<!DOCTYPE html>
       'Questions': 'Câu hỏi',
       'QuizResults': 'Kết quả Quiz',
       'Reviews': 'Đánh giá',
-      'Bookmarks': 'Đánh dấu yêu thích',
+      'Bookmarks': 'Yêu thích',
       'Notifications': 'Thông báo',
       'MentorRequests': 'Yêu cầu Mentor',
       'CourseCategories': 'Danh mục khóa học',
       'AppStats': 'Thống kê ứng dụng',
     };
+
+    // Theme
+    function toggleTheme() {
+      const html = document.documentElement;
+      const next = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+      html.setAttribute('data-theme', next);
+      document.getElementById('theme-icon').textContent = next === 'light' ? '🌙' : '☀️';
+      localStorage.setItem('api_theme', next);
+    }
+    (function initTheme() {
+      const saved = localStorage.getItem('api_theme');
+      if (saved) {
+        document.documentElement.setAttribute('data-theme', saved);
+        document.getElementById('theme-icon').textContent = saved === 'light' ? '🌙' : '☀️';
+      } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.getElementById('theme-icon').textContent = '☀️';
+      }
+    })();
 
     async function loadSpec() {
       try {
@@ -511,7 +689,7 @@ const swaggerHtml = `<!DOCTYPE html>
         renderSpec(spec);
       } catch (e) {
         document.getElementById('endpoints-container').innerHTML =
-          '<div style="text-align:center;color:var(--danger);padding:60px 0;">❌ Lỗi tải tài liệu: ' + e.message + '</div>';
+          '<div class="empty-state"><div class="empty-state-icon">❌</div><div>Lỗi tải tài liệu: ' + escapeHtml(e.message) + '</div></div>';
       }
     }
 
@@ -526,18 +704,13 @@ const swaggerHtml = `<!DOCTYPE html>
             path, method: method.toUpperCase(), op, tags,
             tag: tags[0],
             summary: op.summary || '',
-            description: op.description || '',
           });
           tags.forEach(t => { if (!allTags[t]) allTags[t] = []; allTags[t].push(allEndpoints[allEndpoints.length-1]); });
         });
       });
-
-      // Stats
       document.getElementById('stat-endpoints').textContent = allEndpoints.length;
       document.getElementById('stat-tags').textContent = Object.keys(allTags).length;
-      const methods = new Set(allEndpoints.map(e => e.method));
-      document.getElementById('stat-methods').textContent = methods.size;
-
+      document.getElementById('stat-methods').textContent = new Set(allEndpoints.map(e => e.method)).size;
       renderEndpoints();
     }
 
@@ -557,29 +730,30 @@ const swaggerHtml = `<!DOCTYPE html>
       });
 
       if (sortedTags.length === 0) {
-        container.innerHTML = '<div style="text-align:center;padding:60px 0;color:var(--text-muted);">🔍 Không tìm thấy endpoint nào.</div>';
+        container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔍</div><div>Không tìm thấy endpoint nào.</div></div>';
         return;
       }
 
       container.innerHTML = sortedTags.map(tag => {
         const items = grouped[tag];
         const viName = TAG_LABELS_VI[tag] || tag;
-        return '<div class="tag-group">' +
-          '<div class="tag-header"><div class="tag-name">' + viName + '</div><div class="tag-count">' + items.length + ' endpoint</div></div>' +
-          '<div class="endpoints-grid">' +
+        return '<section class="tag-group">' +
+          '<div class="tag-header"><div class="tag-name">' + escapeHtml(viName) + '</div><div class="tag-count">' + items.length + ' endpoint</div></div>' +
+          '<div class="endpoints-list">' +
             items.map((e, i) => renderCard(e, tag, i)).join('') +
-          '</div></div>';
+          '</div></section>';
       }).join('');
     }
 
     function renderCard(e, tag, idx) {
-      return '<div class="endpoint-card" onclick="openEndpoint(\\'' + tag + '\\',' + idx + ')">' +
-        '<div class="endpoint-header">' +
-          '<span class="method-badge method-' + e.method + '">' + e.method + '</span>' +
-          '<span class="endpoint-path">' + e.path + '</span>' +
+      return '<button class="endpoint-card" onclick="openEndpoint(\\'' + escapeAttr(tag) + '\\',' + idx + ')">' +
+        '<span class="method-badge method-' + e.method + '">' + e.method + '</span>' +
+        '<div class="endpoint-body">' +
+          '<div class="endpoint-path">' + escapeHtml(e.path) + '</div>' +
+          (e.summary ? '<div class="endpoint-summary">' + escapeHtml(e.summary) + '</div>' : '') +
         '</div>' +
-        (e.summary ? '<div class="endpoint-summary">' + escapeHtml(e.summary) + '</div>' : '') +
-      '</div>';
+        '<span class="endpoint-arrow">›</span>' +
+      '</button>';
     }
 
     function openEndpoint(tag, idx) {
@@ -587,56 +761,52 @@ const swaggerHtml = `<!DOCTYPE html>
       const e = items[idx]; if (!e) return;
       const op = e.op;
       const params = op.parameters || [];
-      const tagVi = TAG_LABELS_VI[tag] || tag;
-      document.getElementById('modal-title').innerHTML =
-        '<span class="method-badge method-' + e.method + '">' + e.method + '</span> ' +
-        '<span style="font-family:monospace;">' + e.path + '</span>';
 
-      let html = '<div class="modal-section"><h4>📋 Mô tả</h4><p>' + escapeHtml(op.description || op.summary || 'Không có mô tả') + '</p></div>';
+      document.getElementById('modal-method').className = 'method-badge method-' + e.method;
+      document.getElementById('modal-method').textContent = e.method;
+      document.getElementById('modal-path').textContent = e.path;
+
+      let html = '<div class="modal-section"><h4>📋 Mô tả</h4><div class="modal-desc">' + escapeHtml(op.description || op.summary || 'Không có mô tả') + '</div></div>';
 
       if (params.length) {
         html += '<div class="modal-section"><h4>📝 Tham số (' + params.length + ')</h4><table class="param-table"><thead><tr><th>Tên</th><th>Vị trí</th><th>Kiểu</th><th>Bắt buộc</th></tr></thead><tbody>';
         params.forEach(p => {
-          html += '<tr><td><code>' + p.name + '</code></td><td>' + (p.in || '-') + '</td><td>' + (p.schema && p.schema.type ? p.schema.type : '-') + '</td><td>' + (p.required ? '✅ Có' : 'Không') + '</td></tr>';
+          html += '<tr><td><code>' + escapeHtml(p.name) + '</code></td><td>' + escapeHtml(p.in || '-') + '</td><td>' + (p.schema && p.schema.type ? escapeHtml(p.schema.type) : '-') + '</td><td>' + (p.required ? '✅ Có' : '—') + '</td></tr>';
         });
         html += '</tbody></table></div>';
       }
 
-      // Request body
       if (op.requestBody) {
         const content = op.requestBody.content || {};
         const jsonCt = content['application/json'];
-        if (jsonCt && jsonCt.schema) {
-          html += '<div class="modal-section"><h4>📦 Request Body (JSON)</h4>';
-          const ref = jsonCt.schema['$ref'];
-          if (ref) {
-            const refName = ref.split('/').pop();
-            html += '<p style="font-size:13px;color:var(--text-muted);">Schema: <code>' + refName + '</code></p>';
-          } else {
-            html += '<pre class="response-box">' + escapeHtml(JSON.stringify(jsonCt.schema.example || jsonCt.schema, null, 2)) + '</pre>';
-          }
+        if (jsonCt) {
+          html += '<div class="modal-section"><h4>📦 Request Body</h4>';
+          const ref = jsonCt.schema && jsonCt.schema['$ref'];
+          if (ref) html += '<div class="modal-desc">Schema: <code>' + escapeHtml(ref.split('/').pop()) + '</code></div>';
+          else html += '<pre class="response-box">' + escapeHtml(JSON.stringify(jsonCt.schema && jsonCt.schema.example || jsonCt.schema || {}, null, 2)) + '</pre>';
           html += '</div>';
         }
       }
 
-      // Responses
       const responses = op.responses || {};
-      html += '<div class="modal-section"><h4>📤 Phản hồi (' + Object.keys(responses).length + ')</h4>';
+      html += '<div class="modal-section"><h4>📤 Phản hồi (' + Object.keys(responses).length + ')</h4><div class="response-list">';
       Object.entries(responses).forEach(([code, r]) => {
-        const color = code.startsWith('2') ? 'var(--success)' : code.startsWith('4') || code.startsWith('5') ? 'var(--danger)' : 'var(--info)';
-        html += '<div style="margin-bottom:8px;"><span style="color:' + color + ';font-weight:700;">● ' + code + '</span> <span style="color:var(--text-muted);">' + escapeHtml(r.description || '') + '</span></div>';
+        const cls = code.startsWith('2') ? 'success' : (code.startsWith('4') || code.startsWith('5')) ? 'error' : 'client';
+        html += '<div class="response-item"><span class="response-code ' + cls + '">' + code + '</span><span class="response-desc">' + escapeHtml(r.description || '') + '</span></div>';
       });
-      html += '</div>';
+      html += '</div></div>';
 
-      // Try it
       html += '<div class="modal-section"><h4>🧪 Thử ngay</h4><div class="try-it">';
-      params.filter(p => p.in === 'query' || p.in === 'path').forEach(p => {
-        html += '<input type="text" placeholder="' + p.in + ': ' + p.name + (p.required ? ' *' : '') + '" id="param-' + p.name + '" />';
+      const queryParams = params.filter(p => p.in === 'query' || p.in === 'path');
+      queryParams.forEach(p => {
+        html += '<label>' + escapeHtml(p.in + ': ' + p.name) + (p.required ? ' *' : '') + '</label><input type="text" id="param-' + escapeAttr(p.name) + '" />';
       });
+      let bodyJson = '';
       if (op.requestBody && op.requestBody.content && op.requestBody.content['application/json']) {
-        html += '<textarea id="try-body" rows="4" placeholder=\\'Request body (JSON)\\'>' + escapeHtml(JSON.stringify(op.requestBody.content['application/json'].schema.example || {}, null, 2)) + '</textarea>';
+        bodyJson = JSON.stringify(op.requestBody.content['application/json'].schema && op.requestBody.content['application/json'].schema.example || {}, null, 2);
+        html += '<label>Request body (JSON)</label><textarea id="try-body" rows="4">' + escapeHtml(bodyJson) + '</textarea>';
       }
-      html += '<button class="btn btn-primary" onclick="tryEndpoint(\\'' + e.method + '\\',\\'' + e.path + '\\',' + (params.length) + ')">▶ Gửi yêu cầu</button>';
+      html += '<button class="btn btn-primary" onclick="tryEndpoint(\\'' + e.method + '\\',\\'' + escapeAttr(e.path) + '\\',' + queryParams.length + ')" style="margin-top:6px;">▶ Gửi yêu cầu</button>';
       html += '<div id="try-result" class="response-box" style="display:none;"></div>';
       html += '</div></div>';
 
@@ -645,6 +815,8 @@ const swaggerHtml = `<!DOCTYPE html>
     }
 
     function closeModal() { document.getElementById('modal-overlay').classList.remove('active'); }
+    function openAuth() { document.getElementById('auth-overlay').classList.add('active'); }
+    function closeAuth() { document.getElementById('auth-overlay').classList.remove('active'); }
 
     function tryEndpoint(method, pathTemplate, paramCount) {
       const result = document.getElementById('try-result');
@@ -654,8 +826,7 @@ const swaggerHtml = `<!DOCTYPE html>
       const inputs = document.querySelectorAll('#modal-body input[id^="param-"]');
       inputs.forEach(inp => {
         const key = inp.id.replace('param-', '');
-        const re = new RegExp('{' + key + '}', 'g');
-        url = url.replace(re, encodeURIComponent(inp.value || ''));
+        url = url.replace(new RegExp('{' + key + '}', 'g'), encodeURIComponent(inp.value || ''));
       });
       const fullUrl = location.origin + url;
       const opts = { method, headers: {} };
@@ -670,9 +841,6 @@ const swaggerHtml = `<!DOCTYPE html>
         .then(t => { result.textContent = t; })
         .catch(err => { result.textContent = '❌ Lỗi: ' + err.message; });
     }
-
-    function openAuth() { document.getElementById('auth-overlay').classList.add('active'); }
-    function closeAuth() { document.getElementById('auth-overlay').classList.remove('active'); }
 
     async function doLogin() {
       const email = document.getElementById('auth-email').value;
@@ -700,15 +868,23 @@ const swaggerHtml = `<!DOCTYPE html>
       }
     }
 
-    function filterByMethod(m) { activeMethod = m; renderEndpoints(); }
+    function filterByMethod(m) { activeMethod = m; renderEndpoints(); updateChips(); }
+    function updateChips() {
+      document.querySelectorAll('.filter-chip').forEach(c => c.classList.toggle('active', c.dataset.method === activeMethod));
+    }
 
     function escapeHtml(s) {
       return String(s == null ? '' : s)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
+    function escapeAttr(s) { return String(s == null ? '' : s).replace(/'/g, '\\\\\\'').replace(/"/g, '&quot;'); }
 
     document.getElementById('search-box').addEventListener('input', renderEndpoints);
+    document.querySelectorAll('.filter-chip').forEach(c => c.addEventListener('click', () => filterByMethod(c.dataset.method)));
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { closeModal(); closeAuth(); }
+    });
     loadSpec();
   </script>
 </body>
