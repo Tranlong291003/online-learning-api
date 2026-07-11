@@ -19,27 +19,44 @@ if (!COMMIT_SHA) { console.error('❌ COMMIT_SHA not set'); process.exit(1); }
 
 const SYSTEM_PROMPT = `Bạn là GitHub Copilot code reviewer cho project Node.js/Express backend (online-learning-api).
 
+⚠️ NGUYÊN TẮC QUAN TRỌNG NHẤT: TỰ PHÂN TÍCH TỪ DIFF
+- Bạn phải TỰ ĐỌC code trong diff để hiểu mục đích thay đổi, KHÔNG phụ thuộc vào PR title/body
+- Nếu PR body trống hoặc không có, vẫn PHẢI suy ra được purpose + file purposes từ chính diff
+- purpose và file.purpose KHÔNG ĐƯỢC để trống, không được viết "AI không mô tả" — nếu không suy ra được thì mô tả ngắn gọn những gì THẤY ĐƯỢC trong code
+
 QUY TẮC BẮT BUỘC:
 1. Trả lời TIẾNG VIỆT, giọng đồng nghiệp nhắc nhở thân thiện
 2. LUÔN bắt đầu response bằng chính xác marker <<<JSON>>> và kết thúc bằng <<<END>>>
 3. GIỮA 2 marker là JSON object (không phải array) gồm 2 key:
    {
      "summary": {
-       "purpose": "1-2 câu: PR này thay đổi gì, giải quyết vấn đề gì",
+       "purpose": "2-3 câu: PR này thay đổi gì, giải quyết vấn đề gì, lý do cần thay đổi (suy ra từ code trong diff)",
        "files": [
-         {"path": "src/foo.js", "changes": "+12 -5", "purpose": "1 câu mô tả thay đổi + mục đích"}
+         {"path": "src/foo.js", "changes": "+12 -5", "purpose": "1 câu: thay đổi cụ thể + mục đích (suy ra từ code trong file đó)"}
        ]
      },
      "comments": [
        {"file": "src/foo.js", "line": 12, "severity": "critical|high|medium|low", "title": "...", "message": "...", "suggestion": "code hoặc null"}
      ]
    }
-4. Nếu code ổn: comments = [], summary.purpose vẫn phải có
+4. Nếu code ổn: comments = [], summary.purpose vẫn PHẢI có nội dung
 5. Line number là line trong file MỚI (sau khi áp dụng diff), phải nằm trong vùng diff
 6. Comment NGẮN (1-3 câu), code suggestion là code hoàn chỉnh có thể áp dụng luôn
 7. Tối đa 8 inline comments
+8. CHỈ trả về JSON trong marker, KHÔNG có text thừa trước/sau marker
 
-CHECKLIST ƯU TIÊN:
+CÁCH SUY RA PURPOSE TỪ DIFF (khi không có PR body):
+- Đọc dòng được thêm (bắt đầu bằng +): hiểu logic mới
+- Đọc dòng bị xóa (bắt đầu bằng -): hiểu logic cũ
+- Đọc tên file, hàm, biến: suy ra mục đích nghiệp vụ
+- Đọc import/require: biết module nào được dùng → suy ra tính năng
+
+VÍ DỤ: file src/index.js thêm:
+  + const shutdown = (signal) => { server.close(...); process.exit(0); };
+  + process.on('SIGTERM', () => shutdown('SIGTERM'));
+→ purpose: "Thêm graceful shutdown — đóng HTTP server khi nhận SIGTERM/SIGINT, tránh connection leak"
+
+CHECKLIST ƯU TIÊN KHI COMMENT:
 🔴 CRITICAL: SQL injection, thiếu authMiddleware trên route nhạy cảm, hardcoded secret, password plain text, file upload thiếu validate
 🟠 HIGH: null/undefined không guard, async không try-catch, memory leak (pool không close), N+1 query, race condition
 🟡 MEDIUM: status code sai, response format không nhất quán, thiếu pagination, validate input thiếu
@@ -215,7 +232,7 @@ function buildSummaryReview({ purpose, files, comments }) {
   comments.forEach(c => { counts[c.severity] = (counts[c.severity] || 0) + 1; });
 
   let md = `## Copilot code review\n\n`;
-  md += `### 🎯 Mục đích thay đổi\n\n${purpose || '_Không xác định được mục đích từ diff._'}\n\n`;
+  md += `### 🎯 Mục đích thay đổi\n\n${purpose || '_AI chưa phân tích được mục đích từ diff._'}\n\n`;
 
   if (files && files.length > 0) {
     md += `### 📂 Files changed (${files.length})\n\n`;
@@ -282,9 +299,10 @@ async function main() {
     });
     console.log(`✓ ${validComments.length}/${aiComments.length} valid`);
 
+    // Nếu AI không trả file list → tự build từ diff (chỉ tên file, không giả mạo purpose)
     const filesForSummary = summary.files && summary.files.length > 0
       ? summary.files
-      : FILES_CHANGED.map(f => ({ path: f.path, changes: f.changes, purpose: '_AI không mô tả_' }));
+      : FILES_CHANGED.map(f => ({ path: f.path, changes: f.changes, purpose: '_AI chưa phân tích file này_' }));
 
     const inlineComments = validComments.map(c => ({
       path: c.file,
