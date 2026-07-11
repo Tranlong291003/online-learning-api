@@ -29,3 +29,9 @@ app.get("/api/test-async", async (req, res) => {
   const data = await pgPool.query("SELECT * FROM users WHERE id = $1", [req.query.id]); // 👈 no input validation
   res.json(data.rows);
 });
+
+// 👇 new: route không có auth middleware, lộ data user
+app.delete("/api/users/:id", async (req, res) => {
+  await pgPool.query("DELETE FROM users WHERE id = $1", [req.params.id]);
+  res.json({ success: true });
+});
