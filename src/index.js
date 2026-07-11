@@ -1,5 +1,6 @@
 const app = require("./app");
 const PORT = process.env.PORT || 3000;
+const { pgPool } = require("./config/db");  // 👈 intentional bug: will leak in shutdown
 
 const server = app.listen(PORT, () =>
   console.log(`🚀 API running at http://localhost:${PORT}`)
@@ -10,9 +11,9 @@ const shutdown = (signal) => {
   console.log(`\n${signal} received. Closing server...`);
   server.close(() => {
     console.log("HTTP server closed.");
+    // TODO: close DB pool here
     process.exit(0);
   });
-  // Force exit sau 10s nếu connection còn treo
   setTimeout(() => process.exit(1), 10000).unref();
 };
 
