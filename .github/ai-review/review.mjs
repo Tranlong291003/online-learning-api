@@ -179,23 +179,43 @@ async function callOllamaCloud() {
   return content;
 }
 
+function extractFirstCompleteJSONObject(text) {
+  // Tìm vị trí { đầu tiên, sau đó bracket-match để tìm } tương ứng
+  const first = text.indexOf('{');
+  if (first < 0) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = first; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\') { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        return text.substring(first, i + 1);
+      }
+    }
+  }
+  return null;
+}
+
 function parseAIResponse(raw) {
-  // 1) Thử marker <<<JSON>>> ... <<<END>>> (ưu tiên)
+  // 1) Thử marker <<<JSON>>> ... <<<END>>> (ưu tiên cao nhất)
   const fenced = raw.match(/<<<JSON>>>([\s\S]*?)<<<END>>>/);
   let jsonText = fenced ? fenced[1].trim() : null;
 
-  // 2) Nếu không có marker đầy đủ, tìm JSON object { ... } đầu tiên
+  // 2) Nếu không có marker đầy đủ, tìm JSON object HOÀN CHỈNH đầu tiên bằng bracket matching
   if (!jsonText) {
-    // Tìm từ { đầu tiên đến } cuối cùng
-    const first = raw.indexOf('{');
-    const last = raw.lastIndexOf('}');
-    if (first >= 0 && last > first) {
-      jsonText = raw.substring(first, last + 1);
-    }
+    jsonText = extractFirstCompleteJSONObject(raw);
   }
 
   if (!jsonText) {
-    console.error('⚠️ No JSON found in response');
+    console.error('⚠️ No JSON object found in response');
     return { summary: { purpose: '', files: [] }, comments: [] };
   }
 
@@ -212,7 +232,6 @@ function parseAIResponse(raw) {
   } catch (e) {
     console.error('⚠️ JSON parse failed:', e.message);
     console.error('Text (first 500):', jsonText.slice(0, 500));
-    console.error('Text (last 500):', jsonText.slice(-500));
     return { summary: { purpose: '', files: [] }, comments: [] };
   }
 }
