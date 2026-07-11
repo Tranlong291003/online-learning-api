@@ -84,7 +84,6 @@ async function callOllamaCloud() {
       { role: 'user', content: USER_PROMPT }
     ],
     stream: false,
-    format: 'json',
     options: {
       temperature: 0.1,
       num_predict: 3000,
@@ -112,15 +111,19 @@ async function callOllamaCloud() {
 
 function parseAIResponse(raw) {
   let cleaned = raw.trim();
+  // Strip markdown code block nếu có
   if (cleaned.startsWith('```')) {
     cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
   }
+  // Tìm JSON array trong text (model có thể thêm text thừa)
+  const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+  if (arrayMatch) cleaned = arrayMatch[0];
   try {
     const parsed = JSON.parse(cleaned);
     return Array.isArray(parsed) ? parsed : [];
   } catch (e) {
     console.error('⚠️ JSON parse failed:', e.message);
-    console.error('Raw:', raw.slice(0, 300));
+    console.error('Raw:', raw.slice(0, 500));
     return [];
   }
 }
