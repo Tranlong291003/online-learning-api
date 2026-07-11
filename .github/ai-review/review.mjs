@@ -354,7 +354,7 @@ function buildSummaryReview({ purpose, files, comments }) {
   }
 
   // ─── Severity badges ───
-  md += `<details>\n<summary>📊 <b>Tổng quan (${total} comment)</b></summary>\n\n`;
+  md += `### 📊 Tổng quan (${total} comment)\n\n`;
   if (total === 0) {
     md += `_Không có comment nào._\n\n`;
   } else {
@@ -363,9 +363,8 @@ function buildSummaryReview({ purpose, files, comments }) {
     if (counts.high) md += `| 🟠 High | ${counts.high} |\n`;
     if (counts.medium) md += `| 🟡 Medium | ${counts.medium} |\n`;
     if (counts.low) md += `| 🔵 Low (nit) | ${counts.low} |\n`;
-    md += `| **Tổng** | **${total}** |\n`;
+    md += `| **Tổng** | **${total}** |\n\n`;
   }
-  md += `\n</details>\n\n`;
 
   // ─── Mục đích thay đổi ───
   md += `### 🎯 Mục đích thay đổi\n\n`;
@@ -374,17 +373,17 @@ function buildSummaryReview({ purpose, files, comments }) {
     : `> _AI chưa phân tích được mục đích từ diff._\n\n`;
 
   // ─── Files changed ───
-  md += `<details>\n<summary>📂 <b>Files changed (${files?.length || 0})</b></summary>\n\n`;
+  md += `### 📂 Files changed (${files?.length || 0})\n\n`;
   if (files && files.length > 0) {
     md += `| File | Mục đích |\n| :--- | :--- |\n`;
     for (const f of files) {
       const p = f.purpose || '_—_';
       md += `| \`${f.path}\` | ${p.replace(/\|/g, '\\|').replace(/\n/g, ' ')} |\n`;
     }
+    md += `\n`;
   } else {
-    md += `_Không có file nào thay đổi._`;
+    md += `_Không có file nào thay đổi._\n\n`;
   }
-  md += `\n</details>\n\n`;
 
   // ─── Footer ───
   if (total > 0) md += `👉 **Xem chi tiết ở các inline comment bên dưới.**\n\n`;
