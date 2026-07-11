@@ -156,17 +156,27 @@ async function callOllamaCloud() {
   const data = await response.json();
   const content = data.message?.content || '';
   console.log(`📥 AI raw response (${content.length} chars):`);
-  console.log(content.slice(0, 800));
-  if (content.length > 800) console.log('...(truncated)');
+  console.log(content.slice(0, 1500));
+  if (content.length > 1500) console.log('...(truncated)');
   return content;
 }
 
 function parseAIResponse(raw) {
+  // 1) Thử marker <<<JSON>>> ... <<<END>>> (ưu tiên)
   const fenced = raw.match(/<<<JSON>>>([\s\S]*?)<<<END>>>/);
   let jsonText = fenced ? fenced[1].trim() : raw;
+
+  // 2) Nếu marker xuất hiện nhiều lần (hallucination), lấy lần đầu có summary
+  if (!fenced) {
+    // Tìm block JSON object có chứa "summary" + "comments"
+    const objectMatch = jsonText.match(/\{[\s\S]*?"summary"[\s\S]*?"comments"[\s\S]*?\}/);
+    if (objectMatch) jsonText = objectMatch[0];
+  }
+
   if (jsonText.startsWith('```')) {
     jsonText = jsonText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
   }
+
   try {
     const parsed = JSON.parse(jsonText);
     return {
@@ -176,6 +186,7 @@ function parseAIResponse(raw) {
   } catch (e) {
     console.error('⚠️ JSON parse failed:', e.message);
     console.error('Text:', jsonText.slice(0, 500));
+    // Fallback: tìm array [...] cũ (backward compat)
     const arrayMatch = jsonText.match(/\[[\s\S]*?\]/);
     if (arrayMatch) {
       try { return { summary: { purpose: '', files: [] }, comments: JSON.parse(arrayMatch[0]) }; } catch {}
