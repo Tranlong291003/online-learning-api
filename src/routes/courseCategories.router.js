@@ -6,7 +6,7 @@ const authMiddleware = require("../middleware/auth.middleware");
 
 /**
  * @swagger
- * tags: [{ name: CourseCategories, description: Danh muc khoa hoc } ]
+ * tags: [{ name: CourseCategories, description: Danh mục khóa học } ]
  */
 router.use(authMiddleware);
 
@@ -14,9 +14,9 @@ router.use(authMiddleware);
  * @swagger
  * /api/course-categories:
  *   get:
- *     summary: Lay tat ca danh muc
+ *     summary: Lấy tất cả danh mục
  *     tags: [CourseCategories]
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.get("/", courseCategoryController.getAllCategories);
 
@@ -24,7 +24,7 @@ router.get("/", courseCategoryController.getAllCategories);
  * @swagger
  * /api/course-categories/create:
  *   post:
- *     summary: Tao danh muc moi
+ *     summary: Tạo danh mục mới
  *     tags: [CourseCategories]
  *     requestBody:
  *       content:
@@ -35,7 +35,7 @@ router.get("/", courseCategoryController.getAllCategories);
  *             properties:
  *               name: { type: string }
  *               icon: { type: string, format: binary }
- *     responses: { 201: { description: Created } }
+ *     responses: { 201: { description: Đã tạo thành công } }
  */
 router.post(
   "/create",
@@ -47,10 +47,10 @@ router.post(
  * @swagger
  * /api/course-categories/update/{category_id}:
  *   put:
- *     summary: Cap nhat danh muc
+ *     summary: Cập nhật danh mục
  *     tags: [CourseCategories]
  *     parameters: [{ in: path, name: category_id, required: true, schema: { type: integer } }]
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.put(
   "/update/:category_id",
@@ -62,10 +62,10 @@ router.put(
  * @swagger
  * /api/course-categories/delete/{category_id}:
  *   delete:
- *     summary: Xoa danh muc
+ *     summary: Xóa danh mục
  *     tags: [CourseCategories]
  *     parameters: [{ in: path, name: category_id, required: true, schema: { type: integer } }]
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.delete("/delete/:category_id", courseCategoryController.deleteCategory);
 

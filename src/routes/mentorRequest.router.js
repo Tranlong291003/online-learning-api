@@ -6,7 +6,7 @@ const uploadMentorRequestImage = require("../config/multer.mentorRequest.config"
 
 /**
  * @swagger
- * tags: [{ name: MentorRequests, description: Yeu cau nang cap len Mentor } ]
+ * tags: [{ name: MentorRequests, description: Yêu cầu nâng cấp lên Mentor } ]
  */
 router.use(authMiddleware);
 
@@ -14,7 +14,7 @@ router.use(authMiddleware);
  * @swagger
  * /api/mentor-requests:
  *   post:
- *     summary: User gui yeu cau nang cap (kem anh minh chung)
+ *     summary: User gửi yêu cầu nâng cấp (kèm ảnh minh chứng)
  *     tags: [MentorRequests]
  *     requestBody:
  *       content:
@@ -25,7 +25,7 @@ router.use(authMiddleware);
  *             properties:
  *               reason: { type: string }
  *               image: { type: string, format: binary }
- *     responses: { 201: { description: Created } }
+ *     responses: { 201: { description: Đã tạo thành công } }
  */
 router.post(
   "/",
@@ -37,10 +37,10 @@ router.post(
  * @swagger
  * /api/mentor-requests/{id}/status:
  *   put:
- *     summary: Admin duyet/tu choi
+ *     summary: Admin duyệt/từ chối
  *     tags: [MentorRequests]
  *     parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.put("/:id/status", mentorRequestController.updateStatusRequest);
 
@@ -48,9 +48,9 @@ router.put("/:id/status", mentorRequestController.updateStatusRequest);
  * @swagger
  * /api/mentor-requests:
  *   get:
- *     summary: Lay danh sach yeu cau (admin)
+ *     summary: Lấy danh sách yêu cầu (admin)
  *     tags: [MentorRequests]
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.get("/", mentorRequestController.getRequests);
 

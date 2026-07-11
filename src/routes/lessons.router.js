@@ -6,7 +6,7 @@ const authMiddleware = require("../middleware/auth.middleware");
 
 /**
  * @swagger
- * tags: [{ name: Lessons, description: Bai hoc trong khoa hoc } ]
+ * tags: [{ name: Lessons, description: Bài học trong khóa học } ]
  */
 router.use(authMiddleware);
 
@@ -14,12 +14,12 @@ router.use(authMiddleware);
  * @swagger
  * /api/lessons/courses/{course_id}/{userUid}:
  *   get:
- *     summary: Lay tat ca bai hoc theo khoa hoc
+ *     summary: Lấy tất cả bài học theo khóa học
  *     tags: [Lessons]
  *     parameters:
  *       - { in: path, name: course_id, required: true, schema: { type: integer } }
  *       - { in: path, name: userUid, required: true, schema: { type: string } }
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.get("/courses/:course_id/:userUid", lessonController.getAllLessons);
 
@@ -27,7 +27,7 @@ router.get("/courses/:course_id/:userUid", lessonController.getAllLessons);
  * @swagger
  * /api/lessons/create:
  *   post:
- *     summary: Tao bai hoc moi (mentor)
+ *     summary: Tạo bài học mới (mentor)
  *     tags: [Lessons]
  *     requestBody:
  *       content:
@@ -41,7 +41,7 @@ router.get("/courses/:course_id/:userUid", lessonController.getAllLessons);
  *               youtube_url: { type: string }
  *               pdf: { type: string, format: binary }
  *               slide: { type: string, format: binary }
- *     responses: { 201: { description: Created } }
+ *     responses: { 201: { description: Đã tạo thành công } }
  */
 router.post(
   "/create",
@@ -56,10 +56,10 @@ router.post(
  * @swagger
  * /api/lessons/update/{lesson_id}:
  *   put:
- *     summary: Cap nhat bai hoc
+ *     summary: Cập nhật bài học
  *     tags: [Lessons]
  *     parameters: [{ in: path, name: lesson_id, required: true, schema: { type: integer } }]
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.put(
   "/update/:lesson_id",
@@ -74,10 +74,10 @@ router.put(
  * @swagger
  * /api/lessons/delete/{lesson_id}:
  *   delete:
- *     summary: Xoa bai hoc
+ *     summary: Xóa bài học
  *     tags: [Lessons]
  *     parameters: [{ in: path, name: lesson_id, required: true, schema: { type: integer } }]
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.delete("/delete/:lesson_id", lessonController.deleteLesson);
 
@@ -85,7 +85,7 @@ router.delete("/delete/:lesson_id", lessonController.deleteLesson);
  * @swagger
  * /api/lessons/complete:
  *   post:
- *     summary: Danh dau hoan thanh bai hoc
+ *     summary: Đánh dấu hoàn thành bài học
  *     tags: [Lessons]
  *     requestBody:
  *       content:
@@ -94,7 +94,7 @@ router.delete("/delete/:lesson_id", lessonController.deleteLesson);
  *             type: object
  *             required: [lesson_id]
  *             properties: { lesson_id: { type: integer } }
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.post("/complete", lessonController.completeLesson);
 
@@ -102,10 +102,10 @@ router.post("/complete", lessonController.completeLesson);
  * @swagger
  * /api/lessons/detail/{lessonId}:
  *   get:
- *     summary: Chi tiet bai hoc
+ *     summary: Chi tiết bài học
  *     tags: [Lessons]
  *     parameters: [{ in: path, name: lessonId, required: true, schema: { type: integer } }]
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.get("/detail/:lessonId", lessonController.getLessonDetail);
 

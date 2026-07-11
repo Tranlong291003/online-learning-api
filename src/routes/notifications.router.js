@@ -5,7 +5,7 @@ const authMiddleware = require("../middleware/auth.middleware");
 
 /**
  * @swagger
- * tags: [{ name: Notifications, description: Thong bao cho user } ]
+ * tags: [{ name: Notifications, description: Thông báo cho user } ]
  */
 router.use(authMiddleware);
 
@@ -13,7 +13,7 @@ router.use(authMiddleware);
  * @swagger
  * /api/notifications/create:
  *   post:
- *     summary: Tao thong bao (admin)
+ *     summary: Tạo thông báo (admin)
  *     tags: [Notifications]
  *     requestBody:
  *       content:
@@ -27,7 +27,7 @@ router.use(authMiddleware);
  *               content: { type: string }
  *               icon: { type: string }
  *               color: { type: string }
- *     responses: { 201: { description: Created } }
+ *     responses: { 201: { description: Đã tạo thành công } }
  */
 router.post("/create", notificationController.createNotification);
 
@@ -35,9 +35,9 @@ router.post("/create", notificationController.createNotification);
  * @swagger
  * /api/notifications:
  *   post:
- *     summary: Lay thong bao cua user hien tai
+ *     summary: Lấy thông báo của user hiện tại
  *     tags: [Notifications]
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.post("/", notificationController.getNotifications);
 
@@ -45,7 +45,7 @@ router.post("/", notificationController.getNotifications);
  * @swagger
  * /api/notifications/mark-read:
  *   post:
- *     summary: Danh dau da doc
+ *     summary: Đánh dấu đã đọc
  *     tags: [Notifications]
  *     requestBody:
  *       content:
@@ -54,7 +54,7 @@ router.post("/", notificationController.getNotifications);
  *             type: object
  *             required: [noti_id]
  *             properties: { noti_id: { type: string, format: uuid } }
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.post("/mark-read", notificationController.markAsRead);
 
@@ -62,10 +62,10 @@ router.post("/mark-read", notificationController.markAsRead);
  * @swagger
  * /api/notifications/delete/{id}:
  *   delete:
- *     summary: Xoa thong bao
+ *     summary: Xóa thông báo
  *     tags: [Notifications]
  *     parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.delete("/delete/:id", notificationController.deleteNotification);
 

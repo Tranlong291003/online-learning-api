@@ -9,14 +9,14 @@ const authMiddleware = require("../middleware/auth.middleware");
  * @swagger
  * tags:
  *   - name: Users
- *     description: Quan ly nguoi dung (admin, mentor, user)
+ *     description: Quản lý người dùng (admin, mentor, user)
  */
 
 /**
  * @swagger
  * /api/users/create:
  *   post:
- *     summary: Tao user moi (admin)
+ *     summary: Tạo user mới (admin)
  *     tags: [Users]
  *     requestBody:
  *       required: true
@@ -28,11 +28,11 @@ const authMiddleware = require("../middleware/auth.middleware");
  *             properties:
  *               email: { type: string, example: user@example.com }
  *               password: { type: string, example: P@ssw0rd! }
- *               name: { type: string, example: Nguyen Van A }
+ *               name: { type: string, example: Nguyễn Văn A }
  *               role: { type: string, enum: [user, mentor, admin] }
  *     responses:
- *       201: { description: Created }
- *       400: { description: Bad request }
+ *       201: { description: Đã tạo thành công }
+ *       400: { description: Yêu cầu không hợp lệ }
  */
 router.post("/create", usersController.createUser);
 
@@ -40,7 +40,7 @@ router.post("/create", usersController.createUser);
  * @swagger
  * /api/users/login:
  *   post:
- *     summary: Dang nhap (Supabase Auth)
+ *     summary: Đăng nhập (Supabase Auth)
  *     tags: [Users]
  *     requestBody:
  *       required: true
@@ -53,8 +53,8 @@ router.post("/create", usersController.createUser);
  *               email: { type: string }
  *               password: { type: string }
  *     responses:
- *       200: { description: OK }
- *       401: { description: Sai thong tin }
+ *       200: { description: Thành công }
+ *       401: { description: Sai thông tin đăng nhập }
  */
 router.post("/login", usersController.loginUser);
 
@@ -64,10 +64,10 @@ router.use(authMiddleware);
  * @swagger
  * /api/users/listmentor:
  *   get:
- *     summary: Lay danh sach mentor
+ *     summary: Lấy danh sách mentor
  *     tags: [Users]
  *     responses:
- *       200: { description: OK }
+ *       200: { description: Thành công }
  */
 router.get("/listmentor", usersController.getAllMentors);
 
@@ -75,7 +75,7 @@ router.get("/listmentor", usersController.getAllMentors);
  * @swagger
  * /api/users:
  *   get:
- *     summary: Lay tat ca user (admin)
+ *     summary: Lấy tất cả user (admin)
  *     tags: [Users]
  *     parameters:
  *       - in: query
@@ -85,7 +85,7 @@ router.get("/listmentor", usersController.getAllMentors);
  *         name: search
  *         schema: { type: string }
  *     responses:
- *       200: { description: OK }
+ *       200: { description: Thành công }
  */
 router.get("/", usersController.getAllUsers);
 
@@ -93,7 +93,7 @@ router.get("/", usersController.getAllUsers);
  * @swagger
  * /api/users/{id}:
  *   get:
- *     summary: Lay chi tiet user
+ *     summary: Lấy chi tiết user
  *     tags: [Users]
  *     parameters:
  *       - in: path
@@ -101,8 +101,8 @@ router.get("/", usersController.getAllUsers);
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: OK }
- *       404: { description: Not found }
+ *       200: { description: Thành công }
+ *       404: { description: Không tìm thấy }
  */
 router.get("/:id", usersController.getUserById);
 
@@ -110,7 +110,7 @@ router.get("/:id", usersController.getUserById);
  * @swagger
  * /api/users/{id}/status:
  *   patch:
- *     summary: Cap nhat trang thai active (admin)
+ *     summary: Cập nhật trạng thái active (admin)
  *     tags: [Users]
  *     parameters:
  *       - in: path
@@ -125,7 +125,7 @@ router.get("/:id", usersController.getUserById);
  *             properties:
  *               is_active: { type: boolean }
  *     responses:
- *       200: { description: OK }
+ *       200: { description: Thành công }
  */
 router.patch("/:id/status", usersController.updateUserStatus);
 
@@ -133,7 +133,7 @@ router.patch("/:id/status", usersController.updateUserStatus);
  * @swagger
  * /api/users/delete/{id}:
  *   delete:
- *     summary: Xoa user (admin)
+ *     summary: Xóa user (admin)
  *     tags: [Users]
  *     parameters:
  *       - in: path
@@ -141,7 +141,7 @@ router.patch("/:id/status", usersController.updateUserStatus);
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: OK }
+ *       200: { description: Thành công }
  */
 router.delete("/delete/:id", usersController.deleteUser);
 
@@ -149,7 +149,7 @@ router.delete("/delete/:id", usersController.deleteUser);
  * @swagger
  * /api/users/update/{id}:
  *   put:
- *     summary: Cap nhat profile (co the upload avatar)
+ *     summary: Cập nhật profile (có thể upload avatar)
  *     tags: [Users]
  *     parameters:
  *       - in: path
@@ -167,7 +167,7 @@ router.delete("/delete/:id", usersController.deleteUser);
  *               phone: { type: string }
  *               avatar: { type: string, format: binary }
  *     responses:
- *       200: { description: OK }
+ *       200: { description: Thành công }
  */
 router.put("/update/:id", upload.single("avatar"), usersController.updateUser);
 
@@ -175,7 +175,7 @@ router.put("/update/:id", upload.single("avatar"), usersController.updateUser);
  * @swagger
  * /api/users/updaterole:
  *   put:
- *     summary: Doi role (admin)
+ *     summary: Đổi role (admin)
  *     tags: [Users]
  *     requestBody:
  *       content:
@@ -187,7 +187,7 @@ router.put("/update/:id", upload.single("avatar"), usersController.updateUser);
  *               uid: { type: string }
  *               role: { type: string, enum: [user, mentor, admin] }
  *     responses:
- *       200: { description: OK }
+ *       200: { description: Thành công }
  */
 router.put("/updaterole", usersController.updateRole);
 
@@ -195,7 +195,7 @@ router.put("/updaterole", usersController.updateRole);
  * @swagger
  * /api/users/checkactive/{uid}:
  *   get:
- *     summary: Kiem tra user con active khong
+ *     summary: Kiểm tra user còn active không
  *     tags: [Users]
  *     parameters:
  *       - in: path
@@ -203,7 +203,7 @@ router.put("/updaterole", usersController.updateRole);
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: OK }
+ *       200: { description: Thành công }
  */
 router.get("/checkactive/:uid", checkUserStatus);
 

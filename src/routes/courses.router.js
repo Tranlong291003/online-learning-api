@@ -6,7 +6,7 @@ const authMiddleware = require("../middleware/auth.middleware");
 
 /**
  * @swagger
- * tags: [{ name: Courses, description: Quan ly khoa hoc } ]
+ * tags: [{ name: Courses, description: Quản lý khóa học } ]
  */
 router.use(authMiddleware);
 
@@ -14,13 +14,13 @@ router.use(authMiddleware);
  * @swagger
  * /api/courses:
  *   get:
- *     summary: Lay danh sach khoa hoc (co filter)
+ *     summary: Lấy danh sách khóa học (có filter)
  *     tags: [Courses]
  *     parameters:
  *       - { in: query, name: search, schema: { type: string } }
  *       - { in: query, name: category_id, schema: { type: integer } }
- *       - { in: query, name: status, schema: { type: string, enum: [draft, published, archived] } }
- *     responses: { 200: { description: OK } }
+ *       - { in: query, name: status, schema: { type: string, enum: [pending, approved, rejected] } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.get("/", courseController.getAllCourses);
 
@@ -28,10 +28,10 @@ router.get("/", courseController.getAllCourses);
  * @swagger
  * /api/courses/mentor/{instructor_uid}:
  *   get:
- *     summary: Lay cac khoa hoc cua 1 mentor
+ *     summary: Lấy các khóa học của 1 mentor
  *     tags: [Courses]
  *     parameters: [{ in: path, name: instructor_uid, required: true, schema: { type: string } }]
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.get("/mentor/:instructor_uid", courseController.getMentorCourses);
 
@@ -39,10 +39,10 @@ router.get("/mentor/:instructor_uid", courseController.getMentorCourses);
  * @swagger
  * /api/courses/{course_id}:
  *   get:
- *     summary: Chi tiet khoa hoc
+ *     summary: Chi tiết khóa học
  *     tags: [Courses]
  *     parameters: [{ in: path, name: course_id, required: true, schema: { type: integer } }]
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.get("/:course_id", courseController.getCourseById);
 
@@ -50,7 +50,7 @@ router.get("/:course_id", courseController.getCourseById);
  * @swagger
  * /api/courses/update/{course_id}:
  *   put:
- *     summary: Cap nhat khoa hoc
+ *     summary: Cập nhật khóa học
  *     tags: [Courses]
  *     parameters: [{ in: path, name: course_id, required: true, schema: { type: integer } }]
  *     requestBody:
@@ -63,7 +63,7 @@ router.get("/:course_id", courseController.getCourseById);
  *               description: { type: string }
  *               price: { type: number }
  *               thumbnail: { type: string, format: binary }
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.put(
   "/update/:course_id",
@@ -75,10 +75,10 @@ router.put(
  * @swagger
  * /api/courses/{course_id}/status:
  *   patch:
- *     summary: Doi trang thai khoa hoc (admin/mentor)
+ *     summary: Đổi trạng thái khóa học (admin/mentor)
  *     tags: [Courses]
  *     parameters: [{ in: path, name: course_id, required: true, schema: { type: integer } }]
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.patch("/:course_id/status", courseController.changeCourseStatus);
 
@@ -86,10 +86,10 @@ router.patch("/:course_id/status", courseController.changeCourseStatus);
  * @swagger
  * /api/courses/delete/{course_id}:
  *   delete:
- *     summary: Xoa khoa hoc
+ *     summary: Xóa khóa học
  *     tags: [Courses]
  *     parameters: [{ in: path, name: course_id, required: true, schema: { type: integer } }]
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.delete("/delete/:course_id", courseController.deleteCourse);
 
@@ -97,7 +97,7 @@ router.delete("/delete/:course_id", courseController.deleteCourse);
  * @swagger
  * /api/courses/create:
  *   post:
- *     summary: Tao khoa hoc moi (mentor)
+ *     summary: Tạo khóa học mới (mentor)
  *     tags: [Courses]
  *     requestBody:
  *       content:
@@ -111,7 +111,7 @@ router.delete("/delete/:course_id", courseController.deleteCourse);
  *               category_id: { type: integer }
  *               price: { type: number }
  *               thumbnail: { type: string, format: binary }
- *     responses: { 201: { description: Created } }
+ *     responses: { 201: { description: Đã tạo thành công } }
  */
 router.post(
   "/create",

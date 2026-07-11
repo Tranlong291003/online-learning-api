@@ -5,7 +5,7 @@ const authMiddleware = require("../middleware/auth.middleware");
 
 /**
  * @swagger
- * tags: [{ name: AppStats, description: Thong ke dashboard (admin/mentor) } ]
+ * tags: [{ name: AppStats, description: Thống kê dashboard (admin/mentor) } ]
  */
 router.use(authMiddleware);
 
@@ -13,9 +13,9 @@ router.use(authMiddleware);
  * @swagger
  * /api/app-stats:
  *   post:
- *     summary: Thong ke app
+ *     summary: Thống kê tổng quan ứng dụng
  *     tags: [AppStats]
- *     responses: { 200: { description: OK } }
+ *     responses: { 200: { description: Thành công } }
  */
 router.post("/", appStatsController.getStats);
 
