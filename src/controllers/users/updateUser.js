@@ -1,95 +1,74 @@
-// src/controllers/user/updateUser.js
-
 const path = require("path");
-const { sql, poolPromise } = require("../../config/db.config");
+const { pool } = require("../../config/db.config");
 const { sendNotification } = require("../../services/notificationService");
 
-/**
- * PUT /api/users/:id
- * middleware multer.single('avatar') đã chạy trước
- */
 const updateUser = async (req, res) => {
   const uid = req.params.id;
   const { name, bio, phone, gender, birthdate } = req.body;
 
-  // Chuẩn bị avatar_url nếu có
+  if (req.user.role !== "admin" && req.user.uid !== req.params.id) {
+    return res.status(403).json({ error: "Bạn không có quyền cập nhật người dùng này" });
+  }
+
   let avatarUrl = null;
   if (req.file) {
     avatarUrl = `/uploads/avatars/${path.basename(req.file.path)}`;
   }
 
-  // Xây mảng SET động
+  // Xây mảng SET động cho PostgreSQL
   const setClauses = [];
-  const inputs = [];
+  const values = [];
+  let paramIndex = 1;
 
   if (name != null) {
-    setClauses.push("name = @name");
-    inputs.push(["name", name]);
+    setClauses.push(`name = $${paramIndex++}`);
+    values.push(name);
   }
   if (bio != null) {
-    setClauses.push("bio = @bio");
-    inputs.push(["bio", bio]);
+    setClauses.push(`bio = $${paramIndex++}`);
+    values.push(bio);
   }
   if (phone != null) {
-    setClauses.push("phone = @phone");
-    inputs.push(["phone", phone]);
+    setClauses.push(`phone = $${paramIndex++}`);
+    values.push(phone);
   }
   if (gender != null) {
-    setClauses.push("gender = @gender");
-    inputs.push(["gender", gender]);
+    setClauses.push(`gender = $${paramIndex++}`);
+    values.push(gender);
   }
   if (birthdate != null) {
-    // Convert string -> Date nếu cần
-    const bd = new Date(birthdate);
-    setClauses.push("birthdate = @birthdate");
-    inputs.push(["birthdate", bd]);
+    setClauses.push(`birthdate = $${paramIndex++}`);
+    values.push(new Date(birthdate));
   }
   if (avatarUrl) {
-    setClauses.push("avatar_url = @avatar_url");
-    inputs.push(["avatar_url", avatarUrl]);
+    setClauses.push(`avatar_url = $${paramIndex++}`);
+    values.push(avatarUrl);
   }
 
-  // Không có gì để update
   if (setClauses.length === 0) {
     return res.status(400).json({ error: "Không có dữ liệu để cập nhật" });
   }
 
-  // Luôn cập nhật updated_at
-  setClauses.push("updated_at = GETDATE()");
+  setClauses.push("updated_at = NOW()");
+  values.push(uid); // Thêm uid làm tham số cuối
 
   try {
-    const pool = await poolPromise;
-    const request = pool.request().input("uid", sql.NVarChar, uid);
-
-    // Gán các input động
-    for (const [key, val] of inputs) {
-      if (key === "birthdate") {
-        request.input(key, sql.DateTime, val);
-      } else {
-        request.input(key, sql.NVarChar, val);
-      }
-    }
-
-    // Thực hiện UPDATE
-    const result = await request.query(`
+    // UPDATE user
+    const updateQuery = `
       UPDATE users
       SET ${setClauses.join(", ")}
-      WHERE uid = @uid
-    `);
+      WHERE uid = $${paramIndex}
+      RETURNING *
+    `;
+    const result = await pool.query(updateQuery, values);
 
-    if (result.rowsAffected[0] === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy người dùng" });
     }
 
-    // Lấy lại dữ liệu user sau khi update
-    const { recordset } = await pool
-      .request()
-      .input("uid", sql.NVarChar, uid)
-      .query("SELECT * FROM users WHERE uid = @uid");
+    const user = result.rows[0];
 
-    const user = recordset[0];
-
-    // Chuẩn bị thông báo
+    // Tạo notification
     const notificationTitle = "Thông tin đã được cập nhật";
     const bdDisplay = user.birthdate
       ? new Date(user.birthdate).toLocaleDateString("vi-VN")
@@ -97,35 +76,34 @@ const updateUser = async (req, res) => {
     const notificationBody = `Hồ sơ của bạn đã được cập nhật: Tên=${user.name}, SĐT=${user.phone}, Giới tính=${user.gender}, Ngày sinh=${bdDisplay}.`;
     const fcmToken = user.fcm_token;
 
-    // Tạo bản ghi notification trong DB và lấy noti_id
-    const notificationResult = await pool
-      .request()
-      .input("uid", sql.NVarChar, user.uid)
-      .input("title", sql.NVarChar, notificationTitle)
-      .input("content", sql.NVarChar, notificationBody)
-      .input("icon", sql.NVarChar, "person")
-      .input("color", sql.NVarChar, "#4caf50")
-      .input("is_read", sql.Bit, false)
-      .input("created_at", sql.DateTime, new Date()).query(`
-        INSERT INTO notifications (uid, title, content, icon, color, is_read, created_at)
-        OUTPUT INSERTED.noti_id
-        VALUES (@uid, @title, @content, @icon, @color, @is_read, @created_at)
-      `);
-
-    const noti_id = notificationResult.recordset[0].noti_id;
-
-    // Gửi FCM
-    await sendNotification(
-      fcmToken,
-      noti_id,
-      user.uid,
-      notificationTitle,
-      notificationBody,
-      "person",
-      "#4caf50"
+    // Insert notification
+    const notiResult = await pool.query(
+      `INSERT INTO notifications (uid, title, content, icon, color, is_read, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       RETURNING noti_id`,
+      [user.uid, notificationTitle, notificationBody, "person", "#4caf50", false]
     );
 
-    // Trả về response
+    const noti_id = notiResult.rows[0].noti_id;
+
+    let sent = false;
+    if (fcmToken) {
+      try {
+        await sendNotification(
+          fcmToken,
+          noti_id,
+          user.uid,
+          notificationTitle,
+          notificationBody,
+          "person",
+          "#4caf50"
+        );
+        sent = true;
+      } catch (error) {
+        console.warn("send profile update notification failed:", error.message);
+      }
+    }
+
     res.json({
       message: "Cập nhật thành công và thông báo đã được gửi",
       user,
@@ -133,7 +111,7 @@ const updateUser = async (req, res) => {
         noti_id,
         title: notificationTitle,
         body: notificationBody,
-        sent: true,
+        sent,
       },
     });
   } catch (err) {

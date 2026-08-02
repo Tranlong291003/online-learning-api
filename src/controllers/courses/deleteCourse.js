@@ -1,4 +1,4 @@
-const { sql, poolPromise } = require("../../config/db.config");
+const { pool } = require("../../config/db.config");
 
 const deleteCourse = async (req, res) => {
   const { course_id } = req.params;
@@ -8,57 +8,125 @@ const deleteCourse = async (req, res) => {
     return res.status(400).json({ error: "Thiếu uid hoặc course_id" });
   }
 
+  let client;
+
   try {
-    const pool = await poolPromise;
-    const request = new sql.Request(pool);
+    client = await pool.connect();
 
     // Lấy vai trò người dùng
-    request.input("uid", sql.NVarChar, uid);
-    const userResult = await request.query(`
-      SELECT role FROM users WHERE uid = @uid
-    `);
+    const userResult = await client.query(
+      "SELECT role FROM users WHERE uid = $1",
+      [uid]
+    );
 
-    if (userResult.recordset.length === 0) {
+    if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy người dùng" });
     }
 
-    const role = userResult.recordset[0].role;
+    const role = userResult.rows[0].role;
 
-    // Chỉ cho phép mentor hoặc admin
     if (role !== "admin" && role !== "mentor") {
       return res.status(403).json({ error: "Bạn không có quyền xóa khóa học" });
     }
 
     // Lấy instructor_uid của khóa học
-    const courseCheckRequest = new sql.Request(pool);
-    courseCheckRequest.input("course_id", sql.Int, course_id);
-    const courseResult = await courseCheckRequest.query(`
-      SELECT instructor_uid FROM courses WHERE course_id = @course_id
-    `);
+    const courseResult = await client.query(
+      "SELECT instructor_uid FROM courses WHERE course_id = $1",
+      [course_id]
+    );
 
-    if (courseResult.recordset.length === 0) {
+    if (courseResult.rows.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy khóa học để xóa" });
     }
 
-    const course = courseResult.recordset[0];
+    const course = courseResult.rows[0];
 
-    // Nếu là mentor thì chỉ được xóa khóa học của mình
     if (role === "mentor" && course.instructor_uid !== uid) {
       return res
         .status(403)
         .json({ error: "Bạn chỉ được phép xóa khóa học do bạn tạo" });
     }
 
-    // Xoá khóa học
-    const deleteRequest = new sql.Request(pool);
-    deleteRequest.input("course_id", sql.Int, course_id);
-    await deleteRequest.query(`
-      DELETE FROM courses WHERE course_id = @course_id
-    `);
+    // Bắt đầu transaction
+    await client.query("BEGIN");
 
-    res.status(200).json({ message: "Xóa khóa học thành công" });
+    try {
+      // Xóa các bảng liên quan theo thứ tự
+      // 1. Xóa quiz_results
+      await client.query(
+        `DELETE FROM quiz_results
+         WHERE quiz_id IN (SELECT quiz_id FROM quizzes WHERE course_id = $1)`,
+        [course_id]
+      );
+
+      // 2. Xóa quiz_questions
+      await client.query(
+        `DELETE FROM quiz_questions
+         WHERE quiz_id IN (SELECT quiz_id FROM quizzes WHERE course_id = $1)`,
+        [course_id]
+      );
+
+      // 3. Xóa quizzes
+      await client.query(
+        "DELETE FROM quizzes WHERE course_id = $1",
+        [course_id]
+      );
+
+      // 4. Xóa lesson_progress
+      await client.query(
+        "DELETE FROM lesson_progress WHERE course_id = $1",
+        [course_id]
+      );
+
+      // 5. Xóa lessons
+      await client.query(
+        "DELETE FROM lessons WHERE course_id = $1",
+        [course_id]
+      );
+
+      // 6. Xóa bookmarks
+      await client.query(
+        "DELETE FROM bookmarks WHERE course_id = $1",
+        [course_id]
+      );
+
+      // 7. Xóa course_reviews
+      await client.query(
+        "DELETE FROM course_reviews WHERE course_id = $1",
+        [course_id]
+      );
+
+      // 8. Xóa enrollments
+      await client.query(
+        "DELETE FROM enrollments WHERE course_id = $1",
+        [course_id]
+      );
+
+      // 9. Xóa course
+      await client.query(
+        "DELETE FROM courses WHERE course_id = $1",
+        [course_id]
+      );
+
+      // Commit transaction
+      await client.query("COMMIT");
+
+      res.status(200).json({
+        success: true,
+        message: "Xóa khóa học và các dữ liệu liên quan thành công",
+      });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    }
   } catch (err) {
-    res.status(500).json({ error: "Lỗi xóa khóa học: " + err.message });
+    console.error("Error in deleteCourse:", err);
+    res.status(500).json({
+      success: false,
+      error: "Lỗi xóa khóa học: " + err.message,
+    });
+  } finally {
+    if (client) client.release();
   }
 };
 

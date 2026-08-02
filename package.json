@@ -2,13 +2,28 @@
   "name": "online-learning-api",
   "version": "1.0.0",
   "main": "index.js",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "node --test test/api/*.test.js",
+    "api:smoke": "powershell -ExecutionPolicy Bypass -File scripts/smoke-api.ps1",
+    "api:test:live": "powershell -ExecutionPolicy Bypass -File scripts/live-api-full-test.ps1",
+    "docker:doctor": "powershell -ExecutionPolicy Bypass -File scripts/docker-doctor.ps1",
+    "docker:up": "powershell -ExecutionPolicy Bypass -File scripts/docker-up.ps1",
+    "docker:down": "powershell -ExecutionPolicy Bypass -File scripts/docker-down.ps1",
+    "docker:logs": "docker compose logs -f api",
+    "db:init:pg": "node scripts/init-postgres.js",
+    "db:seed:pg": "node scripts/seed-postgres.js",
+    "db:verify:pg": "node scripts/verify-postgres.js",
+    "db:migrate:sqlserver-to-pg": "node scripts/migrate-sqlserver-to-postgres.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Online Learning Platform API",
   "dependencies": {
     "axios": "^1.9.0",
     "body-parser": "^2.2.0",
@@ -23,5 +38,8 @@
     "pg": "^8.14.1",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
   }
 }

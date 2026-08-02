@@ -1,10 +1,7 @@
-const { sql, poolPromise } = require("../../config/db.config");
+const { pool } = require("../../config/db.config");
 
 const getCategoriesWithCourseCount = async (req, res) => {
   try {
-    const pool = await poolPromise;
-    const request = new sql.Request(pool);
-
     const query = `
       SELECT
         cc.category_id,
@@ -25,11 +22,11 @@ const getCategoriesWithCourseCount = async (req, res) => {
         cc.icon
     `;
 
-    const result = await request.query(query);
+    const result = await pool.query(query);
 
     res.status(200).json({
       message: "Lấy danh mục cùng số lượng khóa học thành công",
-      data: result.recordset,
+      data: result.rows,
     });
   } catch (err) {
     console.error("Error fetching categories with course count:", err);

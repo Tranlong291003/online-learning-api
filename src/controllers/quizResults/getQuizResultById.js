@@ -1,150 +1,180 @@
-const { sql, poolPromise } = require("../../config/db.config");
+const { pool } = require("../../config/db.config");
 const { OpenAI } = require("openai");
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const { Worker, isMainThread, parentPort, workerData } = require("worker_threads");
 
+function getOpenAIClient() {
+  if (!process.env.OPENAI_API_KEY) {
+    return null;
+  }
+  return new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    maxRetries: 1,
+    timeout: 3000,
+  });
+}
+
+const BATCH_SIZE = 5;
+const REQUEST_TIMEOUT = 3000;
+const MAX_CONCURRENT_WORKERS = 10;
+const MAX_CONCURRENT_REQUESTS = 20;
+const explanationCache = new Map();
+
+// Worker thread code
+if (!isMainThread) {
+  const processExplanation = async (question, options, correctIndex) => {
+    const cacheKey = `${question}-${options.join("-")}-${correctIndex}`;
+    if (explanationCache.has(cacheKey)) return explanationCache.get(cacheKey);
+
+    const prompt = `Giải thích chi tiết về câu hỏi: ${question}
+Các lựa chọn: ${options.join(" | ")}
+Đáp án đúng: ${correctIndex + 1}`;
+
+    try {
+      const openai = getOpenAIClient();
+      if (!openai) {
+        return "Đáp án đúng vì tuân thủ nội dung bài học.";
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+      const aiRes = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.4,
+        max_tokens: 200,
+      }, { signal: controller.signal });
+
+      clearTimeout(timeoutId);
+      const explanation = aiRes.choices[0].message.content;
+      explanationCache.set(cacheKey, explanation);
+      return explanation;
+    } catch (error) {
+      return "Đáp án đúng vì tuân thủ các nguyên tắc và best practice.";
+    }
+  };
+
+  const processBatch = async () => {
+    const { questions } = workerData;
+    const promises = questions.map((q) =>
+      processExplanation(q.question.question, q.parsedOptions, q.question.correct_index)
+        .then((explanation) => ({ question_id: q.question.question_id, explanation }))
+    );
+    const results = await Promise.all(promises);
+    parentPort.postMessage(results);
+  };
+
+  processBatch();
+}
+
+// Main thread code
 const getQuizResultById = async (req, res) => {
   const { result_id } = req.params;
 
   try {
-    /* 1. Kết nối DB */
-    const pool = await poolPromise;
-    const request = new sql.Request(pool);
-
-    /* 2. Lấy bản ghi kết quả */
-    request.input("result_id", sql.Int, result_id);
-    const result = await request.query(
-      "SELECT * FROM quiz_results WHERE result_id = @result_id"
-    );
-
-    if (result.recordset.length === 0) {
+    // Lấy kết quả
+    const result = await pool.query("SELECT * FROM quiz_results WHERE result_id = $1", [result_id]);
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy kết quả bài làm" });
     }
 
-    const {
-      quiz_id,
-      user_uid: uid,
-      answers: answersData,
-      score,
-      explanation,
-    } = result.recordset[0];
+    const { quiz_id, user_uid: uid, answers: answersData, score, explanation } = result.rows[0];
 
     if (!answersData) {
-      return res
-        .status(400)
-        .json({ error: "Dữ liệu câu trả lời (answers) đang null hoặc rỗng" });
+      return res.status(400).json({ error: "Dữ liệu câu trả lời (answers) đang null hoặc rỗng" });
     }
 
-    /* 3. Parse answers */
     let userAnswers;
     try {
-      userAnswers = JSON.parse(answersData); // { [question_id]: index | null }
+      userAnswers = JSON.parse(answersData);
     } catch (error) {
-      return res.status(400).json({
-        error: "Dữ liệu câu trả lời không phải JSON hợp lệ",
-        details: error.message,
-      });
+      return res.status(400).json({ error: "Dữ liệu câu trả lời không phải JSON hợp lệ" });
     }
 
-    /* 4. Lấy danh sách câu hỏi mà user đã gửi (kể cả null) */
+    // Lấy câu hỏi
     const questionIds = Object.keys(userAnswers).map((id) => parseInt(id, 10));
     if (questionIds.length === 0) {
-      return res
-        .status(400)
-        .json({ error: "Không có câu trả lời nào được nộp" });
+      return res.status(400).json({ error: "Không có câu trả lời nào được nộp" });
     }
 
-    const inParams = questionIds.map((_, i) => `@id${i}`).join(", ");
-    questionIds.forEach((id, i) => request.input(`id${i}`, sql.Int, id));
-    request.input("quiz_id", sql.Int, quiz_id);
-
-    const questions = await request.query(`
-      SELECT question_id, question, options, correct_index
-      FROM quiz_questions
-      WHERE quiz_id = @quiz_id AND question_id IN (${inParams})
-    `);
-
-    /* 5. Ghép câu hỏi + đáp án, sinh AI explanation cho mọi câu sai/bỏ qua */
-    const questionWithAnswers = await Promise.all(
-      questions.recordset.map(async (q) => {
-        let parsedOptions = [];
-        try {
-          parsedOptions = JSON.parse(q.options);
-        } catch (_) {}
-
-        const userAnswer = userAnswers[q.question_id]; // có thể null
-        const isCorrect = userAnswer !== null && userAnswer === q.correct_index;
-
-        let aiExplanation = null;
-        if (!isCorrect) {
-          const aiPrompt = `Giải thích ngắn gọn về câu hỏi trắc nghiệm sau:
-
-Câu hỏi: ${q.question}
-
-Các lựa chọn:
-${parsedOptions.map((opt, idx) => `${idx + 1}. ${opt}`).join("\n")}
-
-Đáp án đúng là: ${q.correct_index + 1}
-
-Yêu cầu:
-1. Giải thích ngắn gọn (2-3 câu) tại sao đáp án ${q.correct_index + 1} là đúng
-2. Nêu ngắn gọn lý do chính khiến các đáp án khác không phù hợp
-3. Tóm tắt trong 1 câu điểm quan trọng cần nhớ
-
-Lưu ý:
-- Giải thích phải ngắn gọn, súc tích
-- Tập trung vào lý do chính
-- Tránh giải thích dài dòng`;
-
-          try {
-            const aiRes = await openai.chat.completions.create({
-              model: "gpt-3.5-turbo",
-              messages: [{ role: "user", content: aiPrompt }],
-              temperature: 0.7,
-              max_tokens: 300,
-              presence_penalty: 0.6,
-              frequency_penalty: 0.3,
-            });
-            aiExplanation = aiRes.choices[0].message.content;
-          } catch {
-            aiExplanation = "Không thể lấy giải thích từ AI.";
-          }
-        }
-
-        return {
-          question_id: q.question_id,
-          question: q.question,
-          options: parsedOptions,
-          correct_answer: q.correct_index,
-          user_answer: userAnswer, // null nếu bỏ qua
-          is_correct: isCorrect,
-          explanation: aiExplanation, // luôn có khi sai/bỏ qua
-        };
-      })
+    const questions = await pool.query(
+      `SELECT question_id, question, options, correct_index
+       FROM quiz_questions
+       WHERE quiz_id = $1 AND question_id = ANY($2)`,
+      [quiz_id, questionIds]
     );
 
-    /* 6. Thống kê */
-    const totalCorrect = questionWithAnswers.filter((q) => q.is_correct).length;
-    const totalWrong = questionWithAnswers.length - totalCorrect; // gồm cả bỏ qua
+    // Chuẩn bị dữ liệu
+    const questionsForAI = questions.rows.map((q) => {
+      let parsedOptions = [];
+      try { parsedOptions = JSON.parse(q.options); } catch (_) {}
+      const userAnswer = userAnswers[q.question_id];
+      const isCorrect = userAnswer !== null && userAnswer === q.correct_index;
+      return { question: q, parsedOptions, userAnswer, isCorrect, needsExplanation: !isCorrect };
+    });
 
-    /* 7. Trả kết quả */
+    const questionsNeedingExplanation = questionsForAI.filter((q) => q.needsExplanation);
+
+    // Xử lý AI với Worker threads
+    const totalQuestions = questionsNeedingExplanation.length;
+    const optimalWorkers = Math.min(MAX_CONCURRENT_WORKERS, Math.ceil(totalQuestions / BATCH_SIZE));
+
+    const batches = [];
+    for (let i = 0; i < totalQuestions; i += BATCH_SIZE) {
+      batches.push(questionsNeedingExplanation.slice(i, i + BATCH_SIZE));
+    }
+
+    const results = [];
+    for (let i = 0; i < batches.length; i += optimalWorkers) {
+      const currentBatches = batches.slice(i, i + optimalWorkers);
+      const semaphore = {
+        count: 0, queue: [],
+        async acquire() { if (this.count >= MAX_CONCURRENT_REQUESTS) await new Promise((r) => this.queue.push(r)); this.count++; },
+        release() { this.count--; if (this.queue.length > 0) this.queue.shift()(); },
+      };
+
+      const batchPromises = currentBatches.map(async (batch) => {
+        await semaphore.acquire();
+        try {
+          return new Promise((resolve, reject) => {
+            const worker = new Worker(__filename, { workerData: { questions: batch } });
+            worker.on("message", resolve);
+            worker.on("error", reject);
+            worker.on("exit", (code) => { if (code !== 0) reject(new Error(`Worker dừng với mã lỗi ${code}`)); });
+          });
+        } finally { semaphore.release(); }
+      });
+
+      const batchResults = await Promise.all(batchPromises);
+      results.push(...batchResults.flat());
+    }
+
+    const explanationMap = new Map(results.map((e) => [e.question_id, e.explanation]));
+
+    const questionWithAnswers = questionsForAI.map((q) => ({
+      question_id: q.question.question_id,
+      question: q.question.question,
+      options: q.parsedOptions,
+      correct_answer: q.question.correct_index,
+      user_answer: q.userAnswer,
+      is_correct: q.isCorrect,
+      explanation: q.needsExplanation ? explanationMap.get(q.question.question_id) : null,
+    }));
+
+    const totalCorrect = questionWithAnswers.filter((q) => q.is_correct).length;
+    const totalWrong = questionWithAnswers.length - totalCorrect;
+
     return res.json({
       message: "Kết quả bài làm",
       data: {
-        quiz_id,
-        user_uid: uid,
-        score,
-        explanation,
-        total_correct_answers: totalCorrect,
-        total_wrong_answers: totalWrong,
-        questions: questionWithAnswers,
+        quiz_id, user_uid: uid, score, explanation,
+        total_correct_answers: totalCorrect, total_wrong_answers: totalWrong,
+        questions: questionWithAnswers, processing_time: new Date().toISOString(),
       },
     });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({
-      error: "Lỗi khi lấy kết quả bài làm: " + err.message,
-    });
+    return res.status(500).json({ error: "Lỗi khi lấy kết quả bài làm: " + err.message });
   }
 };
 
-module.exports = getQuizResultById;
+if (isMainThread) module.exports = getQuizResultById;

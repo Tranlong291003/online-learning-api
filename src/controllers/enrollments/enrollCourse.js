@@ -1,97 +1,94 @@
-// controllers/enrollCourse.js
-const { sql, poolPromise } = require("../../config/db.config");
-const { sendNotification } = require("../../services/notificationService"); // Import service gửi FCM
+const { pool } = require("../../config/db.config");
+const { sendNotification } = require("../../services/notificationService");
 
 const enrollCourse = async (req, res) => {
-  const { userUid, courseId } = req.body; // Dùng userUid và courseId thay vì uid và course_id
+  const { userUid, courseId } = req.body;
 
   if (!userUid || !courseId) {
     return res.status(400).json({ error: "Thiếu userUid hoặc courseId" });
   }
 
   try {
-    const pool = await poolPromise;
-    const request = new sql.Request(pool);
+    // Kiểm tra khóa học
+    const courseResult = await pool.query(
+      "SELECT course_id, title FROM courses WHERE course_id = $1",
+      [courseId]
+    );
 
-    // Kiểm tra khóa học có tồn tại và lấy title khóa học
-    request.input("courseId", sql.Int, courseId);
-    const courseResult = await request.query(`
-      SELECT course_id, title FROM courses WHERE course_id = @courseId
-    `);
-
-    if (courseResult.recordset.length === 0) {
+    if (courseResult.rows.length === 0) {
       return res.status(404).json({ error: "Khóa học không tồn tại" });
     }
 
-    const courseTitle = courseResult.recordset[0].title;
+    const courseTitle = courseResult.rows[0].title;
 
-    // Kiểm tra đã đăng ký chưa
-    request.input("userUid", sql.NVarChar, userUid); // Dùng userUid trong bảng enrollments
-    const exist = await request.query(`
-      SELECT * FROM enrollments
-      WHERE user_uid = @userUid AND course_id = @courseId
-    `);
+    // Lấy thông tin user
+    const userResult = await pool.query(
+      "SELECT * FROM users WHERE uid = $1",
+      [userUid]
+    );
+    const user = userResult.rows[0];
 
-    if (exist.recordset.length > 0) {
+    if (!user) {
+      return res.status(404).json({ error: "Không tìm thấy người dùng" });
+    }
+
+    // Kiểm tra đã đăng ký
+    const exist = await pool.query(
+      "SELECT * FROM enrollments WHERE user_uid = $1 AND course_id = $2",
+      [userUid, courseId]
+    );
+
+    if (exist.rows.length > 0) {
       return res.status(400).json({ error: "Bạn đã đăng ký khóa học này" });
     }
 
-    // Thực hiện đăng ký
-    await request.query(`
-      INSERT INTO enrollments (user_uid, course_id, enrolled_at)
-      VALUES (@userUid, @courseId, GETDATE())
-    `);
+    // Đăng ký
+    const enrollmentResult = await pool.query(
+      "INSERT INTO enrollments (user_uid, course_id, enrolled_at) VALUES ($1, $2, NOW()) RETURNING enrollment_id",
+      [userUid, courseId]
+    );
+    const enrollment_id = enrollmentResult.rows[0].enrollment_id;
 
-    // Lấy thông tin user để gửi thông báo FCM
-    const userResult = await pool
-      .request()
-      .input("userUid", sql.NVarChar, userUid).query(`
-        SELECT * FROM users WHERE uid = @userUid
-      `);
-
-    const user = userResult.recordset[0];
-
-    // Chuẩn bị thông báo
+    // Tạo notification
     const notificationTitle = "Đăng ký khóa học thành công";
     const notificationBody = `Bạn đã đăng ký khóa học "${courseTitle}" thành công!`;
-    const fcmToken = user.fcm_token;
 
-    // Tạo bản ghi notification trong DB và lấy noti_id
-    const notificationResult = await pool
-      .request()
-      .input("uid", sql.NVarChar, user.uid)
-      .input("title", sql.NVarChar, notificationTitle)
-      .input("content", sql.NVarChar, notificationBody)
-      .input("icon", sql.NVarChar, "book")
-      .input("color", sql.NVarChar, "#4caf50")
-      .input("is_read", sql.Bit, false)
-      .input("created_at", sql.DateTime, new Date()).query(`
-        INSERT INTO notifications (uid, title, content, icon, color, is_read, created_at)
-        OUTPUT INSERTED.noti_id
-        VALUES (@uid, @title, @content, @icon, @color, @is_read, @created_at)
-      `);
-
-    const noti_id = notificationResult.recordset[0].noti_id;
-
-    // Gửi FCM
-    await sendNotification(
-      fcmToken,
-      noti_id,
-      user.uid,
-      notificationTitle,
-      notificationBody,
-      "book",
-      "#4caf50"
+    const notiResult = await pool.query(
+      `INSERT INTO notifications (uid, title, content, icon, color, is_read, created_at)
+       VALUES ($1, $2, $3, $4, $5, false, NOW())
+       RETURNING noti_id`,
+      [user.uid, notificationTitle, notificationBody, "book", "#4caf50"]
     );
 
-    // Trả về response
+    const noti_id = notiResult.rows[0].noti_id;
+
+    // Gửi FCM nếu cấu hình Firebase hợp lệ. Lỗi push notification không được làm hỏng flow đăng ký.
+    let sent = false;
+    if (user.fcm_token) {
+      try {
+        await sendNotification(
+          user.fcm_token,
+          noti_id,
+          user.uid,
+          notificationTitle,
+          notificationBody,
+          "book",
+          "#4caf50"
+        );
+        sent = true;
+      } catch (error) {
+        console.warn("send enrollment notification failed:", error.message);
+      }
+    }
+
     res.status(201).json({
       message: "Đăng ký khóa học thành công",
+      enrollment_id,
       notification: {
         noti_id,
         title: notificationTitle,
         body: notificationBody,
-        sent: true,
+        sent,
       },
     });
   } catch (err) {

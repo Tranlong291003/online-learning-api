@@ -1,42 +1,36 @@
-// src/controllers/progress/getCourseProgressForUser.js
-const { sql, poolPromise } = require("../../config/db.config");
+const { pool } = require("../../config/db.config");
 
 const getCourseProgressForUser = async (req, res) => {
-  /* Lấy từ body thay vì params */
-  const { userUid, courseId } = req.body;
+  const payload = {
+    ...(req.query || {}),
+    ...(req.body || {}),
+  };
+  const userUid = payload.userUid || payload.user_uid || payload.uid;
+  const courseId = payload.courseId || payload.course_id;
 
   if (!userUid || !courseId) {
     return res
       .status(400)
-      .json({ error: "Thiếu userUid hoặc courseId trong body JSON" });
+      .json({ error: "Thiếu userUid hoặc courseId" });
   }
 
   try {
-    const pool = await poolPromise;
-    const rq = new sql.Request(pool);
+    // Tổng số bài học
+    const total = await pool.query(
+      "SELECT COUNT(*) AS total_lessons FROM lessons WHERE course_id = $1",
+      [Number(courseId)]
+    );
+    const totalLessons = parseInt(total.rows[0]?.total_lessons) ?? 0;
 
-    rq.input("uid", sql.NVarChar, userUid);
-    rq.input("course_id", sql.Int, Number(courseId));
+    // Số bài hoàn thành
+    const done = await pool.query(
+      `SELECT COUNT(*) AS completed_lessons
+       FROM lesson_progress
+       WHERE user_uid = $1 AND course_id = $2 AND is_completed = true`,
+      [userUid, Number(courseId)]
+    );
+    const completedLessons = parseInt(done.rows[0]?.completed_lessons) ?? 0;
 
-    /* 1. Tổng số bài học của khoá */
-    const total = await rq.query(`
-      SELECT COUNT(*) AS total_lessons
-      FROM lessons
-      WHERE course_id = @course_id
-    `);
-    const totalLessons = total.recordset[0]?.total_lessons ?? 0;
-
-    /* 2. Số bài đã hoàn thành (không cần JOIN) */
-    const done = await rq.query(`
-      SELECT COUNT(*) AS completed_lessons
-      FROM lesson_progress
-      WHERE user_uid     = @uid
-        AND course_id    = @course_id
-        AND is_completed = 1
-    `);
-    const completedLessons = done.recordset[0]?.completed_lessons ?? 0;
-
-    /* 3. Tính % tiến độ */
     const progressPercent =
       totalLessons > 0
         ? Math.floor((completedLessons / totalLessons) * 100)

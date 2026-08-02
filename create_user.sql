@@ -1,0 +1,76 @@
+-- Tạo login cho SQL Server
+CREATE LOGIN [TRANKHANHLONG] WITH PASSWORD = '123456',
+    DEFAULT_DATABASE = [OnlineLearningDB],
+    CHECK_EXPIRATION = OFF,
+    CHECK_POLICY = OFF;
+GO
+
+-- Chuyển sang database OnlineLearningDB
+USE [OnlineLearningDB];
+GO
+
+-- Tạo user trong database và map với login
+CREATE USER [TRANKHANHLONG] FOR LOGIN [TRANKHANHLONG];
+GO
+
+-- Cấp quyền cho user
+-- Cấp quyền SELECT, INSERT, UPDATE, DELETE cho tất cả các bảng
+GRANT SELECT, INSERT, UPDATE, DELETE ON [dbo].[users] TO [TRANKHANHLONG];
+GRANT SELECT, INSERT, UPDATE, DELETE ON [dbo].[course_categories] TO [TRANKHANHLONG];
+GRANT SELECT, INSERT, UPDATE, DELETE ON [dbo].[courses] TO [TRANKHANHLONG];
+GRANT SELECT, INSERT, UPDATE, DELETE ON [dbo].[lessons] TO [TRANKHANHLONG];
+GRANT SELECT, INSERT, UPDATE, DELETE ON [dbo].[enrollments] TO [TRANKHANHLONG];
+GRANT SELECT, INSERT, UPDATE, DELETE ON [dbo].[quizzes] TO [TRANKHANHLONG];
+GRANT SELECT, INSERT, UPDATE, DELETE ON [dbo].[quiz_questions] TO [TRANKHANHLONG];
+GRANT SELECT, INSERT, UPDATE, DELETE ON [dbo].[quiz_results] TO [TRANKHANHLONG];
+GRANT SELECT, INSERT, UPDATE, DELETE ON [dbo].[notifications] TO [TRANKHANHLONG];
+GRANT SELECT, INSERT, UPDATE, DELETE ON [dbo].[lesson_progress] TO [TRANKHANHLONG];
+GRANT SELECT, INSERT, UPDATE, DELETE ON [dbo].[course_reviews] TO [TRANKHANHLONG];
+GRANT SELECT, INSERT, UPDATE, DELETE ON [dbo].[bookmarks] TO [TRANKHANHLONG];
+GRANT SELECT, INSERT, UPDATE, DELETE ON [dbo].[user_requests] TO [TRANKHANHLONG];
+GO
+
+-- Cấp quyền EXECUTE cho các stored procedure (nếu có)
+GRANT EXECUTE TO [TRANKHANHLONG];
+GO
+
+-- Cấp quyền REFERENCES cho tất cả các bảng (cần thiết cho foreign key)
+GRANT REFERENCES ON [dbo].[users] TO [TRANKHANHLONG];
+GRANT REFERENCES ON [dbo].[course_categories] TO [TRANKHANHLONG];
+GRANT REFERENCES ON [dbo].[courses] TO [TRANKHANHLONG];
+GRANT REFERENCES ON [dbo].[lessons] TO [TRANKHANHLONG];
+GRANT REFERENCES ON [dbo].[enrollments] TO [TRANKHANHLONG];
+GRANT REFERENCES ON [dbo].[quizzes] TO [TRANKHANHLONG];
+GRANT REFERENCES ON [dbo].[quiz_questions] TO [TRANKHANHLONG];
+GRANT REFERENCES ON [dbo].[quiz_results] TO [TRANKHANHLONG];
+GRANT REFERENCES ON [dbo].[notifications] TO [TRANKHANHLONG];
+GRANT REFERENCES ON [dbo].[lesson_progress] TO [TRANKHANHLONG];
+GRANT REFERENCES ON [dbo].[course_reviews] TO [TRANKHANHLONG];
+GRANT REFERENCES ON [dbo].[bookmarks] TO [TRANKHANHLONG];
+GRANT REFERENCES ON [dbo].[user_requests] TO [TRANKHANHLONG];
+GO
+
+-- Cấp thêm quyền ALTER cho các bảng (cần thiết cho việc thêm/xóa cột)
+GRANT ALTER ON [dbo].[users] TO [TRANKHANHLONG];
+GRANT ALTER ON [dbo].[course_categories] TO [TRANKHANHLONG];
+GRANT ALTER ON [dbo].[courses] TO [TRANKHANHLONG];
+GRANT ALTER ON [dbo].[lessons] TO [TRANKHANHLONG];
+GRANT ALTER ON [dbo].[enrollments] TO [TRANKHANHLONG];
+GRANT ALTER ON [dbo].[quizzes] TO [TRANKHANHLONG];
+GRANT ALTER ON [dbo].[quiz_questions] TO [TRANKHANHLONG];
+GRANT ALTER ON [dbo].[quiz_results] TO [TRANKHANHLONG];
+GRANT ALTER ON [dbo].[notifications] TO [TRANKHANHLONG];
+GRANT ALTER ON [dbo].[lesson_progress] TO [TRANKHANHLONG];
+GRANT ALTER ON [dbo].[course_reviews] TO [TRANKHANHLONG];
+GRANT ALTER ON [dbo].[bookmarks] TO [TRANKHANHLONG];
+GRANT ALTER ON [dbo].[user_requests] TO [TRANKHANHLONG];
+GO
+
+-- Cấp quyền CREATE TABLE và CREATE VIEW
+GRANT CREATE TABLE TO [TRANKHANHLONG];
+GRANT CREATE VIEW TO [TRANKHANHLONG];
+GO
+
+-- Cấp quyền ALTER ANY SCHEMA
+GRANT ALTER ANY SCHEMA TO [TRANKHANHLONG];
+GO

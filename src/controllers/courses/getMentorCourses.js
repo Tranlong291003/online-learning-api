@@ -1,4 +1,4 @@
-const { sql, poolPromise } = require("../../config/db.config");
+const { pool } = require("../../config/db.config");
 
 const getMentorCourses = async (req, res) => {
   try {
@@ -7,11 +7,6 @@ const getMentorCourses = async (req, res) => {
     if (!instructor_uid) {
       return res.status(400).json({ error: "Thiếu instructor_uid" });
     }
-
-    const pool = await poolPromise;
-    const request = pool.request();
-
-    request.input("instructor_uid", sql.NVarChar, instructor_uid);
 
     const sqlQuery = `
       SELECT
@@ -41,22 +36,18 @@ const getMentorCourses = async (req, res) => {
         l.lesson_count,
         l.total_seconds
       FROM courses c
-      LEFT JOIN users u
-        ON c.instructor_uid = u.uid
-      LEFT JOIN course_categories cat
-        ON c.category_id = cat.category_id
+      LEFT JOIN users u ON c.instructor_uid = u.uid
+      LEFT JOIN course_categories cat ON c.category_id = cat.category_id
 
-      /* tính điểm trung bình và số lượng đánh giá từ bảng course_reviews */
       LEFT JOIN (
         SELECT
           course_id,
-          AVG(CAST(rating AS FLOAT)) AS avg_rating,
+          AVG(rating::FLOAT) AS avg_rating,
           COUNT(*) AS review_count
         FROM course_reviews
         GROUP BY course_id
       ) r ON r.course_id = c.course_id
 
-      /* đếm số người đăng ký từ bảng enrollments */
       LEFT JOIN (
         SELECT
           course_id,
@@ -65,41 +56,37 @@ const getMentorCourses = async (req, res) => {
         GROUP BY course_id
       ) e ON e.course_id = c.course_id
 
-      /* tính tổng thời gian video và số lượng bài học */
       LEFT JOIN (
         SELECT
           course_id,
           COUNT(*) as lesson_count,
           SUM(
-            CAST(SUBSTRING(video_duration, 1, 2) AS INT) * 3600 +
-            CAST(SUBSTRING(video_duration, 4, 2) AS INT) * 60 +
-            CAST(SUBSTRING(video_duration, 7, 2) AS INT)
+            CASE
+              WHEN video_duration ~ '^[0-9]{2}:[0-9]{2}:[0-9]{2}$' THEN
+                CAST(SUBSTRING(video_duration, 1, 2) AS INT) * 3600 +
+                CAST(SUBSTRING(video_duration, 4, 2) AS INT) * 60 +
+                CAST(SUBSTRING(video_duration, 7, 2) AS INT)
+              ELSE 0
+            END
           ) as total_seconds
         FROM lessons
         WHERE video_duration IS NOT NULL
         GROUP BY course_id
       ) l ON l.course_id = c.course_id
 
-      WHERE c.instructor_uid = @instructor_uid
+      WHERE c.instructor_uid = $1
       ORDER BY c.updated_at DESC
     `;
 
-    const result = await request.query(sqlQuery);
-    const courses = result.recordset.map((course) => {
+    const result = await pool.query(sqlQuery, [instructor_uid]);
+    const courses = result.rows.map((course) => {
       const { total_seconds, ...rest } = course;
       return {
         ...rest,
         total_duration: total_seconds
-          ? `${String(Math.floor(total_seconds / 3600)).padStart(
-              2,
-              "0"
-            )}:${String(Math.floor((total_seconds % 3600) / 60)).padStart(
-              2,
-              "0"
-            )}:${String(total_seconds % 60).padStart(2, "0")}`
+          ? `${String(Math.floor(total_seconds / 3600)).padStart(2, "0")}:${String(Math.floor((total_seconds % 3600) / 60)).padStart(2, "0")}:${String(total_seconds % 60).padStart(2, "0")}`
           : "00:00:00",
         lesson_count: course.lesson_count || 0,
-        // Tính phần trăm giảm giá nếu có
         discount_percent:
           course.discount_price && course.price
             ? Math.round(

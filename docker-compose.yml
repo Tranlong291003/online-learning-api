@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: online-learning-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: online_learning_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d online_learning_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: online-learning-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/online_learning_db
+      DB_SSL: "false"
+      JWT_SECRET: ${JWT_SECRET:-local_docker_secret_change_me_min_32_chars}
+      DEV_API_KEY: ${DEV_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${FIREBASE_SERVICE_ACCOUNT_JSON:-}
+      FIREBASE_SERVICE_ACCOUNT_BASE64: ${FIREBASE_SERVICE_ACCOUNT_BASE64:-}
+      FIREBASE_SERVICE_ACCOUNT_PATH: /run/secrets/firebaseServiceAccountKey.json
+    ports:
+      - "3000:3000"
+    volumes:
+      - uploads-data:/app/src/public/uploads
+      - ./src/firebaseServiceAccountKey.json:/run/secrets/firebaseServiceAccountKey.json:ro
+    command: sh -c "npm run db:init:pg && npm start"
+
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: online-learning-gateway
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  postgres-data:
+  uploads-data:

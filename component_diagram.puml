@@ -1,0 +1,109 @@
+@startuml Component Diagram
+
+skinparam packageStyle rectangle
+skinparam backgroundColor white
+skinparam handwritten false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam roundcorner 20
+skinparam shadowing false
+
+' Frontend (Flutter)
+package "Frontend (Flutter)" {
+    [Screens]
+    [Cubits/Blocs]
+    [Repositories]
+    [Services_FE]
+    [Models]
+}
+
+' Backend (Node.js)
+package "Backend (Node.js)" {
+    [Express App]
+    [Routes]
+    [Controllers]
+    [Middleware]
+    [Notification Service]
+}
+
+' External Services
+package "External Services" {
+    [OpenAI Module]
+    [Firebase Auth]
+    [Firebase Storage]
+}
+
+' Database
+database "MySQL" as DB
+
+' --- Relationships ---
+' Frontend
+[Screens] --> [Cubits/Blocs]
+[Cubits/Blocs] --> [Repositories]
+[Repositories] --> [Services_FE]
+[Services_FE] --> [Models]
+
+' Frontend <-> Backend
+[Services_FE] -right-> [Express App] : HTTP/HTTPS
+
+' Backend
+[Express App] --> [Routes]
+[Routes] --> [Controllers]
+[Controllers] --> DB
+[Controllers] --> [Notification Service]
+[Controllers] --> [OpenAI Module]
+[Controllers] --> [Firebase Auth] : Xác thực
+[Controllers] --> [Firebase Storage] : Lưu trữ
+[Notification Service] --> DB
+
+' --- Notes ---
+note right of [Screens]
+  Tầng Giao Diện
+  - Thành phần UI
+  - Quản lý trạng thái
+  - Tương tác người dùng
+end note
+
+note right of [Cubits/Blocs]
+  Logic Nghiệp Vụ
+  - Quản lý trạng thái
+  - Quy tắc nghiệp vụ
+  - Xử lý sự kiện
+end note
+
+note right of [Repositories]
+  Dữ Liệu
+  - Thao tác dữ liệu
+  - Bộ nhớ đệm
+  - Xử lý lỗi
+end note
+
+note right of [Services_FE]
+  Dịch Vụ
+  - Gọi API
+  - Chuyển đổi dữ liệu
+  - Xử lý lỗi
+end note
+
+note right of [Models]
+  Model
+  - Cấu trúc dữ liệu
+  - Chuyển đổi JSON
+  - Kiểm tra dữ liệu
+end note
+
+note right of [Controllers]
+  Backend Controller
+  - Xử lý request
+  - Logic nghiệp vụ
+  - Thao tác database
+  - Gọi OpenAI
+end note
+
+note right of [OpenAI Module]
+  Module OpenAI
+  - Xử lý AI
+  - Sinh nội dung tự động
+end note
+
+@enduml

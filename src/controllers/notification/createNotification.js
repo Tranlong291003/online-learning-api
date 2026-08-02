@@ -1,34 +1,21 @@
-const { sql, poolPromise } = require("../../config/db.config");
+const { pool } = require("../../config/db.config");
 
 const createNotification = async (req, res) => {
   const { uid, title, content, icon, color } = req.body;
-  const createdAt = new Date();
+
+  if (!uid || !title || !content) {
+    return res.status(400).json({ error: "Thiếu uid, title hoặc content" });
+  }
 
   try {
-    const pool = await poolPromise;
-    const result = await pool
-      .request()
-      .input("uid", sql.NVarChar, uid)
-      .input("title", sql.NVarChar, title)
-      .input("content", sql.NVarChar, content)
-      .input("icon", sql.NVarChar, icon)
-      .input("color", sql.NVarChar, color)
-      .input("is_read", sql.Bit, false)
-      .input("created_at", sql.DateTime, createdAt)
-      .query(
-        "INSERT INTO notifications (noti_id, uid, title, content, icon, color, is_read, created_at) VALUES (NEWID(), @uid, @title, @content, @icon, @color, @is_read, @created_at)"
-      );
+    const result = await pool.query(
+      `INSERT INTO notifications (uid, title, content, icon, color, is_read, created_at)
+       VALUES ($1, $2, $3, $4, $5, false, NOW())
+       RETURNING noti_id, uid, title, content, icon, color, is_read, created_at`,
+      [uid, title, content, icon, color]
+    );
 
-    res.status(201).json({
-      noti_id: result.recordset[0].noti_id,
-      uid,
-      title,
-      content,
-      icon,
-      color,
-      is_read: false,
-      created_at: createdAt,
-    });
+    res.status(201).json(result.rows[0]);
   } catch (error) {
     console.log("Lỗi khi tạo thông báo:", error);
     res.status(500).send({ message: "Không thể tạo thông báo" });

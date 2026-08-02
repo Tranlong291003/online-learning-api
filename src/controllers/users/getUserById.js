@@ -1,31 +1,39 @@
-const { sql, poolPromise } = require("../../config/db.config");
-const admin = require("../../config/firebase.config"); // Firebase Admin SDK
+const { pool } = require("../../config/db.config");
 
-// Promise-based handler, dùng uid thay cho user_id
 const getUserById = async (req, res) => {
-  const { id: uid } = req.params; // uid từ URL
+  const { id } = req.params;
 
   try {
-    const pool = await poolPromise;
-    const result = await pool.request().input("uid", sql.NVarChar, uid).query(`
-        SELECT *
-        FROM users
-        WHERE uid = @uid
-      `);
+    const result = await pool.query(
+      `SELECT
+        uid,
+        email,
+        name,
+        avatar_url,
+        bio,
+        phone,
+        gender,
+        birthdate,
+        role,
+        is_active,
+        created_at,
+        updated_at
+      FROM users
+      WHERE uid = $1`,
+      [id]
+    );
 
-    if (result.recordset.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy người dùng" });
     }
 
     res.json({
-      message: "Chi tiết người dùng",
-      user: result.recordset[0],
+      message: "Thông tin người dùng",
+      user: result.rows[0],
     });
   } catch (err) {
     console.error("Error in getUserById:", err);
-    res
-      .status(500)
-      .json({ error: "Lỗi khi lấy chi tiết người dùng: " + err.message });
+    res.status(500).json({ error: "Lỗi server: " + err.message });
   }
 };
 

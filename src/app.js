@@ -6,6 +6,11 @@ const path = require("path");
 app.use(cors());
 app.use(express.json());
 
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
 // Import các route
 const courseCategoryRoutes = require("./routes/courseCategories.router");
 const courseRoutes = require("./routes/courses.router");
@@ -36,5 +41,27 @@ app.use("/api/mentor-requests", mentorRequestRouter);
 app.use("/api/app-stats", appStatsRouter);
 
 app.use("/uploads", express.static("src/public/uploads"));
+
+// Swagger UI - http://localhost:3000/api-docs
+// Test nhanh: bấm Authorize, nhập dev key (x-api-key) từ .env
+const { buildSpec, swaggerUi } = require("./config/swagger.config");
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(buildSpec(), {
+    swaggerOptions: { persistAuthorization: true },
+  })
+);
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error("Error:", err);
+  res.status(err.status || 500).json({
+    success: false,
+    error: process.env.NODE_ENV === "production"
+      ? "Internal server error"
+      : err.message,
+  });
+});
 
 module.exports = app;

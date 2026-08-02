@@ -1,5 +1,4 @@
-const { sql, poolPromise } = require("../../config/db.config");
-const path = require("path");
+const { pool } = require("../../config/db.config");
 
 const createCourse = async (req, res) => {
   const {
@@ -11,7 +10,7 @@ const createCourse = async (req, res) => {
     discount_price,
     language,
     tags,
-    uid, // instructor_uid
+    uid,
   } = req.body;
 
   if (!title || !category_id) {
@@ -23,86 +22,54 @@ const createCourse = async (req, res) => {
   }
 
   try {
-    const pool = await poolPromise;
-    const request = new sql.Request(pool);
-
-    request.input("uid", sql.NVarChar, uid);
-    const userQuery = await request.query(
-      `SELECT name, role FROM users WHERE uid = @uid`
+    // Kiểm tra user và role
+    const userResult = await pool.query(
+      "SELECT name, role FROM users WHERE uid = $1",
+      [uid]
     );
 
-    if (userQuery.recordset.length === 0) {
+    if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy người dùng" });
     }
 
-    const { name: instructor_name, role: userRole } = userQuery.recordset[0];
+    const { name: instructor_name, role: userRole } = userResult.rows[0];
 
     if (userRole !== "admin" && userRole !== "mentor") {
       return res.status(403).json({ error: "Bạn không có quyền tạo khóa học" });
     }
 
-    // Xử lý ảnh thumbnail nếu có
+    // Xử lý thumbnail
     let thumbnail_url = null;
     if (req.file) {
       thumbnail_url = `/uploads/courses/${req.file.filename}`;
     }
 
-    // Gán input
-    request.input("title", sql.NVarChar, title);
-    request.input("description", sql.NVarChar, description || null);
-    request.input("instructor_uid", sql.NVarChar, uid);
-    request.input("category_id", sql.Int, category_id);
-    request.input("level", sql.NVarChar, level || null);
-    request.input("price", sql.Int, price || null);
-    request.input("discount_price", sql.Int, discount_price || null);
-    request.input("status", sql.NVarChar, "pending");
-    request.input("rejection_reason", sql.NVarChar, null);
-    request.input("language", sql.NVarChar, language || null);
-    request.input("tags", sql.NVarChar, tags || null);
-    request.input("thumbnail_url", sql.NVarChar, thumbnail_url);
-
-    await request.query(`
-      INSERT INTO courses (
+    // Insert course
+    const insertResult = await pool.query(
+      `INSERT INTO courses (
+        title, description, instructor_uid, category_id, level,
+        price, discount_price, status, rejection_reason, language,
+        tags, thumbnail_url, created_at, updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+      RETURNING *`,
+      [
         title,
-        description,
-        instructor_uid,
+        description || null,
+        uid,
         category_id,
-        level,
-        price,
-        discount_price,
-        status,
-        rejection_reason,
-        language,
-        tags,
+        level || null,
+        price ?? null,
+        discount_price ?? null,
+        "pending",
+        null,
+        language || null,
+        tags || null,
         thumbnail_url,
-        created_at,
-        updated_at
-      )
-      VALUES (
-        @title,
-        @description,
-        @instructor_uid,
-        @category_id,
-        @level,
-        @price,
-        @discount_price,
-        @status,
-        @rejection_reason,
-        @language,
-        @tags,
-        @thumbnail_url,
-        GETDATE(),
-        GETDATE()
-      )
-    `);
+      ]
+    );
 
-    const courseQuery = await request.query(`
-      SELECT * FROM courses
-      WHERE title = @title AND instructor_uid = @uid
-      ORDER BY created_at DESC
-    `);
-
-    const course = courseQuery.recordset[0];
+    const course = insertResult.rows[0];
 
     res.status(201).json({
       message: "Tạo khóa học mới thành công",

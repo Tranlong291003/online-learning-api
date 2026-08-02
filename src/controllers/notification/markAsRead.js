@@ -1,4 +1,4 @@
-const { sql, poolPromise } = require("../../config/db.config");
+const { pool } = require("../../config/db.config");
 
 const markAsRead = async (req, res) => {
   const { uid, noti_id } = req.body;
@@ -8,17 +8,12 @@ const markAsRead = async (req, res) => {
   }
 
   try {
-    const pool = await poolPromise;
-    // Cập nhật trạng thái đã đọc cho thông báo của user
-    const result = await pool
-      .request()
-      .input("noti_id", sql.Int, noti_id)
-      .input("uid", sql.NVarChar, uid)
-      .query(
-        "UPDATE notifications SET is_read = 1 WHERE noti_id = @noti_id AND uid = @uid"
-      );
+    const result = await pool.query(
+      "UPDATE notifications SET is_read = true WHERE noti_id = $1 AND uid = $2 RETURNING noti_id",
+      [noti_id, uid]
+    );
 
-    if (result.rowsAffected > 0) {
+    if (result.rows.length > 0) {
       res.status(200).send({ message: "Đã đánh dấu thông báo là đã đọc" });
     } else {
       res.status(404).send({
@@ -27,9 +22,7 @@ const markAsRead = async (req, res) => {
     }
   } catch (error) {
     console.log("Lỗi khi cập nhật trạng thái thông báo:", error);
-    res
-      .status(500)
-      .send({ message: "Không thể cập nhật trạng thái thông báo" });
+    res.status(500).send({ message: "Không thể cập nhật trạng thái thông báo" });
   }
 };
 

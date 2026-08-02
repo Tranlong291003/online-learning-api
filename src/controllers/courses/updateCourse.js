@@ -1,5 +1,4 @@
-const { sql, poolPromise } = require("../../config/db.config");
-const path = require("path");
+const { pool } = require("../../config/db.config");
 
 const updateCourse = async (req, res) => {
   const { course_id } = req.params;
@@ -11,42 +10,46 @@ const updateCourse = async (req, res) => {
     discount_price,
     language,
     tags,
-    uid, // người cập nhật
+    uid,
   } = req.body;
 
   try {
-    const pool = await poolPromise;
-    const request = new sql.Request(pool);
+    // Kiểm tra role
+    const roleResult = await pool.query(
+      "SELECT role FROM users WHERE uid = $1",
+      [uid]
+    );
 
-    request.input("uid", sql.NVarChar, uid);
-    const roleQuery = await request.query(`
-      SELECT role FROM users WHERE uid = @uid
-    `);
-
-    const userRole = roleQuery.recordset[0]?.role;
+    const userRole = roleResult.rows[0]?.role;
 
     if (userRole !== "admin" && userRole !== "mentor") {
       return res.status(403).json({ error: "Bạn không có quyền sửa khóa học" });
     }
 
-    // Lấy dữ liệu khóa học hiện tại
-    request.input("course_id", sql.Int, course_id);
-    const currentResult = await request.query(`
-      SELECT * FROM courses WHERE course_id = @course_id
-    `);
+    // Lấy dữ liệu hiện tại
+    const currentResult = await pool.query(
+      "SELECT * FROM courses WHERE course_id = $1",
+      [course_id]
+    );
 
-    if (currentResult.recordset.length === 0) {
+    if (currentResult.rows.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy khóa học" });
     }
 
-    const current = currentResult.recordset[0];
+    const current = currentResult.rows[0];
 
-    // Nếu có ảnh mới → dùng ảnh mới, còn không thì giữ nguyên
+    // Mentor chỉ được sửa khóa học của chính mình
+    if (userRole === "mentor" && current.instructor_uid !== uid) {
+      return res.status(403).json({
+        error: "Bạn không có quyền sửa khóa học của người khác",
+      });
+    }
+
+    // Merge dữ liệu
     const newThumbnailUrl = req.file
       ? `/uploads/courses/${req.file.filename}`
       : current.thumbnail_url;
 
-    // Merge dữ liệu
     const updatedTitle = title ?? current.title;
     const updatedDescription = description ?? current.description;
     const updatedLevel = level ?? current.level;
@@ -55,39 +58,30 @@ const updateCourse = async (req, res) => {
     const updatedLanguage = language ?? current.language;
     const updatedTags = tags ?? current.tags;
 
-    const updateRequest = new sql.Request(pool);
-    updateRequest.input("course_id", sql.Int, course_id);
-    updateRequest.input("title", sql.NVarChar, updatedTitle);
-    updateRequest.input("description", sql.NVarChar, updatedDescription);
-    updateRequest.input("level", sql.NVarChar, updatedLevel);
-    updateRequest.input("price", sql.Int, updatedPrice);
-    updateRequest.input("discount_price", sql.Int, updatedDiscountPrice);
-    updateRequest.input("language", sql.NVarChar, updatedLanguage);
-    updateRequest.input("tags", sql.NVarChar, updatedTags);
-    updateRequest.input("thumbnail_url", sql.NVarChar, newThumbnailUrl);
-
-    await updateRequest.query(`
-      UPDATE courses
-      SET
-        title = @title,
-        description = @description,
-        level = @level,
-        price = @price,
-        discount_price = @discount_price,
-        language = @language,
-        tags = @tags,
-        thumbnail_url = @thumbnail_url,
-        updated_at = GETDATE()
-      WHERE course_id = @course_id
-    `);
-
-    const finalResult = await updateRequest.query(`
-      SELECT * FROM courses WHERE course_id = @course_id
-    `);
+    // Update
+    const updateResult = await pool.query(
+      `UPDATE courses
+       SET title = $1, description = $2, level = $3, price = $4,
+           discount_price = $5, language = $6, tags = $7,
+           thumbnail_url = $8, updated_at = NOW()
+       WHERE course_id = $9
+       RETURNING *`,
+      [
+        updatedTitle,
+        updatedDescription,
+        updatedLevel,
+        updatedPrice,
+        updatedDiscountPrice,
+        updatedLanguage,
+        updatedTags,
+        newThumbnailUrl,
+        course_id,
+      ]
+    );
 
     res.status(200).json({
       message: "Cập nhật khóa học thành công",
-      data: finalResult.recordset[0],
+      data: updateResult.rows[0],
     });
   } catch (err) {
     res.status(500).json({

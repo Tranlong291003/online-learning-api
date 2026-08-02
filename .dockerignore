@@ -1,0 +1,8 @@
+node_modules
+npm-debug.log
+.git
+.env
+server.*.log
+src/firebaseServiceAccountKey.json
+src/public/uploads
+test

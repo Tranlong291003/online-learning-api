@@ -1,88 +1,49 @@
-// src/controllers/user/updateRole.js
-const { sql, poolPromise } = require("../../config/db.config");
-const { sendNotification } = require("../../services/notificationService");
+const { pool } = require("../../config/db.config");
+const admin = require("../../config/firebase.config");
 
-/**
- * PUT /api/user/updaterole
- * Body: { targetUid: string, role: "admin"|"user"|"mentor" }
- */
 const updateRole = async (req, res) => {
-  const { targetUid, role } = req.body;
-  const validRoles = ["admin", "user", "mentor"];
+  const { uid, role } = req.body;
 
-  // 1. Validate input
-  if (!targetUid) {
-    return res.status(400).json({ error: "Thiếu targetUid" });
+  if (req.user.role !== "admin") {
+    return res.status(403).json({ error: "Bạn không có quyền thay đổi vai trò" });
   }
-  if (!role || !validRoles.includes(role)) {
-    return res.status(400).json({
-      error: `Role không hợp lệ. Chọn một trong: ${validRoles.join(", ")}`,
-    });
+
+  if (!uid || !role) {
+    return res.status(400).json({ error: "Thiếu uid hoặc role" });
+  }
+
+  const validRoles = ["user", "mentor", "admin"];
+  if (!validRoles.includes(role)) {
+    return res.status(400).json({ error: "Role không hợp lệ" });
   }
 
   try {
-    const pool = await poolPromise;
+    // Cập nhật trong PostgreSQL
+    const result = await pool.query(
+      "UPDATE users SET role = $1, updated_at = NOW() WHERE uid = $2 RETURNING uid",
+      [role, uid]
+    );
 
-    // 2. Cập nhật role và updated_at
-    const updateRes = await pool
-      .request()
-      .input("targetUid", sql.NVarChar, targetUid)
-      .input("role", sql.NVarChar, role).query(`
-        UPDATE users
-        SET role = @role,
-            updated_at = GETDATE()
-        WHERE uid = @targetUid
-      `);
-
-    if (updateRes.rowsAffected[0] === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy người dùng" });
     }
 
-    // 3. Lấy thông tin user (uid, role, fcm_token)
-    const { recordset } = await pool
-      .request()
-      .input("targetUid", sql.NVarChar, targetUid)
-      .query("SELECT uid, role, fcm_token FROM users WHERE uid = @targetUid");
-    const user = recordset[0];
+    let firebase_synced = false;
+    try {
+      await admin.auth().setCustomUserClaims(uid, { role: role });
+      firebase_synced = true;
+    } catch (firebaseError) {
+      console.warn("Firebase custom claims sync failed:", firebaseError.message);
+    }
 
-    // 4. Tạo bản ghi notification
-    const title = "Quyền truy cập đã được cập nhật";
-    const content = `Quyền của bạn đã được đổi thành '${user.role}'.`;
-    const notifRes = await pool
-      .request()
-      .input("uid", sql.NVarChar, user.uid)
-      .input("title", sql.NVarChar, title)
-      .input("content", sql.NVarChar, content)
-      .input("icon", sql.NVarChar, "security")
-      .input("color", sql.NVarChar, "#2196f3")
-      .input("is_read", sql.Bit, false)
-      .input("created_at", sql.DateTime, new Date()).query(`
-        INSERT INTO notifications (uid, title, content, icon, color, is_read, created_at)
-        OUTPUT INSERTED.noti_id
-        VALUES (@uid, @title, @content, @icon, @color, @is_read, @created_at)
-      `);
-    const notiId = notifRes.recordset[0].noti_id;
-
-    // 5. Gửi FCM
-    await sendNotification(
-      user.fcm_token,
-      notiId,
-      user.uid,
-      title,
-      content,
-      "security",
-      "#2196f3"
-    );
-
-    // 6. Trả về response
     res.json({
-      message: "Cập nhật role thành công và thông báo đã được gửi",
-      user: { uid: user.uid, role: user.role },
-      notification: { notiId, title, content, sent: true },
+      success: true,
+      message: `Đã cập nhật role thành ${role}`,
+      firebase_synced,
     });
   } catch (err) {
-    console.error("updateRole error:", err);
-    res.status(500).json({ error: "Lỗi máy chủ: " + err.message });
+    console.error("Error in updateRole:", err);
+    res.status(500).json({ error: "Lỗi khi cập nhật role: " + err.message });
   }
 };
 

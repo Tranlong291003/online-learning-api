@@ -1,33 +1,29 @@
-const { sql, poolPromise } = require("../../config/db.config");
-const admin = require("../../config/firebase.config"); // Firebase Admin SDK
+const { pool } = require("../../config/db.config");
 
 const getAllUsers = async (req, res) => {
+  if (req.user.role !== "admin") {
+    return res.status(403).json({ error: "Bạn không có quyền xem danh sách người dùng" });
+  }
+
   try {
-    // 1) Lấy ConnectionPool từ poolPromise
-    const pool = await poolPromise;
-
-    // 2) Tạo Request từ pool và chạy query
-    const result = await pool.request().query(`
-        SELECT
-          uid,
-          name,
+    const result = await pool.query(`
+      SELECT
+        uid,
+        name,
         avatar_url,
-          role,
-          bio,
-          is_active
-        FROM users
-      `);
+        role,
+        bio,
+        is_active
+      FROM users
+    `);
 
-    // 3) Trả về kết quả
     res.json({
       message: "Danh sách người dùng",
-      users: result.recordset,
+      users: result.rows,
     });
   } catch (err) {
     console.error("Error in getAllUsers:", err);
-    res
-      .status(500)
-      .json({ error: "Lỗi khi lấy danh sách người dùng: " + err.message });
+    res.status(500).json({ error: "Lỗi khi lấy danh sách người dùng: " + err.message });
   }
 };
 

@@ -15,11 +15,11 @@ router.use(authMiddleware);
 
 router.get("/listmentor", usersController.getAllMentors);
 router.get("/", usersController.getAllUsers);
+router.get("/checkactive/:uid", checkUserStatus);
 router.get("/:id", usersController.getUserById);
 router.patch("/:id/status", usersController.updateUserStatus);
 router.delete("/delete/:id", usersController.deleteUser);
 router.put("/update/:id", upload.single("avatar"), usersController.updateUser);
 router.put("/updaterole", usersController.updateRole);
-router.get("/checkactive/:uid", checkUserStatus);
 
 module.exports = router;

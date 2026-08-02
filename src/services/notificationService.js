@@ -13,10 +13,10 @@ const sendNotification = async (
     token: fcmToken,
     notification: {
       title: title,
-      body: content, // Nội dung của thông báo
+      body: content,
     },
     data: {
-      noti_id: noti_id.toString(), // Chuyển ID thông báo thành chuỗi
+      noti_id: noti_id.toString(),
       uid: uid,
       title: title,
       content: content,

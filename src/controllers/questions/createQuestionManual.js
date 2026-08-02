@@ -1,4 +1,4 @@
-const { sql, poolPromise } = require("../../config/db.config");
+const { pool } = require("../../config/db.config");
 
 const createQuestion = async (req, res) => {
   const {
@@ -8,10 +8,9 @@ const createQuestion = async (req, res) => {
     options,
     correct_index,
     expected_keywords,
-    uid, // UID để kiểm tra quyền người dùng
+    uid,
   } = req.body;
 
-  // Kiểm tra dữ liệu bắt buộc
   if (!quiz_id || !question) {
     return res.status(400).json({
       error: "Thiếu thông tin bài kiểm tra (quiz_id) hoặc câu hỏi (question).",
@@ -23,119 +22,85 @@ const createQuestion = async (req, res) => {
   }
 
   try {
-    const pool = await poolPromise; // Sử dụng poolPromise để kết nối
-    const request = new sql.Request(pool);
+    // Kiểm tra quyền
+    const roleResult = await pool.query("SELECT role FROM users WHERE uid = $1", [uid]);
+    const userRole = roleResult.rows[0]?.role;
 
-    // Kiểm tra quyền của người dùng
-    request.input("uid", sql.NVarChar, uid);
-    const roleQuery = await request.query(
-      `SELECT role FROM users WHERE uid = @uid`
-    );
-
-    const userRole = roleQuery.recordset[0]?.role;
-
-    // Kiểm tra quyền tạo câu hỏi (Admin hoặc Giảng viên)
     if (userRole !== "admin" && userRole !== "mentor") {
-      return res.status(403).json({
-        error: "Bạn không có quyền tạo câu hỏi",
-      });
+      return res.status(403).json({ error: "Bạn không có quyền tạo câu hỏi" });
     }
 
-    // Truy vấn lấy loại quiz
-    request.input("quiz_id", sql.Int, quiz_id);
-    const quizResult = await request.query(`
-      SELECT [type]
-      FROM quizzes
-      WHERE quiz_id = @quiz_id
-    `);
-
-    // Kiểm tra quiz có tồn tại không
-    if (quizResult.recordset.length === 0) {
+    // Lấy loại quiz
+    const quizResult = await pool.query("SELECT type FROM quizzes WHERE quiz_id = $1", [quiz_id]);
+    if (quizResult.rows.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy quiz này." });
     }
 
-    // Lấy kiểu quiz từ DB
-    const quizType = quizResult.recordset[0].type;
+    const quizType = quizResult.rows[0].type;
 
-    // So sánh với type do client gửi lên để đảm bảo khớp:
     if (submittedType && submittedType !== quizType) {
       return res.status(400).json({
         error: `Sai loại quiz. Quiz trong DB là '${quizType}', nhưng bạn gửi '${submittedType}'.`,
       });
     }
 
-    // Kiểm tra loại quiz và thực hiện xử lý tương ứng
+    // Validate theo loại quiz
+    let finalOptions = null;
+    let finalCorrectIndex = null;
+    let finalExpectedKeywords = null;
+
     if (quizType === "trac_nghiem") {
-      // Bắt buộc phải có options và correct_index
       if (!options || correct_index === undefined) {
         return res.status(400).json({
-          error:
-            "Câu hỏi trắc nghiệm cần có trường 'options' và 'correct_index'.",
+          error: "Câu hỏi trắc nghiệm cần có trường 'options' và 'correct_index'.",
         });
       }
-
-      request.input("question", sql.NVarChar, question);
-      request.input("options", sql.NVarChar, JSON.stringify(options));
-      request.input("correct_index", sql.Int, correct_index);
-      request.input("expected_keywords", sql.NVarChar, null);
+      let optionList;
+      try {
+        optionList = Array.isArray(options) ? options : JSON.parse(options);
+      } catch (err) {
+        return res.status(400).json({ error: "Trường 'options' phải là một mảng các đáp án." });
+      }
+      if (!Array.isArray(optionList)) {
+        return res.status(400).json({ error: "Trường 'options' phải là một mảng các đáp án." });
+      }
+      if (!Number.isInteger(correct_index) || correct_index < 1 || correct_index > optionList.length) {
+        return res.status(400).json({
+          error: "correct_index phải là số nguyên nằm trong khoảng từ 1 đến số lượng đáp án.",
+        });
+      }
+      finalOptions = JSON.stringify(optionList);
+      finalCorrectIndex = correct_index - 1;
     } else if (quizType === "tu_luan") {
-      // Nếu là tự luận, chỉ dùng expected_keywords (tùy chọn)
-      request.input(
-        "expected_keywords",
-        sql.NVarChar,
-        expected_keywords || null
-      );
-      request.input("options", sql.NVarChar, null);
-      request.input("correct_index", sql.Int, null);
-      request.input("question", sql.NVarChar, question);
+      finalExpectedKeywords = expected_keywords || null;
     } else {
-      // Nếu loại quiz không hợp lệ
-      return res.status(400).json({
-        error: `Loại quiz không hợp lệ: ${quizType}`,
-      });
+      return res.status(400).json({ error: `Loại quiz không hợp lệ: ${quizType}` });
     }
 
-    // Kiểm tra xem câu hỏi đã tồn tại chưa
-    const checkExistingQuestion = await request.query(`
-      SELECT *
-      FROM quiz_questions
-      WHERE quiz_id = @quiz_id
-        AND question = @question
-    `);
-
-    if (checkExistingQuestion.recordset.length > 0) {
-      return res.status(400).json({
-        error: "Câu hỏi này đã tồn tại trong quiz.",
-      });
+    // Kiểm tra trùng lặp
+    const checkExisting = await pool.query(
+      "SELECT 1 FROM quiz_questions WHERE quiz_id = $1 AND question = $2",
+      [quiz_id, question]
+    );
+    if (checkExisting.rows.length > 0) {
+      return res.status(400).json({ error: "Câu hỏi này đã tồn tại trong quiz." });
     }
 
-    // Thêm câu hỏi mới vào quiz
-    await request.query(`
-      INSERT INTO quiz_questions (
-        quiz_id, question, options, correct_index, expected_keywords, created_at
-      )
-      VALUES (
-        @quiz_id, @question, @options, @correct_index, @expected_keywords, GETDATE()
-      )
-    `);
-
-    // Lấy lại thông tin câu hỏi vừa thêm
-    const result = await request.query(`
-      SELECT *
-      FROM quiz_questions
-      WHERE quiz_id = @quiz_id
-        AND question = @question
-    `);
+    // Insert
+    const result = await pool.query(
+      `INSERT INTO quiz_questions (quiz_id, question, options, correct_index, expected_keywords, created_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       RETURNING *`,
+      [quiz_id, question, finalOptions, finalCorrectIndex, finalExpectedKeywords]
+    );
 
     res.status(201).json({
       message: `Câu hỏi đã được thêm thành công. Loại quiz là '${quizType}'.`,
-      data: result.recordset[0],
+      data: result.rows[0],
     });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({
-      error: "Lỗi khi thêm câu hỏi: " + err.message,
-    });
+    return res.status(500).json({ error: "Lỗi khi thêm câu hỏi: " + err.message });
   }
 };
 

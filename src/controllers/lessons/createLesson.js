@@ -1,15 +1,12 @@
-// controllers/courseCategories/createLesson.js
-require("dotenv").config(); // Load .env nếu chưa load ở index.js
-const { sql, poolPromise } = require("../../config/db.config");
+require("dotenv").config();
+const { pool } = require("../../config/db.config");
 const axios = require("axios");
 
-// Helper: extract videoId từ URL YouTube
 const extractVideoId = (url) => {
   const m = /(?:v=|\/)([A-Za-z0-9_-]{11})/.exec(url || "");
   return m ? m[1] : null;
 };
 
-// Parse ISO8601 duration (PT#H#M#S) -> seconds
 const parseISODuration = (iso) => {
   const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
   const h = parseInt(m[1] || 0, 10);
@@ -18,14 +15,11 @@ const parseISODuration = (iso) => {
   return h * 3600 + min * 60 + s;
 };
 
-// Format seconds -> HH:MM:SS
 const formatDuration = (sec) => {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(
-    s
-  ).padStart(2, "0")}`;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 };
 
 const createLesson = async (req, res) => {
@@ -41,47 +35,40 @@ const createLesson = async (req, res) => {
   let durationInfo = null;
 
   try {
-    const pool = await poolPromise;
-    const request = pool.request();
-
-    // Kiểm tra vai trò người dùng
-    request.input("uid", sql.NVarChar, uid);
-    const roleQuery = await request.query(`
-      SELECT role FROM users WHERE uid = @uid
-    `);
-
-    const userRole = roleQuery.recordset[0]?.role;
+    // Kiểm tra vai trò
+    const roleResult = await pool.query(
+      "SELECT role FROM users WHERE uid = $1",
+      [uid]
+    );
+    const userRole = roleResult.rows[0]?.role;
     if (userRole !== "admin" && userRole !== "mentor") {
       return res.status(403).json({ error: "Bạn không có quyền tạo bài học" });
     }
 
-    // Kiểm tra khóa học tồn tại
-    request.input("course_id", sql.Int, course_id);
-    const courseCheck = await request.query(`
-      SELECT course_id FROM courses WHERE course_id = @course_id
-    `);
-
-    if (courseCheck.recordset.length === 0) {
+    // Kiểm tra khóa học
+    const courseCheck = await pool.query(
+      "SELECT course_id FROM courses WHERE course_id = $1",
+      [course_id]
+    );
+    if (courseCheck.rows.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy khóa học" });
     }
 
-    // Xử lý file PDF và Slide (nếu có)
+    // Xử lý file
     const pdf_url = req.files?.pdf?.[0]?.filename
       ? `/uploads/lessons/pdf/${req.files.pdf[0].filename}`
       : null;
-
     const slide_url = req.files?.slide?.[0]?.filename
       ? `/uploads/lessons/slides/${req.files.slide[0].filename}`
       : null;
 
-    // Gán dữ liệu input
+    // Xử lý video YouTube
     if (video_url) {
       videoId = extractVideoId(video_url);
       if (!videoId) {
         return res.status(400).json({ error: "URL YouTube không hợp lệ" });
       }
 
-      // Gọi YouTube Data API để lấy player + duration
       const API_KEY = process.env.YOUTUBE_API_KEY;
       const resp = await axios.get(
         "https://www.googleapis.com/youtube/v3/videos",
@@ -92,9 +79,7 @@ const createLesson = async (req, res) => {
 
       const item = resp.data.items[0];
       if (!item || !item.player || !item.player.embedHtml) {
-        return res
-          .status(400)
-          .json({ error: "Video này không cho phép nhúng" });
+        return res.status(400).json({ error: "Video này không cho phép nhúng" });
       }
       const iso = item.contentDetails.duration;
       const seconds = parseISODuration(iso);
@@ -102,43 +87,34 @@ const createLesson = async (req, res) => {
       durationInfo = { raw: iso, seconds, formatted };
     }
 
-    // Thêm bài học
-    await request
-      .input("title", sql.NVarChar, title)
-      .input("video_url", sql.NVarChar, video_url || null)
-      .input("video_id", sql.NVarChar, videoId || null) // Lưu videoId vào DB
-      .input(
-        "video_duration",
-        sql.NVarChar,
-        durationInfo ? durationInfo.formatted : null
+    // Insert lesson
+    const insertResult = await pool.query(
+      `INSERT INTO lessons (
+        course_id, title, video_url, video_id, video_duration,
+        pdf_url, slide_url, content, "order", creator_uid, created_at
       )
-      .input("pdf_url", sql.NVarChar, pdf_url)
-      .input("slide_url", sql.NVarChar, slide_url)
-      .input("content", sql.NVarChar, content || null)
-      .input("order", sql.Int, order || null)
-      .input("creator_uid", sql.NVarChar, uid).query(`
-        INSERT INTO lessons (
-          course_id, title, video_url, video_id, video_duration, pdf_url, slide_url, content, [order], creator_uid, created_at
-        ) VALUES (
-          @course_id, @title, @video_url, @video_id, @video_duration, @pdf_url, @slide_url, @content, @order, @creator_uid, GETDATE()
-        )
-      `);
-
-    // Lấy bài học vừa tạo
-    const result = await request.query(`
-      SELECT * FROM lessons
-      WHERE course_id = @course_id AND title = @title
-      ORDER BY created_at DESC
-    `);
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+      RETURNING *`,
+      [
+        course_id,
+        title,
+        video_url || null,
+        videoId || null,
+        durationInfo ? durationInfo.formatted : null,
+        pdf_url,
+        slide_url,
+        content || null,
+        order || null,
+        uid,
+      ]
+    );
 
     res.status(201).json({
       message: "Tạo bài học thành công",
-      data: result.recordset[0],
+      data: insertResult.rows[0],
     });
   } catch (err) {
-    res.status(500).json({
-      error: "Lỗi tạo bài học: " + err.message,
-    });
+    res.status(500).json({ error: "Lỗi tạo bài học: " + err.message });
   }
 };
 

@@ -1,16 +1,15 @@
-const { sql, poolPromise } = require("../../config/db.config");
+const { pool } = require("../../config/db.config");
 
 const updateNotification = async (req, res) => {
   const notiId = req.params.id;
 
   try {
-    const pool = await poolPromise;
-    const result = await pool
-      .request()
-      .input("noti_id", sql.UniqueIdentifier, notiId)
-      .query("UPDATE notifications SET is_read = 1 WHERE noti_id = @noti_id");
+    const result = await pool.query(
+      "UPDATE notifications SET is_read = true WHERE noti_id = $1 RETURNING noti_id",
+      [notiId]
+    );
 
-    if (result.rowsAffected > 0) {
+    if (result.rows.length > 0) {
       res.status(200).send({ message: "Đã đánh dấu thông báo là đã đọc" });
     } else {
       res.status(404).send({ message: "Không tìm thấy thông báo" });

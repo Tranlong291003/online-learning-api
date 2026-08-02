@@ -1,22 +1,21 @@
-const { poolPromise, sql } = require("../../config/db.config"); // Thêm sql vào import
-const admin = require("../../config/firebase.config"); // Firebase Admin SDK
+const { pool } = require("../../config/db.config");
+const admin = require("../../config/firebase.config");
 
 const createUser = async (req, res) => {
-  const { email, password, name, avatar_url, bio, phone, role } = req.body;
+  const { email, password, name, avatar_url, bio, phone } = req.body;
 
-  // Kiểm tra các thông tin cần thiết
   if (!email || !password || !name) {
     return res.status(400).json({ error: "Thiếu thông tin người dùng" });
   }
 
   try {
-    // Kiểm tra xem email đã tồn tại trong Firebase hay chưa
+    // Kiểm tra email đã tồn tại trong Firebase
     const existingUser = await admin
       .auth()
       .getUserByEmail(email)
       .catch((error) => {
         if (error.code !== "auth/user-not-found") {
-          throw error; // Nếu có lỗi khác ngoài "user-not-found", ném lỗi
+          throw error;
         }
         return null;
       });
@@ -25,39 +24,33 @@ const createUser = async (req, res) => {
       return res.status(400).json({ error: "Email này đã được đăng ký" });
     }
 
-    // Tạo người dùng mới trong Firebase Authentication
+    // Tạo user trong Firebase
     const userRecord = await admin.auth().createUser({
       email: email,
-      password: password, // Firebase sẽ mã hóa mật khẩu tự động
-      displayName: name, // Thay displayName bằng name
+      password: password,
+      displayName: name,
     });
 
-    // Lưu thông tin người dùng vào cơ sở dữ liệu SQL Server
-    const pool = await poolPromise; // Sử dụng poolPromise để kết nối đến cơ sở dữ liệu
-    const request = new sql.Request(pool);
-
-    // Lưu thông tin người dùng vào SQL Server
-    request.input("uid", sql.NVarChar, userRecord.uid);
-    request.input("email", sql.NVarChar, email);
-    request.input("name", sql.NVarChar, name); // Thay display_name bằng name
-    request.input("avatar_url", sql.NVarChar, avatar_url || "");
-    request.input("bio", sql.NVarChar, bio || "");
-    request.input("phone", sql.NVarChar, phone || ""); // Thay phone_number bằng phone
-    request.input("role", sql.NVarChar, role || "user");
-
-    // Câu truy vấn SQL để thêm người dùng vào cơ sở dữ liệu
-    await request.query(
-      "INSERT INTO users (uid, email, name, avatar_url, bio, phone, role) " + // Thay phone_number bằng phone
-        "VALUES (@uid, @email, @name, @avatar_url, @bio, @phone, @role)"
+    // Lưu vào PostgreSQL
+    await pool.query(
+      `INSERT INTO users (uid, email, name, avatar_url, bio, phone, role)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        userRecord.uid,
+        email,
+        name,
+        avatar_url || "",
+        bio || "",
+        phone || "",
+        "user",
+      ]
     );
 
-    // Trả về thông báo thành công
-    res.status(200).json({
+    res.status(201).json({
       message: "Người dùng đã được tạo thành công",
-      user_id: userRecord.uid, // Trả về Firebase UID
+      user_id: userRecord.uid,
     });
   } catch (err) {
-    // Xử lý lỗi và trả về thông báo lỗi
     console.error(err);
     if (err.code === "auth/email-already-exists") {
       res.status(400).json({

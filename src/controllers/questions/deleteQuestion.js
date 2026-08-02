@@ -1,39 +1,29 @@
-const { sql, poolPromise } = require("../../config/db.config");
+const { pool } = require("../../config/db.config");
 
 const deleteQuestion = async (req, res) => {
-  const { question_id } = req.params; // question_id từ URL
-  const { uid } = req.body; // UID để kiểm tra quyền người dùng
+  const { question_id } = req.params;
+  const { uid } = req.body;
 
   if (!uid) {
     return res.status(400).json({ error: "UID không hợp lệ" });
   }
 
   try {
-    const pool = await poolPromise; // Sử dụng poolPromise để kết nối
-    const request = new sql.Request(pool);
+    // Kiểm tra quyền
+    const roleResult = await pool.query("SELECT role FROM users WHERE uid = $1", [uid]);
+    const userRole = roleResult.rows[0]?.role;
 
-    // Kiểm tra quyền của người dùng
-    request.input("uid", sql.NVarChar, uid);
-    const roleQuery = await request.query(
-      `SELECT role FROM users WHERE uid = @uid`
-    );
-
-    const userRole = roleQuery.recordset[0]?.role;
-
-    // Kiểm tra quyền xóa câu hỏi (Admin hoặc Giảng viên)
     if (userRole !== "admin" && userRole !== "mentor") {
-      return res.status(403).json({
-        error: "Bạn không có quyền xóa câu hỏi",
-      });
+      return res.status(403).json({ error: "Bạn không có quyền xóa câu hỏi" });
     }
 
-    // Xóa câu hỏi
-    request.input("question_id", sql.Int, question_id);
-    const result = await request.query(
-      "DELETE FROM quiz_questions WHERE question_id = @question_id"
+    // Xóa
+    const result = await pool.query(
+      "DELETE FROM quiz_questions WHERE question_id = $1 RETURNING question_id",
+      [question_id]
     );
 
-    if (result.rowsAffected[0] === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: "Câu hỏi không tồn tại" });
     }
 

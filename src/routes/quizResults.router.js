@@ -9,9 +9,6 @@ router.use(authMiddleware);
 // Route để nộp bài làm
 router.post("/submit", quizResultsController.submitQuizResult);
 
-// Route để xem kết quả chi tiết của bài làm theo ID kết quả bài làm (quiz_result_id)
-router.get("/:result_id", quizResultsController.getQuizResultById);
-
 // Route để lấy kết quả của người học theo user_id
 router.get("/users/:user_uid/results", quizResultsController.getResultsByUser);
 
@@ -20,5 +17,8 @@ router.patch(
   "/quiz-results/:result_id/grade",
   quizResultsController.gradeQuizResult
 );
+
+// Route để xem kết quả chi tiết của bài làm theo ID kết quả bài làm (quiz_result_id)
+router.get("/:result_id", quizResultsController.getQuizResultById);
 
 module.exports = router;

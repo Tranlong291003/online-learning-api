@@ -1,0 +1,96 @@
+@startuml Online Learning System
+
+!define RECTANGLE class
+
+skinparam packageStyle rectangle
+skinparam backgroundColor white
+skinparam handwritten false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam roundcorner 20
+skinparam shadowing false
+
+' Main Components
+package "Frontend (Flutter)" {
+    [Mobile App] as MobileApp
+}
+
+package "Backend (Node.js)" {
+    package "API Layer" {
+        [Express App] as ExpressApp
+        [Routes] as Routes
+        [Controllers] as Controllers
+        [Middleware] as Middleware
+    }
+
+    package "Notification System" {
+        [Notification Service] as NotificationService
+    }
+
+    package "Data Layer" {
+        database "MySQL" {
+            [Users] as UsersDB
+            [Courses] as CoursesDB
+            [Lessons] as LessonsDB
+            [Quizzes] as QuizzesDB
+            [Enrollments] as EnrollmentsDB
+            [Progress] as ProgressDB
+            [Notifications] as NotificationsDB
+        }
+    }
+
+    package "External Services" {
+        [Firebase Auth] as FirebaseAuth
+        [Firebase Storage] as FirebaseStorage
+    }
+}
+
+' Relationships
+MobileApp --> ExpressApp : HTTP/HTTPS
+ExpressApp --> Routes
+Routes --> Controllers
+Controllers --> UsersDB
+Controllers --> CoursesDB
+Controllers --> LessonsDB
+Controllers --> QuizzesDB
+Controllers --> EnrollmentsDB
+Controllers --> ProgressDB
+Controllers --> NotificationService
+NotificationService --> NotificationsDB
+
+Controllers --> FirebaseAuth : Authentication
+Controllers --> FirebaseStorage : File Storage
+
+Middleware --> Controllers : Request Processing
+
+' Notes
+note right of MobileApp
+  Ứng Dụng Flutter
+  - Kiến Trúc Sạch
+  - Mẫu BLoC
+  - Điều Hướng AutoRoute
+end note
+
+note right of ExpressApp
+  Máy Chủ Node.js Express
+  - API RESTful
+  - Xác Thực JWT
+  - Xử Lý Lỗi
+end note
+
+note right of Controllers
+  Bộ Điều Khiển
+  - Xử Lý Request
+  - Tương Tác Trực Tiếp Với Database
+  - Quản Lý Logic Nghiệp Vụ
+end note
+
+note right of NotificationService
+  Dịch Vụ Thông Báo
+  - Xử Lý Logic Thông Báo
+  - Quản Lý Trạng Thái
+  - Gửi Thông Báo
+  - Tương Tác Với Database
+end note
+
+@enduml

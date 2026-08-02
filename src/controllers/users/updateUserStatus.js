@@ -1,52 +1,48 @@
-const { sql, poolPromise } = require("../../config/db.config");
-const admin = require("../../config/firebase.config"); // Firebase Admin SDK
+const { pool } = require("../../config/db.config");
+const admin = require("../../config/firebase.config");
 
-// Cập nhật trạng thái user (active/disabled) dựa trên uid
 const updateUserStatus = async (req, res) => {
-  const uid = req.params.id; // uid từ URL
-  const { status } = req.body; // 'active' hoặc 'disabled'
+  const uid = req.params.id;
+  const { status } = req.body;
 
-  // Validate status
+  if (req.user.role !== "admin") {
+    return res.status(403).json({ error: "Bạn không có quyền cập nhật trạng thái người dùng" });
+  }
+
   if (!["active", "disabled"].includes(status)) {
     return res.status(400).json({ error: "Trạng thái không hợp lệ" });
   }
 
-  // Chuyển sang BIT: active → 1, disabled → 0
-  const isActive = status === "active" ? 1 : 0;
+  const isActive = status === "active";
 
   try {
-    // 1) Cập nhật trong SQL Server
-    const pool = await poolPromise;
-    const request = pool
-      .request()
-      .input("uid", sql.NVarChar, uid)
-      .input("is_active", sql.Bit, isActive);
+    // Cập nhật trong PostgreSQL
+    const result = await pool.query(
+      `UPDATE users
+       SET is_active = $1, updated_at = NOW()
+       WHERE uid = $2
+       RETURNING uid`,
+      [isActive, uid]
+    );
 
-    const result = await request.query(`
-      UPDATE users
-      SET
-        is_active = @is_active,
-        updated_at = GETDATE()
-      WHERE uid = @uid
-    `);
-
-    if (result.rowsAffected[0] === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy người dùng" });
     }
 
-    // 2) Cập nhật trong Firebase Auth: disabled = !isActive
-    await admin.auth().updateUser(uid, { disabled: !isActive });
+    let firebase_synced = false;
+    try {
+      await admin.auth().updateUser(uid, { disabled: !isActive });
+      firebase_synced = true;
+    } catch (firebaseError) {
+      console.warn("Firebase updateUser status sync failed:", firebaseError.message);
+    }
 
-    res.json({ message: "Trạng thái người dùng đã được cập nhật thành công" });
+    res.json({
+      message: "Trạng thái người dùng đã được cập nhật thành công",
+      firebase_synced,
+    });
   } catch (err) {
     console.error("Error in updateUserStatus:", err);
-
-    // Nếu Firebase không tìm thấy user
-    if (err.code === "auth/user-not-found") {
-      return res
-        .status(404)
-        .json({ error: "Không tìm thấy người dùng trên Firebase" });
-    }
 
     res.status(500).json({
       error: "Lỗi khi cập nhật trạng thái người dùng: " + err.message,

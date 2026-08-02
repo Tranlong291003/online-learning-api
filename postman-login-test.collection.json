@@ -1,0 +1,130 @@
+{
+  "info": {
+    "name": "Online Learning Login Test",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "apiBaseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "firebaseApiKey",
+      "value": "AIzaSyBS1hZb4McK8IFxAzng7IBwAbCekfKTfZo"
+    },
+    {
+      "key": "email",
+      "value": "tranlong291003@gmail.com"
+    },
+    {
+      "key": "password",
+      "value": "123123"
+    },
+    {
+      "key": "fcmToken",
+      "value": "postman-test-fcm-token"
+    },
+    {
+      "key": "idToken",
+      "value": ""
+    },
+    {
+      "key": "jwtToken",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Firebase Sign In With Password",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"returnSecureToken\": true\n}"
+        },
+        "url": {
+          "raw": "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={{firebaseApiKey}}",
+          "protocol": "https",
+          "host": [
+            "identitytoolkit",
+            "googleapis",
+            "com"
+          ],
+          "path": [
+            "v1",
+            "accounts:signInWithPassword"
+          ],
+          "query": [
+            {
+              "key": "key",
+              "value": "{{firebaseApiKey}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Firebase sign-in succeeded', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "const json = pm.response.json();",
+              "pm.collectionVariables.set('idToken', json.idToken);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Backend Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"idToken\": \"{{idToken}}\",\n  \"fcmToken\": \"{{fcmToken}}\"\n}"
+        },
+        "url": {
+          "raw": "{{apiBaseUrl}}/api/users/login",
+          "host": [
+            "{{apiBaseUrl}}"
+          ],
+          "path": [
+            "api",
+            "users",
+            "login"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Backend login succeeded', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "const json = pm.response.json();",
+              "pm.collectionVariables.set('jwtToken', json.token);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    }
+  ]
+}

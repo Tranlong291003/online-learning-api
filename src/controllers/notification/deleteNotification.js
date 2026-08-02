@@ -1,7 +1,7 @@
-const { sql, poolPromise } = require("../../config/db.config");
+const { pool } = require("../../config/db.config");
 
 const deleteNotification = async (req, res) => {
-  const { uid } = req.body; // Lấy uid từ body
+  const { uid } = req.body;
   const notiId = req.params.id;
 
   if (!uid) {
@@ -9,17 +9,12 @@ const deleteNotification = async (req, res) => {
   }
 
   try {
-    const pool = await poolPromise;
-    // Xóa thông báo chỉ khi nó thuộc về user đó
-    const result = await pool
-      .request()
-      .input("noti_id", sql.Int, notiId)
-      .input("uid", sql.NVarChar, uid)
-      .query(
-        "DELETE FROM notifications WHERE noti_id = @noti_id AND uid = @uid"
-      );
+    const result = await pool.query(
+      "DELETE FROM notifications WHERE noti_id = $1 AND uid = $2 RETURNING noti_id",
+      [notiId, uid]
+    );
 
-    if (result.rowsAffected > 0) {
+    if (result.rows.length > 0) {
       res.status(200).send({ message: "Thông báo đã bị xóa" });
     } else {
       res.status(404).send({
