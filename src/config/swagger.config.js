@@ -73,7 +73,10 @@ function buildSpec() {
       description:
         "API đồ án Online Learning.\n\n**Test nhanh không cần JWT:** bấm nút **Authorize**, nhập `x-api-key` hoặc `Bearer` bằng giá trị dev key (đã điền sẵn, từ biến `DEV_API_KEY` trong `.env`).",
     },
-    servers: [{ url: "/" }],
+    servers: [
+      { url: "https://online-learning-api.vercel.app", description: "Production (Vercel)" },
+      { url: "http://localhost:3000", description: "Local dev" },
+    ],
     components: {
       securitySchemes: {
         devKey: {
