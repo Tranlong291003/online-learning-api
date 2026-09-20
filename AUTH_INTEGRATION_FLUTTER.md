@@ -512,7 +512,24 @@ sửa/xoá được khóa học, bài học, quiz, câu hỏi **do chính mình 
 
 ---
 
-## 8. Ghi chú khi chạy thử
+## 8. Chạy migration trên DB đã tồn tại
+
+⚠️ **Không dùng `npm run db:init:pg`** cho DB đang chạy. File `database_postgres.sql` dùng
+`CREATE TABLE IF NOT EXISTS`, nên với bảng `users` đã có sẵn thì câu đó là no-op và các CỘT
+mới (`password_hash`, `id`, `failed_login_attempts`, `locked_until`) sẽ **không được thêm** —
+chạy xong vẫn phải sửa tiếp.
+
+Dùng migration riêng (idempotent, an toàn với dữ liệu đang có):
+
+```bash
+npm run db:migrate:auth
+```
+
+Script sẽ kiểm tra lại sau khi chạy và báo lỗi rõ nếu còn thiếu cột/bảng. Nó cũng in ra số
+tài khoản chưa có mật khẩu (tạo trước khi API tự quản lý đăng nhập) — những tài khoản đó
+cần đặt lại mật khẩu qua `/api/auth/forgot-password` mới đăng nhập được.
+
+## 9. Ghi chú khi chạy thử
 
 Tài khoản demo sau khi chạy `npm run db:seed:pg` (mật khẩu đặt qua `SEED_DEMO_PASSWORD`,
 mặc định `Demo@123456`):

@@ -25,7 +25,8 @@
     "db:migrate:sqlserver-to-pg": "node scripts/migrate-sqlserver-to-postgres.js",
     "api:authz": "node scripts/live-authz-probe.cjs",
     "api:coverage": "node scripts/live-full-coverage.cjs",
-    "api:leftover": "node scripts/live-leftover-check.cjs"
+    "api:leftover": "node scripts/live-leftover-check.cjs",
+    "db:migrate:auth": "node scripts/migrate-auth.js"
   },
   "keywords": [],
   "author": "",
