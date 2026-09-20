@@ -394,7 +394,11 @@ test("DELETE /api/lessons/delete/1 returns 403 for student role", async () => {
     const body = await response.json();
 
     assert.equal(response.status, 403);
-    assert.equal(body.error, "Bạn chỉ được xoá bài học do bạn tạo");
+    // Quy tắc "chỉ admin/mentor" giờ chặn ngay ở route (authorize), nên học viên
+    // bị từ chối trước khi controller kịp truy vấn DB. Vẫn là 403 và không có
+    // truy vấn nào chạy — bảo vệ còn chặt hơn trước.
+    assert.equal(body.error, "Bạn không có quyền xóa bài học");
+    assert.equal(poolMock.calls.length, 0);
   });
 });
 

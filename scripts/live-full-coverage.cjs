@@ -52,8 +52,10 @@ const PNG = Buffer.from(
 );
 const PDF = Buffer.from("%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n");
 
+const { signToken } = require("./lib/signToken.cjs");
+
 const tok = (uid, role, email) =>
-  jwt.sign({ uid, email: email || "e2e@test.local", role }, process.env.JWT_SECRET, { expiresIn: "1h" });
+  signToken({ uid, email: email || "e2e@test.local", role });
 
 const T = { mentor: tok(MENTOR_UID, "mentor", MENTOR_EMAIL) };
 

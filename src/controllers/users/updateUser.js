@@ -6,7 +6,9 @@ const updateUser = async (req, res) => {
   const uid = req.params.id;
   const { name, bio, phone, gender, birthdate } = req.body;
 
-  if (req.user.role !== "admin" && req.user.uid !== req.params.id) {
+  // Đã được chặn ở tầng route (authorizeSelfOrAdmin). Giữ lại ở đây làm lớp
+  // phòng thủ thứ hai, phòng khi route được mount lại mà quên middleware.
+  if (req.user.role !== "admin" && String(req.user.uid) !== String(req.params.id)) {
     return res.status(403).json({ error: "Bạn không có quyền cập nhật người dùng này" });
   }
 
@@ -54,11 +56,14 @@ const updateUser = async (req, res) => {
 
   try {
     // UPDATE user
+    // Liệt kê cột tường minh thay vì RETURNING *: bảng users có password_hash,
+    // và trả về toàn bộ dòng sẽ đẩy hash mật khẩu ra cho client.
     const updateQuery = `
       UPDATE users
       SET ${setClauses.join(", ")}
       WHERE uid = $${paramIndex}
-      RETURNING *
+      RETURNING uid, email, name, avatar_url, bio, phone, gender, birthdate,
+                role, is_active, fcm_token, created_at, updated_at
     `;
     const result = await pool.query(updateQuery, values);
 

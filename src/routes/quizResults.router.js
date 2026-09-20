@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const quizResultsController = require("../controllers/quizResults/quizResults.controller");
 const authMiddleware = require("../middleware/auth.middleware");
+const { authorize } = require("../middleware/authorize.middleware");
 
 // Tất cả các route đều cần token
 router.use(authMiddleware);
@@ -15,6 +16,7 @@ router.get("/users/:user_uid/results", quizResultsController.getResultsByUser);
 // Route để chấm bài tự luận theo quiz_result_id
 router.patch(
   "/quiz-results/:result_id/grade",
+  authorize("admin", "mentor", { message: "Bạn không có quyền chấm điểm bài kiểm tra" }),
   quizResultsController.gradeQuizResult
 );
 

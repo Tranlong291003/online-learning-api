@@ -24,7 +24,6 @@ services:
       - key: YOUTUBE_API_KEY
         sync: false
       # Firebase service account KHÔNG được commit vào repo (đã gitignore).
-      # Trên Render phải nạp qua biến môi trường, nếu không các endpoint
-      # Firebase (đăng nhập, thông báo) sẽ lỗi.
+      # Chỉ cần nếu dùng push notification (FCM); KHÔNG liên quan tới đăng nhập.
       - key: FIREBASE_SERVICE_ACCOUNT_BASE64
         sync: false

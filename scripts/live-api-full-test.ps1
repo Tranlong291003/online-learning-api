@@ -23,7 +23,8 @@ $readQuizId = if ($env:READ_QUIZ_ID) { [int]$env:READ_QUIZ_ID } else { 1 }
 $readQuizResultId = if ($env:READ_QUIZ_RESULT_ID) { [int]$env:READ_QUIZ_RESULT_ID } else { 1 }
 
 function New-TestToken($uid, $role, $email) {
-  return node -e "const jwt=require('jsonwebtoken'); console.log(jwt.sign({uid:process.argv[2],email:process.argv[4],role:process.argv[3]}, process.argv[1], {expiresIn:'1h'}));" $jwtSecret $uid $role $email
+  # Ký qua scripts/lib/signToken.cjs — middleware chốt cứng iss/aud/HS256.
+  return node -e "const {signToken}=require('./scripts/lib/signToken.cjs'); console.log(signToken({uid:process.argv[2],email:process.argv[4],role:process.argv[3]},{secret:process.argv[1]}));" $jwtSecret $uid $role $email
 }
 
 $adminToken = New-TestToken $adminUid "admin" $adminEmail

@@ -1,7 +1,7 @@
 # 📘 Tài liệu API – Online Learning Platform
 
 > Tài liệu dành cho Frontend (React Native / Web) tích hợp lại API.
-> Trạng thái: khớp 100% với mã nguồn hiện tại (đã xác minh bằng 221 test tự động + 36 kiểm tra end-to-end trên PostgreSQL thật).
+> Trạng thái: khớp 100% với mã nguồn hiện tại (đã xác minh bằng 269 test tự động).
 
 ---
 
@@ -21,13 +21,54 @@ Các file tĩnh (ảnh, PDF, slide) được trả về dạng đường dẫn t
 
 ## 2. Xác thực (Authentication)
 
-### 2.1 Luồng đăng nhập (đúng cho production)
+### 2.1 Luồng đăng nhập
 
-1. Ứng dụng login bằng **Firebase Auth** (email/password) → nhận được **idToken** từ Firebase.
-2. Gọi `POST /api/users/login` với `{ idToken }` → server trả về **JWT** của hệ thống.
-3. Mọi request sau đó gửi header: `Authorization: Bearer <JWT>`.
+API **tự quản lý tài khoản** (email + mật khẩu hash bằng bcrypt). Không còn dùng
+Firebase Auth — Firebase chỉ còn dùng để gửi push notification (FCM).
 
-JWT có thời hạn **7 ngày**. Server trả `401` khi token hết hạn/không hợp lệ → FE nên đăng xuất hoặc gọi lại `/login`.
+1. Gọi `POST /api/auth/login` với `{ email, password }`.
+2. Server trả về **cặp token**:
+   - `access_token` — JWT, hạn **15 phút**
+   - `refresh_token` — hạn **30 ngày** (90 ngày nếu gửi `remember: true`)
+3. Mọi request sau đó gửi header `Authorization: Bearer <access_token>`.
+4. Khi access token hết hạn, gọi `POST /api/auth/refresh` với `{ refresh_token }`
+   để lấy cặp token mới.
+
+> ⚠️ **Refresh token chỉ dùng được một lần.** Mỗi lần gọi `/refresh`, server trả
+> refresh token **mới** và vô hiệu hoá token cũ (rotation). Client **phải** lưu
+> token mới. Nếu token cũ bị dùng lại, server coi là bị đánh cắp và thu hồi **cả
+> phiên** (`code: "SESSION_REVOKED"`).
+
+> **Vì sao access token ngắn hạn:** JWT không thu hồi được giữa chừng. Thời hạn
+> ngắn giới hạn thiệt hại nếu token bị lộ; refresh token nằm trong DB nên thu hồi
+> được (đăng xuất, đổi mật khẩu, tài khoản bị khoá, admin đổi quyền).
+
+### 2.1.1 Endpoint xác thực
+
+| Method | Endpoint | Cần token | Mô tả |
+|---|---|---|---|
+| POST | `/api/auth/register` | không | Đăng ký; trả token luôn, không cần đăng nhập lại |
+| POST | `/api/auth/login` | không | Đăng nhập |
+| POST | `/api/auth/refresh` | không | Đổi refresh token lấy cặp token mới |
+| POST | `/api/auth/forgot-password` | không | Yêu cầu đặt lại mật khẩu |
+| POST | `/api/auth/reset-password` | không | Đặt lại mật khẩu bằng token |
+| GET | `/api/auth/me` | có | Hồ sơ + role hiện tại của người đang đăng nhập |
+| POST | `/api/auth/change-password` | có | Đổi mật khẩu (cần mật khẩu hiện tại) |
+| POST | `/api/auth/logout` | có | Thu hồi phiên hiện tại, hoặc tất cả với `{ all_devices: true }` |
+
+`POST /api/users/create` và `POST /api/users/login` vẫn hoạt động như **alias**
+tương thích ngược cho app đang chạy, trỏ về cùng logic trên. Nên chuyển sang
+`/api/auth/*`.
+
+Chi tiết tích hợp phía app mobile: xem `AUTH_INTEGRATION_FLUTTER.md`.
+
+### 2.1.2 Chống dò mật khẩu
+
+- Sai mật khẩu quá `MAX_LOGIN_ATTEMPTS` (mặc định 10) lần liên tiếp → tài khoản bị
+  tạm khoá `LOGIN_LOCK_MINUTES` (mặc định 15) phút, trả `429` với
+  `code: "ACCOUNT_LOCKED"`.
+- Email không tồn tại và sai mật khẩu trả **cùng một thông điệp**
+  (`Email hoặc mật khẩu không đúng`) để không dò được email nào đã đăng ký.
 
 ### 2.2 Dev key (chỉ dùng khi phát triển, không dùng production)
 
@@ -62,56 +103,58 @@ hoặc `Authorization: Bearer <giá-trị-DEV_API_KEY-trong-.env>`. Dev key mặ
 | `403` | Không có quyền (role không đủ / không phải chủ sở hữu) |
 | `404` | Không tìm thấy tài nguyên |
 | `409` | Xung đột ràng buộc dữ liệu (vd: xóa danh mục đang có khóa học) |
+| `429` | Bị chặn tạm thời — tài khoản khoá do đăng nhập sai quá nhiều lần |
 | `500` | Lỗi server |
 
-Định dạng lỗi thường là `{ "error": "..." }` (một số chỗ cũ dùng `{ "message": "..." }` — FE nên đọc cả 2 trường).
+Định dạng lỗi thường là `{ "error": "..." }` (một số chỗ cũ dùng `{ "message": "..." }` — FE nên đọc cả 2 trường). Một số lỗi xác thực kèm thêm `code` để client xử lý tự động:
+
+| `code` | Khi nào | Client nên làm gì |
+|---|---|---|
+| `TOKEN_EXPIRED` | Access token hết hạn | Gọi `/api/auth/refresh` rồi phát lại request |
+| `REFRESH_TOKEN_EXPIRED` | Refresh token hết hạn | Đăng xuất, về màn đăng nhập |
+| `SESSION_REVOKED` | Phiên bị thu hồi | Đăng xuất, về màn đăng nhập |
+| `ACCOUNT_LOCKED` | Sai mật khẩu quá nhiều lần | Hiện thời gian còn lại |
 
 ---
 
-## 3. Auth & Users — `/api/users`
+## 3. Users — `/api/users`
 
-### 3.1 Đăng ký — `POST /api/users/create` *(không cần token)*
-Body: `{ email, password, name, avatar_url?, bio?, phone? }`
-→ `201`: `{ message, user_id }`
-- Lỗi: `400` email đã tồn tại; `500` Firebase chưa cấu hình.
+> Đăng ký / đăng nhập / làm mới token đã chuyển sang `/api/auth/*` (mục 2.1.1).
+> Hai alias `POST /api/users/create` và `POST /api/users/login` vẫn chạy.
 
-### 3.2 Đăng nhập — `POST /api/users/login` *(không cần token)*
-Body: `{ idToken, fcmToken? }`
-→ `200`:
-```json
-{ "success": true, "user_id": "abc", "email": "a@b.c", "role": "user", "fcm_token": null, "token": "<JWT>" }
-```
-- `401`: idToken hết hạn/không hợp lệ → FE phải đăng nhập lại Firebase.
-- `404`: user chưa tồn tại trong DB. `400`: tài khoản bị khóa (`is_active = false`).
-
-### 3.3 Danh sách user — `GET /api/users` *(chỉ admin, role từ token)*
+### 3.1 Danh sách user — `GET /api/users` *(chỉ admin)*
 → `200`: `{ message, users: [{ uid, name, avatar_url, role, bio, is_active }] }`
 
-### 3.4 Danh sách mentor — `GET /api/users/listmentor`
+### 3.2 Danh sách mentor — `GET /api/users/listmentor`
 → `200`: `{ message, mentors: [{ uid, name, avatar_url, bio, email }] }`
 
-### 3.5 Chi tiết user — `GET /api/users/:id`
-→ `200`: `{ message, user: { uid, email, name, avatar_url, bio, phone, gender, birthdate, role, is_active, created_at, updated_at } }`
+### 3.3 Chi tiết user — `GET /api/users/:id` *(hồ sơ công khai)*
+Mọi user đã đăng nhập đều xem được — app cần hiển thị trang chi tiết mentor cho học viên.
+→ `200`: `{ message, user: { uid, email, name, avatar_url, bio, phone, gender, birthdate, role, created_at } }`
 → `404`: không tìm thấy.
 
-### 3.6 Kiểm tra trạng thái — `GET /api/users/checkactive/:uid`
-→ `200`: `{ is_active: true|false }` → `404` không tìm thấy.
+> Không trả `is_active`, `fcm_token`, `password_hash`. Muốn biết tài khoản mình còn
+> hoạt động không thì đọc từ `GET /api/auth/me`.
 
-### 3.7 Cập nhật hồ sơ — `PUT /api/users/update/:id`
+### 3.4 Kiểm tra tài khoản còn hoạt động — `GET /api/users/checkactive/:uid`
+Chỉ **chính chủ hoặc admin** (endpoint này lộ trạng thái bị khoá).
+→ `200`: `{ is_active: true }` · `404` không tìm thấy · `403` nếu hỏi về người khác.
+
+### 3.5 Cập nhật hồ sơ — `PUT /api/users/update/:id`
 - **multipart/form-data**: `avatar` (file) hoặc các field: `name`, `bio`, `phone`, `gender`, `birthdate` (YYYY-MM-DD)
 - Quyền: chủ sở hữu hoặc admin (kiểm tra từ **token**).
 - → `200`: `{ message, user, notification: { noti_id, title, body, sent } }`
 - → `403` khi sửa người khác; `400` khi không có dữ liệu.
 
-### 3.8 Đổi role — `PUT /api/users/updaterole` *(chỉ admin)*
+### 3.6 Đổi role — `PUT /api/users/updaterole` *(chỉ admin)*
 Body: `{ uid, role }` (`role`: `user | mentor | admin`)
-→ `200`: `{ success: true, message, firebase_synced }`
+→ `200`: `{ success: true, message }`. Thu hồi mọi phiên của người bị đổi quyền.
 
-### 3.9 Khóa/mở tài khoản — `PATCH /api/users/:id/status` *(chỉ admin)*
+### 3.7 Khóa/mở tài khoản — `PATCH /api/users/:id/status` *(chỉ admin)*
 Body: `{ status: "active" | "disabled" }`
-→ `200`: `{ message, firebase_synced }`
+→ `200`: `{ message }`. Khoá tài khoản cũng thu hồi mọi phiên đang mở.
 
-### 3.10 Xóa user — `DELETE /api/users/delete/:id` *(chỉ admin)*
+### 3.8 Xóa user — `DELETE /api/users/delete/:id` *(chỉ admin)*
 → `200`: `{ message }`; `409` khi user còn dữ liệu liên quan (khóa học, review…).
 
 ---
@@ -334,7 +377,7 @@ export async function api<T>(path: string, options: RequestInit = {}, token?: st
 3. **Ảnh/PDF trả về dạng đường dẫn tương đối** (`/uploads/...`) — phải ghép `BASE_URL`.
 4. **`correct_index`:** gửi 1-based khi tạo/sửa câu hỏi; response trả 0-based.
 5. **`answers` khi nộp quiz:** map `question_id → index 0-based`.
-6. **Login:** gửi `idToken` của Firebase, không gửi mật khẩu. Nhận `401` khi idToken hết hạn → đăng xuất lại.
+6. **Login:** gửi `{ email, password }` tới `/api/auth/login`. Nhận `401` khi access token hết hạn kèm `code: "TOKEN_EXPIRED"` → gọi `/api/auth/refresh` rồi phát lại request, chỉ đăng xuất khi refresh cũng thất bại.
 7. **Response shape không đồng nhất giữa các endpoint** (một số bọc `{ data }`, một số trả thẳng mảng/object) — đọc kỹ từng endpoint ở trên; khai báo type riêng cho từng API.
 8. **Trường hợp đặc biệt:** `GET /api/courses` trả rỗng với `{ message: "Không có khóa học" }` (không có `data`) — xử lý null-safe.
 9. **Trạng thái:** course `pending | approved | rejected`; quiz result `cho_cham | da_cham`; user `active | disabled`.

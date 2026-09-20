@@ -13,6 +13,44 @@ function authHeaders(payload = {}) {
   };
 }
 
+test("GET /api/quizzes/getquizbycourse/1 (tên đúng chính tả) returns the same result", async () => {
+  // "getquizbycoures" là alias tương thích ngược cho FE cũ gọi sai chính tả.
+  // Test này khoá lại việc đường dẫn ĐÚNG cũng phải hoạt động, để khi alias bị
+  // gỡ ở phiên bản sau thì không âm thầm mất luôn endpoint.
+  const poolMock = createPoolMock([
+    {
+      rows: [
+        {
+          quiz_id: 1,
+          title: "Quiz 1",
+          description: null,
+          type: "trac_nghiem",
+          time_limit: 10,
+          attempt_limit: 2,
+          creator_uid: "admin-1",
+          created_at: new Date("2026-01-01T00:00:00.000Z"),
+          updated_at: new Date("2026-01-01T00:00:00.000Z"),
+          total_questions: "5",
+          average_score: "7.50",
+          passing_rate: "80.00",
+        },
+      ],
+    },
+  ]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ request }) => {
+    const response = await request("/api/quizzes/getquizbycourse/1", {
+      headers: authHeaders(),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.data[0].title, "Quiz 1");
+    assert.equal(poolMock.calls[0].params[0], 1);
+  });
+});
+
 test("GET /api/quizzes/getquizbycoures/1 returns quizzes with stats", async () => {
   const poolMock = createPoolMock([
     {

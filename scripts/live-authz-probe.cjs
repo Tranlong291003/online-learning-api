@@ -23,14 +23,16 @@ const REAL_UID = "abb8127b-fc22-466e-8473-51000b7f2114";
 const REAL_EMAIL = "mentor.demo@onlinelearning.vn";
 const TAG = `AUTHZ-${Date.now()}`;
 
+const { signToken, signExpiredToken, signTokenWithWrongSecret } = require("./lib/signToken.cjs");
+
 const tok = (uid, role, email) =>
-  jwt.sign({ uid, email: email || `${TAG}@test.local`, role }, process.env.JWT_SECRET, { expiresIn: "1h" });
+  signToken({ uid, email: email || `${TAG}@test.local`, role });
 
 // Token "ma": uid KHÔNG tồn tại trong DB nhưng token khai role admin.
 // Dùng để trả lời: API có tin role trong token mà không đối chiếu DB không?
 const GHOST_ADMIN = tok(`ghost-${TAG}`, "admin");
-const EXPIRED = jwt.sign({ uid: REAL_UID, role: "admin" }, process.env.JWT_SECRET, { expiresIn: "-1h" });
-const WRONG_SECRET = jwt.sign({ uid: REAL_UID, role: "admin" }, "secret-sai-hoan-toan", { expiresIn: "1h" });
+const EXPIRED = signExpiredToken({ uid: REAL_UID, role: "admin" });
+const WRONG_SECRET = signTokenWithWrongSecret({ uid: REAL_UID, role: "admin" });
 
 let db;
 const created = { uids: [], courseId: null, categoryId: null };

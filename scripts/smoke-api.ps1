@@ -10,7 +10,9 @@ if (-not $jwtSecret) {
   $jwtSecret = "local_docker_secret_change_me_min_32_chars"
 }
 
-$token = node -e "const jwt=require('jsonwebtoken'); console.log(jwt.sign({uid:'demo-admin',email:'admin@example.com',role:'admin'}, process.argv[1], {expiresIn:'1h'}));" $jwtSecret
+# Ký token qua scripts/lib/signToken.cjs — middleware chốt cứng iss/aud/HS256 nên
+# token ký thiếu các tham số này sẽ bị từ chối (401).
+$token = node -e "const {signToken}=require('./scripts/lib/signToken.cjs'); console.log(signToken({uid:'demo-admin',email:'admin@example.com',role:'admin'},{secret:process.argv[1]}));" $jwtSecret
 $headers = @{ Authorization = "Bearer $token" }
 
 $checks = @(

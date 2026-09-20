@@ -27,13 +27,22 @@ test("POST /api/users/create returns 400 when required fields are missing", asyn
 });
 
 test("POST /api/users/create ignores role from request body (regression)", async () => {
-  const poolMock = createPoolMock([{ rows: [] }]);
-  const { app } = loadApp({
-    poolMock,
-    firebaseAdmin: createFirebaseAdminMock({
-      auth: { createUser: async () => ({ uid: "regression-user-1" }) },
-    }),
-  });
+  // Chỉ khai response cho INSERT; các truy vấn khác (đăng ký trùng email, refresh
+  // token) nhận `{ rows: [] }` mặc định.
+  const poolMock = createPoolMock([
+    { rows: [] }, // kiểm tra email đã tồn tại -> chưa có
+    {
+      rows: [
+        {
+          uid: "u_regression",
+          email: "reg@example.com",
+          name: "Reg User",
+          role: "user",
+        },
+      ],
+    },
+  ]);
+  const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
     const response = await json("/api/users/create", {
@@ -48,52 +57,81 @@ test("POST /api/users/create ignores role from request body (regression)", async
     const result = await response.json();
 
     assert.equal(response.status, 201);
-    assert.equal(result.user_id, "regression-user-1");
-    assert.equal(poolMock.calls.length, 1);
-    assert.match(poolMock.calls[0].sql, /INSERT INTO users/);
-    assert.equal(poolMock.calls[0].params[6], "user");
+    assert.equal(result.user.role, "user");
+
+    const insert = poolMock.calls.find((call) => /INSERT INTO users/i.test(call.sql));
+    assert.ok(insert, "phải có truy vấn INSERT INTO users");
+    // Role luôn là 'user' cứng trong câu SQL, không lấy từ body.
+    assert.match(insert.sql, /'user'/);
+    assert.ok(
+      !insert.params.includes("admin"),
+      "role 'admin' từ body không được lọt vào tham số truy vấn"
+    );
   });
 });
 
 // ---------- POST /api/users/login ----------
 
-test("POST /api/users/login returns 400 when idToken is missing", async () => {
+test("POST /api/users/login returns 400 when credentials are missing", async () => {
+  const { app } = loadApp();
+
+  await withServer(app, async ({ json }) => {
+    for (const body of [{}, { email: "a@b.com" }, { password: "123456" }]) {
+      const response = await json("/api/users/login", { method: "POST", body });
+      const result = await response.json();
+
+      assert.equal(response.status, 400);
+      assert.equal(result.error, "Thiếu email hoặc mật khẩu");
+    }
+  });
+});
+
+test("POST /api/users/login returns 401 for unknown email or wrong password", async () => {
+  // Không khai SQL nào -> mọi truy vấn trả `{ rows: [] }`, tức không tìm thấy
+  // người dùng. API phải trả cùng một thông điệp cho cả hai trường hợp, nếu
+  // không nó trở thành công cụ dò email đã đăng ký.
   const { app } = loadApp();
 
   await withServer(app, async ({ json }) => {
     const response = await json("/api/users/login", {
       method: "POST",
-      body: { fcmToken: "fcm-token" },
-    });
-    const result = await response.json();
-
-    assert.equal(response.status, 400);
-    assert.equal(result.success, false);
-    assert.equal(result.error, "Thiếu ID Token");
-  });
-});
-
-test("POST /api/users/login returns 401 when firebase rejects idToken", async () => {
-  const { app } = loadApp({
-    firebaseAdmin: createFirebaseAdminMock({
-      auth: {
-        verifyIdToken: async () => {
-          throw Object.assign(new Error("expired"), { code: "auth/id-token-expired" });
-        },
-      },
-    }),
-  });
-
-  await withServer(app, async ({ json }) => {
-    const response = await json("/api/users/login", {
-      method: "POST",
-      body: { idToken: "bad-token" },
+      body: { email: "khong-ton-tai@example.com", password: "123456" },
     });
     const result = await response.json();
 
     assert.equal(response.status, 401);
-    assert.equal(result.success, false);
-    assert.match(result.error, /ID Token/);
+    assert.equal(result.error, "Email hoặc mật khẩu không đúng");
+  });
+});
+
+test("POST /api/users/login rejects a deactivated account with 403", async () => {
+  const poolMock = createPoolMock([
+    {
+      rows: [
+        {
+          uid: "user-1",
+          email: "user@example.com",
+          role: "user",
+          is_active: false,
+          password_hash: null,
+          failed_login_attempts: 0,
+          locked_until: null,
+          fcm_token: null,
+        },
+      ],
+    },
+  ]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/users/login", {
+      method: "POST",
+      body: { email: "user@example.com", password: "123456" },
+    });
+    const result = await response.json();
+
+    assert.equal(response.status, 403);
+    assert.equal(result.error, "Tài khoản đã bị khoá");
   });
 });
 
@@ -215,6 +253,82 @@ test("GET /api/users/user-1 returns user profile", async () => {
   });
 });
 
+test("GET /api/users/:id is a public profile readable by any logged-in user", async () => {
+  // Màn "chi tiết mentor" của học viên cần email/sđt/bio của người dạy, nên
+  // không thể giới hạn endpoint này cho chính chủ hay admin.
+  const poolMock = createPoolMock([
+    {
+      rows: [
+        {
+          uid: "mentor-1",
+          email: "mentor@example.com",
+          name: "Mentor One",
+          phone: "0900",
+          bio: "bio",
+          role: "mentor",
+        },
+      ],
+    },
+  ]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ request }) => {
+    const response = await request("/api/users/mentor-1", {
+      headers: auth(signTestToken({ uid: "student-1", role: "user" })),
+    });
+    const result = await response.json();
+
+    assert.equal(response.status, 200, "học viên phải xem được hồ sơ mentor");
+    assert.equal(result.user.uid, "mentor-1");
+  });
+});
+
+test("GET /api/users/:id never exposes password_hash or account internals", async () => {
+  const poolMock = createPoolMock([
+    { rows: [{ uid: "user-1", name: "One", email: "one@example.com" }] },
+  ]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ request }) => {
+    await request("/api/users/user-1", { headers: auth(signTestToken()) });
+
+    const sql = poolMock.calls[0].sql;
+    // Truy vấn phải liệt kê cột tường minh, không dùng SELECT *.
+    assert.doesNotMatch(sql, /SELECT\s+\*/i);
+    for (const secret of [
+      "password_hash",
+      "failed_login_attempts",
+      "locked_until",
+      "fcm_token",
+      "is_active",
+    ]) {
+      assert.ok(
+        !sql.includes(secret),
+        `hồ sơ công khai không được trả trường ${secret}`
+      );
+    }
+  });
+});
+
+test("GET /api/users/checkactive/:uid is restricted to the owner or an admin", async () => {
+  const poolMock = createPoolMock();
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ request }) => {
+    const forbidden = await request("/api/users/checkactive/someone-else", {
+      headers: auth(signTestToken({ uid: "student-1", role: "user" })),
+    });
+    assert.equal(forbidden.status, 403, "không được dò trạng thái khoá của người khác");
+    assert.equal(poolMock.calls.length, 0);
+
+    const asAdmin = await request("/api/users/checkactive/someone-else", {
+      headers: auth(signTestToken({ uid: "admin-1", role: "admin" })),
+    });
+    // Qua được guard -> chạm DB -> 404 vì mock không có dữ liệu.
+    assert.equal(asAdmin.status, 404);
+  });
+});
+
 test("GET /api/users/unknown returns 404", async () => {
   const { app } = loadApp();
 
@@ -245,7 +359,6 @@ test("PATCH /api/users/user-1/status updates status as admin", async () => {
 
     assert.equal(response.status, 200);
     assert.equal(result.message, "Trạng thái người dùng đã được cập nhật thành công");
-    assert.equal(result.firebase_synced, true);
     assert.match(poolMock.calls[0].sql, /UPDATE users/);
     assert.equal(poolMock.calls[0].params[0], false);
   });
@@ -387,24 +500,14 @@ test("PUT /api/users/update/user-2 allows admin to update anyone", async () => {
 
 // ---------- PUT /api/users/updaterole ----------
 
-test("PUT /api/users/updaterole updates role and syncs firebase claims", async () => {
-  const claimsCalls = [];
+test("PUT /api/users/updaterole updates role and revokes existing sessions", async () => {
   const poolMock = createPoolMock([{ rows: [{ uid: "user-1" }] }]);
-  const { app } = loadApp({
-    poolMock,
-    firebaseAdmin: createFirebaseAdminMock({
-      auth: {
-        setCustomUserClaims: async (uid, claims) => {
-          claimsCalls.push({ uid, claims });
-        },
-      },
-    }),
-  });
+  const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
     const response = await json("/api/users/updaterole", {
       method: "PUT",
-      headers: auth(signTestToken()),
+      headers: auth(signTestToken({ uid: "admin-1", role: "admin" })),
       body: { uid: "user-1", role: "mentor" },
     });
     const result = await response.json();
@@ -412,10 +515,33 @@ test("PUT /api/users/updaterole updates role and syncs firebase claims", async (
     assert.equal(response.status, 200);
     assert.equal(result.success, true);
     assert.equal(result.message, "Đã cập nhật role thành mentor");
-    assert.equal(result.firebase_synced, true);
-    assert.equal(claimsCalls.length, 1);
-    assert.equal(claimsCalls[0].uid, "user-1");
-    assert.equal(claimsCalls[0].claims.role, "mentor");
+    assert.match(poolMock.calls[0].sql, /UPDATE users SET role/);
+
+    // Đổi quyền phải thu hồi refresh token của người bị đổi, nếu không họ giữ
+    // được phiên cũ và tiếp tục làm mới access token.
+    const revoked = poolMock.calls.find((call) =>
+      /UPDATE refresh_tokens/i.test(call.sql)
+    );
+    assert.ok(revoked, "phải thu hồi refresh token sau khi đổi role");
+    assert.deepEqual(revoked.params, ["user-1"]);
+  });
+});
+
+test("PUT /api/users/updaterole blocks an admin from demoting themselves", async () => {
+  const poolMock = createPoolMock([{ rows: [{ uid: "admin-1" }] }]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/users/updaterole", {
+      method: "PUT",
+      headers: auth(signTestToken({ uid: "admin-1", role: "admin" })),
+      body: { uid: "admin-1", role: "user" },
+    });
+    const result = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.match(result.error, /tự hạ quyền admin/);
+    assert.equal(poolMock.calls.length, 0);
   });
 });
 

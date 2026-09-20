@@ -97,25 +97,38 @@ function loadApp(options = {}) {
   process.env.JWT_SECRET = options.jwtSecret || "test-secret-key-with-at-least-32-chars";
   process.env.NODE_ENV = "test";
   process.env.OPENAI_API_KEY = "test-openai-key";
+  // bcrypt cost 12 (mặc định production) khiến mỗi lần hash mất hàng trăm ms —
+  // đủ để cả bộ test chậm hẳn. Cost 4 vẫn giữ nguyên ngữ nghĩa, chỉ nhanh hơn.
+  process.env.BCRYPT_ROUNDS = options.bcryptRounds || "4";
 
   clearProjectModules();
 
   const poolMock = options.poolMock || createPoolMock();
   const firebaseAdmin = options.firebaseAdmin || createFirebaseAdminMock();
 
-  // Middleware xác thực tra cứu role/is_active từ DB. Mock lại để test không phải
-  // xếp hàng response SQL cho mỗi request, nhưng vẫn giữ đúng ngữ nghĩa:
-  // uid không có trong sổ -> null (bị chặn), is_active=false -> bị chặn.
+  // Thứ tự quan trọng: mock db.config TRƯỚC, để khi nạp bản thật của
+  // authUserLookup bên dưới thì nó nhận pool giả thay vì tạo kết nối thật.
+  mockModule(path.join(srcRoot, "config", "db.config.js"), { pool: poolMock.pool });
+  mockModule(path.join(srcRoot, "config", "firebase.config.js"), firebaseAdmin);
+  mockModule("firebase-admin", firebaseAdmin);
+
+  // Middleware xác thực tra cứu role/is_active từ DB. Chỉ thay `getAuthStateForUid`
+  // để test không phải xếp hàng response SQL cho mỗi request, nhưng vẫn giữ đúng
+  // ngữ nghĩa: uid không có trong sổ -> null (bị chặn), is_active=false -> bị chặn.
+  //
+  // Các hàm còn lại (findUserForLogin, setPasswordHash...) giữ nguyên bản thật và
+  // chạy qua poolMock, nên luồng đăng nhập/đặt lại mật khẩu vẫn được test thật.
+  const realAuthUserLookup = require(path.join(srcRoot, "services", "authUserLookup.js"));
   mockModule(path.join(srcRoot, "services", "authUserLookup.js"), {
+    ...realAuthUserLookup,
     getAuthStateForUid: async (uid) => {
       if (!testUserRegistry.has(uid)) return null;
       return testUserRegistry.get(uid);
     },
   });
-
-  mockModule(path.join(srcRoot, "config", "db.config.js"), { pool: poolMock.pool });
-  mockModule(path.join(srcRoot, "config", "firebase.config.js"), firebaseAdmin);
-  mockModule("firebase-admin", firebaseAdmin);
+  // Không mock tokenService: poolMock đã trả `{ rows: [] }` cho mọi SQL không
+  // được khai báo, nên các truy vấn vào refresh_tokens/password_resets trở thành
+  // no-op và logic thật (ký/verify/rotate) vẫn được test chạy qua.
   mockModule(path.join(srcRoot, "services", "notificationService.js"), {
     sendNotification: async () => "mock-message-id",
   });
@@ -149,9 +162,18 @@ function signTestToken(payload = {}) {
   // Ghi uid vào sổ để middleware xác thực (đối chiếu DB) thấy user tồn tại.
   // role đăng ký đúng bằng role trong token để test giữ nguyên ngữ nghĩa cũ.
   testUserRegistry.set(claims.uid, { role: claims.role, is_active: true });
-  return jwt.sign(claims, process.env.JWT_SECRET || "test-secret-key-with-at-least-32-chars", {
-    expiresIn: "1h",
-  });
+  // Phải ký kèm issuer/audience vì verifyAccessToken chốt cứng cả hai (chống
+  // token từ hệ thống khác được chấp nhận) và khoá thuật toán ở HS256.
+  return jwt.sign(
+    { ...claims, type: "access" },
+    process.env.JWT_SECRET || "test-secret-key-with-at-least-32-chars",
+    {
+      expiresIn: "1h",
+      issuer: process.env.JWT_ISSUER || "online-learning-api",
+      audience: process.env.JWT_AUDIENCE || "online-learning-client",
+      algorithm: "HS256",
+    }
+  );
 }
 
 async function withServer(app, callback) {
