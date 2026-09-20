@@ -11,8 +11,9 @@ const BASE = process.env.PROBE_BASE || "http://localhost:4001";
 const UID = "abb8127b-fc22-466e-8473-51000b7f2114"; // user duy nhất trong DB thật (role mentor)
 const EMAIL = "mentor.demo@onlinelearning.vn";
 
-const tok = (role, uid = UID, email = EMAIL) =>
-  jwt.sign({ uid, email, role }, process.env.JWT_SECRET, { expiresIn: "1h" });
+const { signToken } = require("./lib/signToken.cjs");
+
+const tok = (role, uid = UID, email = EMAIL) => signToken({ uid, email, role });
 
 // admin: CHỈ ký token là chưa đủ — nhiều controller (changeCourseStatus, gradeQuizResult)
 // đọc role từ DB, nên token giả role admin cho user thật (role mentor) sẽ bị 403 đúng như

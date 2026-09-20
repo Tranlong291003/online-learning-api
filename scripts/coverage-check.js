@@ -28,7 +28,10 @@ function extractTests() {
   for (const f of files) {
     const content = fs.readFileSync(path.join(testDir, f), "utf8");
     const fileHits = new Set();
-    const re = /(?:await\s+)?(?:request|json)\(\s*"([^"]+)"/g;
+    // Nhận cả template literal (`` ` ``) chứ không chỉ nháy kép, nếu không
+    // những test viết `json(\`/api/notifications/update/${id}\`)` bị coi là
+    // chưa có test dù thực tế đã được kiểm tra.
+    const re = /(?:await\s+)?(?:request|json)\(\s*[`"]([^`"]+)[`"]/g;
     let m;
     while ((m = re.exec(content))) {
       const url = m[1];

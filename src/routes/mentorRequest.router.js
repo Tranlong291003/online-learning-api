@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const mentorRequestController = require("../controllers/mentorRequest.controller");
 const authMiddleware = require("../middleware/auth.middleware");
+const { authorize } = require("../middleware/authorize.middleware");
 const uploadMentorRequestImage = require("../config/multer.mentorRequest.config");
 
 // Tất cả các route đều cần token
@@ -15,9 +16,13 @@ router.post(
 );
 
 // Admin duyệt hoặc từ chối yêu cầu (yêu cầu đăng nhập)
-router.put("/:id/status", mentorRequestController.updateStatusRequest);
+router.put(
+  "/:id/status",
+  authorize("admin"),
+  mentorRequestController.updateStatusRequest
+);
 
 // Lấy danh sách yêu cầu nâng cấp
-router.get("/", mentorRequestController.getRequests);
+router.get("/", authorize("admin"), mentorRequestController.getRequests);
 
 module.exports = router;

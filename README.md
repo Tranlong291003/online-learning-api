@@ -72,9 +72,9 @@ phân quyền do **tầng middleware + controller** đảm nhiệm, không dựa
 | Runtime | Node.js ≥ 22 |
 | Web framework | Express 5 |
 | Database | PostgreSQL (Supabase) qua `pg` |
-| Xác thực | JWT tự ký (`jsonwebtoken`) + Firebase Authentication cho đăng nhập |
+| Xác thực | API tự quản lý (email/password + bcrypt) → JWT ngắn hạn + refresh token |
 | Upload file | Multer (avatar, thumbnail, PDF, slide) |
-| Push notification | Firebase Admin SDK |
+| Push notification | Firebase Admin SDK (FCM) — chỉ dùng để gửi thông báo, không dùng cho đăng nhập |
 | AI | OpenAI (sinh câu hỏi quiz) |
 | Tài liệu API | Swagger UI (`/api-docs`) |
 | Kiểm thử | `node --test` |
@@ -140,7 +140,7 @@ Server chạy tại `http://localhost:3000`.
 | --- | --- |
 | `PORT` / `HOST` | Cổng và địa chỉ lắng nghe (mặc định `3000` / `0.0.0.0`) |
 | `CORS_ORIGIN` | Giới hạn origin được phép. Bỏ trống = cho phép tất cả |
-| `FIREBASE_SERVICE_ACCOUNT_BASE64` | Nội dung file service account mã hoá base64. **Cần khi deploy** vì file key bị gitignore |
+| `FIREBASE_SERVICE_ACCOUNT_BASE64` | Nội dung file service account mã hoá base64. **Chỉ cần nếu dùng push notification** (FCM). Không liên quan tới đăng nhập |
 | `OPENAI_API_KEY` | Sinh câu hỏi quiz bằng AI |
 | `YOUTUBE_API_KEY` | Lấy thông tin video bài học |
 | `DEV_API_KEY` + `DEV_API_KEY_UID` / `_ROLE` | Bypass JWT cho môi trường dev. **Tự động tắt khi `NODE_ENV=production`** |
@@ -185,9 +185,10 @@ Tài liệu đầy đủ (tham số, body, response) có tại **Swagger UI**: `
 Authorization: Bearer <token>
 ```
 
-**Luồng đăng nhập:** client lấy **Firebase ID Token** → gửi `POST /api/users/login`
-→ server xác thực với Firebase, tra role trong PostgreSQL, trả về **JWT** (hạn 7 ngày).
-Các request sau dùng JWT này.
+**Luồng đăng nhập:** client gửi `POST /api/auth/login` với `{ email, password }`
+→ server trả **access token** (JWT, 15 phút) + **refresh token** (30 ngày, thu hồi được).
+Các request sau dùng `Authorization: Bearer <access_token>`; khi hết hạn thì gọi
+`POST /api/auth/refresh`. Chi tiết: `API_DOCUMENTATION.md` mục 2.
 
 **Vai trò:**
 

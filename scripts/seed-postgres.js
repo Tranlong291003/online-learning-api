@@ -1,4 +1,5 @@
 const { Pool } = require("pg");
+const bcrypt = require("bcryptjs");
 require("dotenv").config();
 
 function createPool() {
@@ -31,15 +32,21 @@ async function seed(pool) {
   await pool.query("BEGIN");
 
   try {
-    await pool.query(`
+    // Mật khẩu dùng chung cho mọi tài khoản demo, để đăng nhập thử ngay sau khi
+    // seed. Đặt qua SEED_DEMO_PASSWORD; chỉ dùng cho môi trường phát triển.
+    const demoPassword = process.env.SEED_DEMO_PASSWORD || "Demo@123456";
+    const demoPasswordHash = bcrypt.hashSync(demoPassword, 10);
+
+    await pool.query(
+      `
       INSERT INTO users
-        (uid, email, name, avatar_url, bio, phone, gender, birthdate, role, fcm_token, is_active, created_at, updated_at)
+        (uid, email, name, avatar_url, bio, phone, gender, birthdate, role, password_hash, fcm_token, is_active, created_at, updated_at)
       VALUES
-        ('demo-admin', 'admin@example.com', 'Admin Demo', '/uploads/avatars/demo-admin.png', 'System administrator demo account', '0900000001', 'other', '1995-01-01', 'admin', 'demo-admin-fcm', true, NOW(), NOW()),
-        ('demo-mentor-1', 'mentor1@example.com', 'Mentor JavaScript', '/uploads/avatars/demo-mentor-1.png', 'Frontend and JavaScript mentor', '0900000002', 'male', '1992-02-02', 'mentor', 'demo-mentor-1-fcm', true, NOW(), NOW()),
-        ('demo-mentor-2', 'mentor2@example.com', 'Mentor Data', '/uploads/avatars/demo-mentor-2.png', 'Database and backend mentor', '0900000003', 'female', '1993-03-03', 'mentor', 'demo-mentor-2-fcm', true, NOW(), NOW()),
-        ('demo-user-1', 'student1@example.com', 'Student One', '/uploads/avatars/demo-user-1.png', 'Online learning student', '0900000004', 'female', '2001-04-04', 'user', 'demo-user-1-fcm', true, NOW(), NOW()),
-        ('demo-user-2', 'student2@example.com', 'Student Two', '/uploads/avatars/demo-user-2.png', 'Mobile learning student', '0900000005', 'male', '2002-05-05', 'user', 'demo-user-2-fcm', true, NOW(), NOW())
+        ('demo-admin', 'admin@example.com', 'Admin Demo', '/uploads/avatars/demo-admin.png', 'System administrator demo account', '0900000001', 'other', '1995-01-01', 'admin', $1, 'demo-admin-fcm', true, NOW(), NOW()),
+        ('demo-mentor-1', 'mentor1@example.com', 'Mentor JavaScript', '/uploads/avatars/demo-mentor-1.png', 'Frontend and JavaScript mentor', '0900000002', 'male', '1992-02-02', 'mentor', $1, 'demo-mentor-1-fcm', true, NOW(), NOW()),
+        ('demo-mentor-2', 'mentor2@example.com', 'Mentor Data', '/uploads/avatars/demo-mentor-2.png', 'Database and backend mentor', '0900000003', 'female', '1993-03-03', 'mentor', $1, 'demo-mentor-2-fcm', true, NOW(), NOW()),
+        ('demo-user-1', 'student1@example.com', 'Student One', '/uploads/avatars/demo-user-1.png', 'Online learning student', '0900000004', 'female', '2001-04-04', 'user', $1, 'demo-user-1-fcm', true, NOW(), NOW()),
+        ('demo-user-2', 'student2@example.com', 'Student Two', '/uploads/avatars/demo-user-2.png', 'Mobile learning student', '0900000005', 'male', '2002-05-05', 'user', $1, 'demo-user-2-fcm', true, NOW(), NOW())
       ON CONFLICT (uid) DO UPDATE SET
         email = EXCLUDED.email,
         name = EXCLUDED.name,
@@ -49,10 +56,13 @@ async function seed(pool) {
         gender = EXCLUDED.gender,
         birthdate = EXCLUDED.birthdate,
         role = EXCLUDED.role,
+        password_hash = EXCLUDED.password_hash,
         fcm_token = EXCLUDED.fcm_token,
         is_active = EXCLUDED.is_active,
         updated_at = NOW()
-    `);
+    `,
+      [demoPasswordHash]
+    );
 
     await pool.query(`
       INSERT INTO course_categories (category_id, name, description, icon, created_at, updated_at)
@@ -297,6 +307,11 @@ async function main() {
   try {
     await seed(pool);
     console.log("PostgreSQL demo data seeded successfully.");
+    console.log(
+      `Tài khoản demo (admin@ / mentor1@ / mentor2@ / student1@ / student2@example.com) dùng mật khẩu: ${
+        process.env.SEED_DEMO_PASSWORD || "Demo@123456"
+      }`
+    );
   } finally {
     await pool.end();
   }

@@ -89,11 +89,17 @@ test("token khai role admin nhưng uid không tồn tại trong DB bị chặn 4
   const { app, poolMock } = loadApp();
 
   await withServer(app, async ({ request }) => {
-    // Ký token hợp lệ (đúng chữ ký) nhưng uid chưa từng được đăng ký trong sổ user test.
+    // Ký token hợp lệ (đúng chữ ký, đúng issuer/audience) nhưng uid chưa từng
+    // được đăng ký trong sổ user test.
     const ghostToken = jwt.sign(
-      { uid: "ghost-khong-ton-tai", email: "ghost@test.local", role: "admin" },
+      { uid: "ghost-khong-ton-tai", email: "ghost@test.local", role: "admin", type: "access" },
       process.env.JWT_SECRET,
-      { expiresIn: "1h" }
+      {
+        expiresIn: "1h",
+        issuer: process.env.JWT_ISSUER || "online-learning-api",
+        audience: process.env.JWT_AUDIENCE || "online-learning-client",
+        algorithm: "HS256",
+      }
     );
 
     const response = await request("/api/users", {

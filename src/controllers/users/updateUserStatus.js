@@ -1,10 +1,12 @@
 const { pool } = require("../../config/db.config");
-const admin = require("../../config/firebase.config");
+const { revokeAllForUser } = require("../../services/tokenService");
 
 const updateUserStatus = async (req, res) => {
   const uid = req.params.id;
   const { status } = req.body;
 
+  // Đã được chặn ở tầng route (authorize("admin")). Giữ lại làm lớp phòng thủ
+  // thứ hai phòng khi route được mount lại mà quên middleware.
   if (req.user.role !== "admin") {
     return res.status(403).json({ error: "Bạn không có quyền cập nhật trạng thái người dùng" });
   }
@@ -16,7 +18,6 @@ const updateUserStatus = async (req, res) => {
   const isActive = status === "active";
 
   try {
-    // Cập nhật trong PostgreSQL
     const result = await pool.query(
       `UPDATE users
        SET is_active = $1, updated_at = NOW()
@@ -29,17 +30,21 @@ const updateUserStatus = async (req, res) => {
       return res.status(404).json({ error: "Không tìm thấy người dùng" });
     }
 
-    let firebase_synced = false;
-    try {
-      await admin.auth().updateUser(uid, { disabled: !isActive });
-      firebase_synced = true;
-    } catch (firebaseError) {
-      console.warn("Firebase updateUser status sync failed:", firebaseError.message);
+    // Tự khoá tài khoản của chính mình sẽ chấm dứt luôn phiên đang thực hiện
+    // thao tác. Chỉ chặn chiều "khoá"; tự mở khoá là vô hại.
+    if (!isActive && String(uid) === String(req.user.uid)) {
+      return res.status(400).json({ error: "Không thể tự khoá tài khoản của chính mình" });
+    }
+
+    // Khoá tài khoản phải chấm dứt các phiên đang mở, nếu không người bị khoá
+    // vẫn dùng được refresh token để lấy access token mới và tiếp tục làm việc.
+    // (authMiddleware đã chặn theo is_active, đây là lớp thứ hai cho gọn dữ liệu.)
+    if (!isActive) {
+      await revokeAllForUser(uid);
     }
 
     res.json({
       message: "Trạng thái người dùng đã được cập nhật thành công",
-      firebase_synced,
     });
   } catch (err) {
     console.error("Error in updateUserStatus:", err);

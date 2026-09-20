@@ -198,6 +198,29 @@ const endpoints = [
   ["DELETE", "/api/users/delete/user-1"],
   ["PUT", "/api/users/update/user-1", { name: "Updated User" }],
   ["PUT", "/api/users/updaterole", { uid: "user-1", role: "mentor" }],
+
+  // Auth — hợp đồng mới. Các endpoint công khai không gửi token; /me và
+  // /change-password cần token nên được thêm vào danh sách ĐĂNG NHẬP.
+  ["POST", "/api/auth/register", { email: "new@example.com", password: "123456", name: "New User" }],
+  ["POST", "/api/auth/login", { email: "user@example.com", password: "123456" }],
+  ["POST", "/api/auth/refresh", { refresh_token: "token" }],
+  ["POST", "/api/auth/forgot-password", { email: "user@example.com" }],
+  ["POST", "/api/auth/reset-password", { token: "token", new_password: "123456" }],
+  ["GET", "/api/auth/me"],
+  ["POST", "/api/auth/change-password", { current_password: "cu", new_password: "moi123456" }],
+  ["POST", "/api/auth/logout", { refresh_token: "token" }],
+];
+
+/**
+ * Các endpoint công khai của /api/auth — không gắn token, nếu không sẽ kiểm tra
+ * nhầm nhánh có xác thực.
+ */
+const PUBLIC_AUTH_ENDPOINTS = [
+  "/api/auth/register",
+  "/api/auth/login",
+  "/api/auth/refresh",
+  "/api/auth/forgot-password",
+  "/api/auth/reset-password",
 ];
 
 test("all declared API endpoints are reachable through Express routing", async () => {
@@ -206,13 +229,34 @@ test("all declared API endpoints are reachable through Express routing", async (
 
   await withServer(app, async ({ json, request }) => {
     for (const [method, url, body] of endpoints) {
-      const headers = url.startsWith("/api/users/create") || url.startsWith("/api/users/login")
-        ? {}
-        : authHeaders();
+      const headers =
+        url.startsWith("/api/users/create") ||
+        url.startsWith("/api/users/login") ||
+        PUBLIC_AUTH_ENDPOINTS.includes(url)
+          ? {}
+          : authHeaders();
       const response = body
         ? await json(url, { method, headers, body })
         : await request(url, { method, headers });
       const contentType = response.headers.get("content-type") || "";
+
+      // Endpoint công khai của /api/auth phải trả lỗi nghiệp vụ (400/401 do dữ
+      // liệu sai), KHÔNG phải 401 từ middleware xác thực. Kiểm tra bằng thông
+      // điệp, vì cả hai trường hợp đều có thể là 401.
+      if (PUBLIC_AUTH_ENDPOINTS.includes(url)) {
+        const body = await response.json();
+        assert.notEqual(
+          body.error,
+          "Token không hợp lệ",
+          `${method} ${url} không được đi qua middleware xác thực`
+        );
+        assert.notEqual(
+          response.status,
+          404,
+          `${method} ${url} phải được định tuyến tới một handler`
+        );
+        continue;
+      }
 
       assert.notEqual(response.status, 401, `${method} ${url} was blocked by auth`);
       assert.match(

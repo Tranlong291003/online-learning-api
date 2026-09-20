@@ -9,8 +9,13 @@
 -- 🎓 BẢNG users – Người dùng hệ thống
 -- =======================================
 CREATE TABLE IF NOT EXISTS users (
+    -- uid là định danh nghiệp vụ dùng xuyên suốt API (và là đích của mọi FK).
     uid             VARCHAR(50)     PRIMARY KEY,
-    email           VARCHAR(100)    NOT NULL,
+    -- `id` là khoá kỹ thuật dạng số. quiz_results.graded_by là INT và trỏ vào
+    -- cột này, nên nó BẮT BUỘC phải tồn tại — trước đây schema thiếu cột `id`
+    -- trong khi vẫn khai FK REFERENCES users(id), khiến file schema không chạy được.
+    id              SERIAL          UNIQUE,
+    email           VARCHAR(100)    NOT NULL UNIQUE,
     name            VARCHAR(50)     NOT NULL,
     avatar_url      VARCHAR(255)    NULL,
     bio             TEXT            NULL,
@@ -18,10 +23,55 @@ CREATE TABLE IF NOT EXISTS users (
     gender          VARCHAR(10)     NULL,
     birthdate       DATE            NULL,
     role            VARCHAR(20)     NOT NULL DEFAULT 'user',
+    -- NULL với tài khoản tạo trước khi API tự quản lý mật khẩu (user cũ bên
+    -- Firebase). Không đăng nhập được bằng mật khẩu cho tới khi đặt lại.
+    password_hash   VARCHAR(255)    NULL,
+    -- Chống dò mật khẩu: đếm số lần sai liên tiếp và tạm khoá khi vượt ngưỡng.
+    failed_login_attempts INT       NOT NULL DEFAULT 0,
+    locked_until    TIMESTAMP       NULL,
     fcm_token       TEXT            NULL,
     is_active       BOOLEAN         NOT NULL DEFAULT TRUE,
     created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMP       NULL
+);
+
+-- =======================================
+-- 🎓 BẢNG refresh_tokens – Phiên đăng nhập dài hạn
+-- =======================================
+-- Access token là JWT ngắn hạn (15 phút) nên không thể thu hồi giữa chừng.
+-- Refresh token nằm trong bảng này mới thu hồi được: logout, đổi mật khẩu, hoặc
+-- phát hiện token bị đánh cắp (dùng lại token đã rotate) đều xoá cả họ token.
+--
+-- CSDL chỉ lưu SHA-256 của token, không lưu token gốc: nếu DB bị lộ thì kẻ tấn
+-- công cũng không dùng lại được giá trị trong bảng để lấy access token mới.
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    token_id        UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    uid             VARCHAR(50)     NOT NULL,
+    token_hash      CHAR(64)        NOT NULL UNIQUE,
+    -- Cả họ token (mọi lần rotate của cùng một phiên) chia sẻ family_id. Phát
+    -- hiện token cũ bị dùng lại thì xoá theo family_id để vô hiệu hoá cả phiên.
+    family_id       UUID            NOT NULL,
+    expires_at      TIMESTAMP       NOT NULL,
+    revoked_at      TIMESTAMP       NULL,
+    replaced_by     UUID            NULL,
+    user_agent      VARCHAR(255)    NULL,
+    created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (uid) REFERENCES users(uid) ON DELETE CASCADE
+);
+
+-- =======================================
+-- 🎓 BẢNG password_resets – Yêu cầu đặt lại mật khẩu
+-- =======================================
+-- Cũng chỉ lưu SHA-256 của token, cùng lý do như refresh_tokens.
+-- `used_at` chặn dùng lại token sau khi đã đặt lại mật khẩu thành công.
+CREATE TABLE IF NOT EXISTS password_resets (
+    reset_id        UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    uid             VARCHAR(50)     NOT NULL,
+    token_hash      CHAR(64)        NOT NULL UNIQUE,
+    expires_at      TIMESTAMP       NOT NULL,
+    used_at         TIMESTAMP       NULL,
+    created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (uid) REFERENCES users(uid) ON DELETE CASCADE
 );
 
 -- =======================================
@@ -240,3 +290,7 @@ CREATE INDEX IF NOT EXISTS idx_quiz_results_user ON quiz_results(user_uid);
 CREATE INDEX IF NOT EXISTS idx_notifications_uid ON notifications(uid);
 CREATE INDEX IF NOT EXISTS idx_upgrade_requests_user ON upgrade_requests(user_uid);
 CREATE INDEX IF NOT EXISTS idx_upgrade_requests_status ON upgrade_requests(status);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_uid ON refresh_tokens(uid);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_family ON refresh_tokens(family_id);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires ON refresh_tokens(expires_at);
+CREATE INDEX IF NOT EXISTS idx_password_resets_uid ON password_resets(uid);

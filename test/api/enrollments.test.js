@@ -23,7 +23,7 @@ test("POST /api/enrollments/register returns 201 with enrollment and notificatio
       if (q.includes("select course_id, title from courses")) {
         return { rows: [{ course_id: 1, title: "Course A" }] };
       }
-      if (q.includes("select * from users")) {
+      if (q.includes("from users where uid")) {
         return { rows: [{ uid: "user-1", fcm_token: "fcm-1" }] };
       }
       if (q.includes("select * from enrollments")) return { rows: [] };
@@ -114,7 +114,7 @@ test("POST /api/enrollments/register returns 404 when user not found", async () 
       if (q.includes("select course_id, title from courses")) {
         return { rows: [{ course_id: 1, title: "Course A" }] };
       }
-      if (q.includes("select * from users")) return { rows: [] };
+      if (q.includes("from users where uid")) return { rows: [] };
       return { rows: [] };
     }));
   const { app } = loadApp({ poolMock });
@@ -138,7 +138,7 @@ test("POST /api/enrollments/register returns 400 when already enrolled", async (
       if (q.includes("select course_id, title from courses")) {
         return { rows: [{ course_id: 1, title: "Course A" }] };
       }
-      if (q.includes("select * from users")) {
+      if (q.includes("from users where uid")) {
         return { rows: [{ uid: "user-1", fcm_token: null }] };
       }
       if (q.includes("select * from enrollments")) {

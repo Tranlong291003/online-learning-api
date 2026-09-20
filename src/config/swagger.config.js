@@ -2,6 +2,7 @@ const swaggerUi = require("swagger-ui-express");
 
 // Giữ đồng bộ với danh sách mount trong src/app.js
 const mountedRouters = [
+  { mountPath: "/api/auth", router: require("../routes/auth.router") },
   { mountPath: "/api/notifications", router: require("../routes/notifications.router") },
   { mountPath: "/api/course-categories", router: require("../routes/courseCategories.router") },
   { mountPath: "/api/courses", router: require("../routes/courses.router") },

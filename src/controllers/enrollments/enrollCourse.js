@@ -26,9 +26,10 @@ const enrollCourse = async (req, res) => {
 
     const courseTitle = courseResult.rows[0].title;
 
-    // Lấy thông tin user
+    // Lấy thông tin user (liệt kê cột tường minh để không lộ password_hash)
     const userResult = await pool.query(
-      "SELECT * FROM users WHERE uid = $1",
+      `SELECT uid, email, name, avatar_url, role, is_active, fcm_token
+       FROM users WHERE uid = $1`,
       [userUid]
     );
     const user = userResult.rows[0];

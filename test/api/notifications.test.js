@@ -215,6 +215,50 @@ test("POST /api/notifications/mark-read returns 404 when notification not found"
   });
 });
 
+// ---------- PUT /api/notifications/update/:id ----------
+// Biến thể đánh dấu đã đọc nhưng nhận noti_id trên URL (endpoint cũ dùng body).
+
+test("PUT /api/notifications/update/:id marks a notification as read", async () => {
+  const poolMock = createPoolMock([{ rows: [{ noti_id: "noti-uuid-1" }] }]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/notifications/update/noti-uuid-1", {
+      method: "PUT",
+      headers: authHeaders({ uid: "user-1", role: "user" }),
+      body: {},
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.match(body.message, /đã đọc/);
+
+    // noti_id là UUID -> phải truyền nguyên chuỗi vào SQL, không ép về số.
+    assert.deepEqual(poolMock.calls[0].params, ["noti-uuid-1", "user-1"]);
+    assert.ok(poolMock.calls[0].sql.includes("UPDATE notifications"));
+    // Chỉ được sửa thông báo của chính người gọi (uid lấy từ token).
+    assert.ok(poolMock.calls[0].sql.includes("uid = $2"));
+  });
+});
+
+test("PUT /api/notifications/update/:id returns 404 when the notification is not the caller's", async () => {
+  // UPDATE có điều kiện `AND uid = $2` -> thông báo của người khác không khớp.
+  const poolMock = createPoolMock([{ rows: [] }]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/notifications/update/noti-cua-nguoi-khac", {
+      method: "PUT",
+      headers: authHeaders(),
+      body: {},
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 404);
+    assert.match(body.message, /Không tìm thấy thông báo/);
+  });
+});
+
 test("DELETE /api/notifications/delete/1 returns 200", async () => {
   const poolMock = createPoolMock([{ rows: [{ noti_id: 1 }] }]);
   const { app } = loadApp({ poolMock });

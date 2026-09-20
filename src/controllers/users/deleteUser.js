@@ -1,15 +1,24 @@
 const { pool } = require("../../config/db.config");
-const admin = require("../../config/firebase.config");
 
 const deleteUser = async (req, res) => {
   const { id } = req.params;
 
+  // Đã được chặn ở tầng route (authorize("admin")). Giữ lại làm lớp phòng thủ
+  // thứ hai phòng khi route được mount lại mà quên middleware.
   if (req.user.role !== "admin") {
     return res.status(403).json({ error: "Bạn không có quyền xoá người dùng" });
   }
 
+  // Xoá chính mình sẽ chấm dứt luôn phiên đang dùng để thực hiện thao tác này.
+  if (String(id) === String(req.user.uid)) {
+    return res.status(400).json({ error: "Không thể xoá tài khoản của chính mình" });
+  }
+
   try {
-    // Xóa trong PostgreSQL
+    // Xoá user trong DB. Tài khoản đăng nhập giờ do chính API quản lý
+    // (users.password_hash) nên không còn bước đồng bộ sang Firebase, và xoá
+    // dòng này là chấm dứt mọi khả năng đăng nhập. refresh_tokens và
+    // password_resets tự xoá theo nhờ ON DELETE CASCADE.
     const result = await pool.query(
       "DELETE FROM users WHERE uid = $1 RETURNING uid",
       [id]
@@ -17,22 +26,6 @@ const deleteUser = async (req, res) => {
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy người dùng" });
-    }
-
-    // Xóa trong Firebase. Nếu user đã không còn trên Firebase thì coi như xong —
-    // row trong DB đã bị xóa nên không được trả 500 vì lý do đó.
-    try {
-      await admin.auth().deleteUser(id);
-    } catch (firebaseError) {
-      if (firebaseError.code === "auth/user-not-found") {
-        console.warn("Firebase user already deleted:", id);
-      } else {
-        console.error("Firebase deleteUser failed after DB delete:", firebaseError.message);
-        return res.status(500).json({
-          error:
-            "Đã xóa trong cơ sở dữ liệu nhưng chưa xóa được tài khoản đăng nhập. Vui lòng thử lại.",
-        });
-      }
     }
 
     res.json({ message: "Đã xóa người dùng thành công" });

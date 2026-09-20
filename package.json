@@ -25,7 +25,8 @@
     "db:migrate:sqlserver-to-pg": "node scripts/migrate-sqlserver-to-postgres.js",
     "api:authz": "node scripts/live-authz-probe.cjs",
     "api:coverage": "node scripts/live-full-coverage.cjs",
-    "api:leftover": "node scripts/live-leftover-check.cjs"
+    "api:leftover": "node scripts/live-leftover-check.cjs",
+    "db:migrate:auth": "node scripts/migrate-auth.js"
   },
   "keywords": [],
   "author": "",
@@ -33,6 +34,7 @@
   "description": "Online Learning Platform API",
   "dependencies": {
     "axios": "^1.9.0",
+    "bcryptjs": "^2.4.3",
     "body-parser": "^2.2.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",

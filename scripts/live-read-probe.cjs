@@ -9,7 +9,9 @@ const BASE = process.env.PROBE_BASE || "http://localhost:4001";
 const UID = "abb8127b-fc22-466e-8473-51000b7f2114"; // user duy nhất trong DB thật
 const SECRET = process.env.JWT_SECRET;
 
-const mk = (role) => jwt.sign({ uid: UID, email: "mentor.demo@onlinelearning.vn", role }, SECRET, { expiresIn: "1h" });
+const { signToken } = require("./lib/signToken.cjs");
+
+const mk = (role) => signToken({ uid: UID, email: "mentor.demo@onlinelearning.vn", role });
 const adminToken = mk("admin");
 const mentorToken = mk("mentor");
 const userToken = mk("user");

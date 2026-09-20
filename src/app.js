@@ -27,6 +27,7 @@ app.get("/health", (req, res) => {
 });
 
 // Import các route
+const authRoutes = require("./routes/auth.router");
 const courseCategoryRoutes = require("./routes/courseCategories.router");
 const courseRoutes = require("./routes/courses.router");
 const lessonRoutes = require("./routes/lessons.router");
@@ -41,6 +42,7 @@ const bookmarksRouter = require("./routes/bookmarks.router"); // Import router b
 const mentorRequestRouter = require("./routes/mentorRequest.router");
 const appStatsRouter = require("./routes/appStats.router");
 
+app.use("/api/auth", authRoutes); // Đăng ký / đăng nhập / làm mới token / hồ sơ
 app.use("/api/notifications", notificationsRouter);
 app.use("/api/course-categories", courseCategoryRoutes); // API cho danh mục khóa học
 app.use("/api/courses", courseRoutes); // API cho các khóa học
