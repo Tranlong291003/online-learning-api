@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const gradeQuizResult = async (req, res) => {
@@ -46,7 +47,7 @@ const gradeQuizResult = async (req, res) => {
     res.status(200).json({ message: "Chấm điểm bài kiểm tra thành công" });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Lỗi khi chấm điểm bài kiểm tra: " + err.message });
+    sendServerError(res, "Lỗi khi chấm điểm bài kiểm tra", err);
   }
 };
 

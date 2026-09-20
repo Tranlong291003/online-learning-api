@@ -1,4 +1,5 @@
 const { pool } = require("../config/db.config");
+const { sendServerError } = require("../utils/errorResponse");
 const { resolveActorUid } = require("../middleware/actor");
 
 // API thống kê động theo role
@@ -52,6 +53,6 @@ exports.getStats = async (req, res) => {
       return res.status(403).json({ error: "Bạn không có quyền xem thống kê này" });
     }
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, "Lỗi máy chủ", err);
   }
 };

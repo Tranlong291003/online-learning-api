@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { parsePositiveInt } = require("../../utils/parseId");
 const { resolveActorUid } = require("../../middleware/actor");
 
@@ -36,7 +37,7 @@ const checkEnrollStatus = async (req, res) => {
       return res.status(200).json({ enrolled: false });
     }
   } catch (err) {
-    res.status(500).json({ error: "Lỗi kiểm tra đăng ký: " + err.message });
+    sendServerError(res, "Lỗi kiểm tra đăng ký", err);
   }
 };
 

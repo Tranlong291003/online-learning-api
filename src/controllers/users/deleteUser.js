@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 
 const deleteUser = async (req, res) => {
   const { id } = req.params;
@@ -36,7 +37,7 @@ const deleteUser = async (req, res) => {
         .status(409)
         .json({ error: "Không thể xoá người dùng do còn dữ liệu liên quan" });
     }
-    res.status(500).json({ error: "Lỗi khi xóa người dùng: " + err.message });
+    sendServerError(res, "Lỗi khi xóa người dùng", err);
   }
 };
 

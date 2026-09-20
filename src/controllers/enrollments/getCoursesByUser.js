@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const getCoursesByUser = async (req, res) => {
@@ -78,7 +79,7 @@ const getCoursesByUser = async (req, res) => {
       },
     });
   } catch (err) {
-    return res.status(500).json({ error: "Lỗi truy vấn: " + err.message });
+    return sendServerError(res, "Lỗi truy vấn", err);
   }
 };
 

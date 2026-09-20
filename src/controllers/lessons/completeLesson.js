@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const completeLesson = async (req, res) => {
@@ -77,7 +78,7 @@ const completeLesson = async (req, res) => {
       }
     }
     console.error(err);
-    return res.status(500).json({ error: "Lỗi đánh dấu hoàn thành: " + err.message });
+    return sendServerError(res, "Lỗi đánh dấu hoàn thành", err);
   } finally {
     if (client) client.release();
   }

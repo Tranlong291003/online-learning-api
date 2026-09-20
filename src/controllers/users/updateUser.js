@@ -1,4 +1,5 @@
 const path = require("path");
+const { sendServerError } = require("../../utils/errorResponse");
 const { pool } = require("../../config/db.config");
 const { sendNotification } = require("../../services/notificationService");
 
@@ -121,7 +122,7 @@ const updateUser = async (req, res) => {
     });
   } catch (err) {
     console.error("updateUser error:", err);
-    res.status(500).json({ error: "Lỗi máy chủ: " + err.message });
+    sendServerError(res, "Lỗi máy chủ", err);
   }
 };
 

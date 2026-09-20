@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { revokeAllForUser } = require("../../services/tokenService");
 
 const updateUserStatus = async (req, res) => {
@@ -49,9 +50,7 @@ const updateUserStatus = async (req, res) => {
   } catch (err) {
     console.error("Error in updateUserStatus:", err);
 
-    res.status(500).json({
-      error: "Lỗi khi cập nhật trạng thái người dùng: " + err.message,
-    });
+    sendServerError(res, "Lỗi khi cập nhật trạng thái người dùng", err);
   }
 };
 

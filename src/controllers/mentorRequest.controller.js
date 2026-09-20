@@ -1,4 +1,5 @@
 const { pool } = require("../config/db.config");
+const { sendServerError } = require("../utils/errorResponse");
 const notificationService = require("../services/notificationService");
 const { resolveActorUid } = require("../middleware/actor");
 
@@ -44,7 +45,7 @@ exports.createRequest = async (req, res) => {
 
     res.status(201).json({ message: "Yêu cầu đã được gửi", image_url });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, "Lỗi máy chủ", err);
   }
 };
 
@@ -115,7 +116,7 @@ exports.updateStatusRequest = async (req, res) => {
 
     res.json({ message: `Yêu cầu đã được ${status === "approved" ? "duyệt" : "từ chối"}` });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, "Lỗi máy chủ", err);
   }
 };
 
@@ -144,6 +145,6 @@ exports.getRequests = async (req, res) => {
     const result = await pool.query(query, values);
     res.json(result.rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, "Lỗi máy chủ", err);
   }
 };

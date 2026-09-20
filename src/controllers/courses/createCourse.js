@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const VALID_LEVELS = ["beginner", "intermediate", "advanced"];
@@ -99,7 +100,7 @@ const createCourse = async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ error: "Lỗi tạo khóa học: " + err.message });
+    sendServerError(res, "Lỗi tạo khóa học", err);
   }
 };
 

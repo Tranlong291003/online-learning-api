@@ -124,10 +124,10 @@ test("GET /api/reviews/course/1 returns 200 with review list", async () => {
   });
 });
 
-test("GET /api/reviews/course/1 returns 500 on database error", async () => {
+test("GET /api/reviews/course/1 returns 500 on database error without leaking internals", async () => {
   const poolMock = createPoolMock([
     () => {
-      throw new Error("db down");
+      throw new Error("db down at 10.0.0.5:5432 user=postgres");
     },
   ]);
   const { app } = loadApp({ poolMock });
@@ -139,7 +139,12 @@ test("GET /api/reviews/course/1 returns 500 on database error", async () => {
     const body = await response.json();
 
     assert.equal(response.status, 500);
-    assert.match(body.error, /db down/);
+    // Trường `error` là thông báo an toàn, KHÔNG chứa chi tiết nội bộ — trước
+    // đây controller nối thẳng err.message vào đây nên lộ host/port/user của DB.
+    assert.equal(body.error, "Lỗi server");
+    assert.doesNotMatch(body.error, /10\.0\.0\.5|postgres/);
+    // Ngoài production, chi tiết nằm riêng ở `detail` để còn debug.
+    assert.match(body.detail, /db down/);
   });
 });
 

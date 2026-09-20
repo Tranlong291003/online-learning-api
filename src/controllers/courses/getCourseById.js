@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { parsePositiveInt } = require("../../utils/parseId");
 
 const getCourseById = async (req, res) => {
@@ -122,7 +123,7 @@ const getCourseById = async (req, res) => {
       data: response,
     });
   } catch (err) {
-    return res.status(500).json({ error: "Lỗi server: " + err.message });
+    return sendServerError(res, "Lỗi server", err);
   }
 };
 

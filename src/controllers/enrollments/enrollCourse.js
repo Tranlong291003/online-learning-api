@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { sendNotification } = require("../../services/notificationService");
 const { resolveActorUid } = require("../../middleware/actor");
 
@@ -99,7 +100,7 @@ const enrollCourse = async (req, res) => {
     });
   } catch (err) {
     console.error("enrollCourse error:", err);
-    res.status(500).json({ error: "Lỗi đăng ký học: " + err.message });
+    sendServerError(res, "Lỗi đăng ký học", err);
   }
 };
 

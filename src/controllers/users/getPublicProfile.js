@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 
 /**
  * Hồ sơ công khai của một người dùng — ai đã đăng nhập cũng xem được.
@@ -36,7 +37,7 @@ const getPublicProfile = async (req, res) => {
     });
   } catch (err) {
     console.error("Error in getPublicProfile:", err);
-    res.status(500).json({ error: "Lỗi server: " + err.message });
+    sendServerError(res, "Lỗi server", err);
   }
 };
 

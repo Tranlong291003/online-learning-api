@@ -1,8 +1,14 @@
 const { pool } = require("../../config/db.config");
+const { parsePositiveInt } = require("../../utils/parseId");
+const { sendServerError } = require("../../utils/errorResponse");
 
 const deleteEnrollment = async (req, res) => {
   try {
-    const { enrollment_id } = req.params;
+    const enrollment_id = parsePositiveInt(req.params.enrollment_id);
+
+  if (!enrollment_id) {
+    return res.status(400).json({ error: "enrollment_id không hợp lệ" });
+  }
 
     // Chỉ chủ sở hữu hoặc admin mới được huỷ đăng ký
     const actorUid = req.user && req.user.uid;
@@ -34,7 +40,7 @@ const deleteEnrollment = async (req, res) => {
 
     res.json({ message: "🗑️ Huỷ đăng ký thành công" });
   } catch (err) {
-    res.status(500).json({ error: "Lỗi huỷ đăng ký: " + err.message });
+    sendServerError(res, "Lỗi huỷ đăng ký", err);
   }
 };
 

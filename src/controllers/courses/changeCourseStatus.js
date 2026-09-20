@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { sendNotification } = require("../../services/notificationService");
 const { resolveActorUid } = require("../../middleware/actor");
 
@@ -173,9 +174,7 @@ const changeCourseStatus = async (req, res) => {
     });
   } catch (err) {
     console.error("Lỗi cập nhật trạng thái khóa học:", err);
-    res.status(500).json({
-      error: "Lỗi cập nhật trạng thái khóa học: " + err.message,
-    });
+    sendServerError(res, "Lỗi cập nhật trạng thái khóa học", err);
   }
 };
 

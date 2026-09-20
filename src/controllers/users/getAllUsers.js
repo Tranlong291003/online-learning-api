@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 
 const getAllUsers = async (req, res) => {
   if (req.user.role !== "admin") {
@@ -23,7 +24,7 @@ const getAllUsers = async (req, res) => {
     });
   } catch (err) {
     console.error("Error in getAllUsers:", err);
-    res.status(500).json({ error: "Lỗi khi lấy danh sách người dùng: " + err.message });
+    sendServerError(res, "Lỗi khi lấy danh sách người dùng", err);
   }
 };
 

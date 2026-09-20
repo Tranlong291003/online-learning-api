@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { OpenAI } = require("openai");
 const { Worker, isMainThread, parentPort, workerData } = require("worker_threads");
 const { parsePositiveInt } = require("../../utils/parseId");
@@ -201,7 +202,7 @@ const getQuizResultById = async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: "Lỗi khi lấy kết quả bài làm: " + err.message });
+    return sendServerError(res, "Lỗi khi lấy kết quả bài làm", err);
   }
 };
 

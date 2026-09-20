@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 
 const getAllMentors = async (req, res) => {
   try {
@@ -20,7 +21,7 @@ const getAllMentors = async (req, res) => {
     });
   } catch (err) {
     console.error("Error in getAllMentors:", err);
-    res.status(500).json({ error: "Lỗi khi lấy danh sách mentor: " + err.message });
+    sendServerError(res, "Lỗi khi lấy danh sách mentor", err);
   }
 };
 

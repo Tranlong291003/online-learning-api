@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const fs = require("fs");
 const path = require("path");
 const { resolveActorUid } = require("../../middleware/actor");
@@ -74,7 +75,7 @@ const updateCategory = async (req, res) => {
       data: updateResult.rows[0],
     });
   } catch (err) {
-    return res.status(500).json({ error: "❌ Lỗi cập nhật: " + err.message });
+    return sendServerError(res, "❌ Lỗi cập nhật", err);
   }
 };
 

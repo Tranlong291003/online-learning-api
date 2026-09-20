@@ -1,7 +1,13 @@
 const { pool } = require("../../config/db.config");
+const { parsePositiveInt } = require("../../utils/parseId");
+const { sendServerError } = require("../../utils/errorResponse");
 
 const getQuestionsByQuiz = async (req, res) => {
-  const { quiz_id } = req.params;
+  const quiz_id = parsePositiveInt(req.params.quiz_id);
+
+  if (!quiz_id) {
+    return res.status(400).json({ error: "quiz_id không hợp lệ" });
+  }
 
   try {
     // Kiểm tra quiz tồn tại
@@ -30,7 +36,7 @@ const getQuestionsByQuiz = async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: "Lỗi khi lấy danh sách câu hỏi: " + err.message });
+    return sendServerError(res, "Lỗi khi lấy danh sách câu hỏi", err);
   }
 };
 

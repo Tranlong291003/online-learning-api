@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const deleteReview = async (req, res) => {
@@ -26,7 +27,7 @@ const deleteReview = async (req, res) => {
 
     return res.status(200).json({ message: "✅ Xóa thành công" });
   } catch (err) {
-    return res.status(500).json({ error: "Lỗi server: " + err.message });
+    return sendServerError(res, "Lỗi server", err);
   }
 };
 

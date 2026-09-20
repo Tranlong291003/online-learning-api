@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { VALID_ROLES } = require("../../config/auth.config");
 const { revokeAllForUser } = require("../../services/tokenService");
 
@@ -48,7 +49,7 @@ const updateRole = async (req, res) => {
     });
   } catch (err) {
     console.error("Error in updateRole:", err);
-    res.status(500).json({ error: "Lỗi khi cập nhật role: " + err.message });
+    sendServerError(res, "Lỗi khi cập nhật role", err);
   }
 };
 

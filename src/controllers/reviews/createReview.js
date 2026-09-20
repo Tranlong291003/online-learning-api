@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const createReview = async (req, res) => {
@@ -38,7 +39,7 @@ const createReview = async (req, res) => {
     const newId = result.rows[0].review_id;
     return res.status(201).json({ data: { review_id: newId } });
   } catch (err) {
-    return res.status(500).json({ error: "Lỗi server: " + err.message });
+    return sendServerError(res, "Lỗi server", err);
   }
 };
 

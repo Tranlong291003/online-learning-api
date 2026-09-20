@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 
 const getMentorCourses = async (req, res) => {
   try {
@@ -127,7 +128,7 @@ const getMentorCourses = async (req, res) => {
     });
   } catch (err) {
     console.error("Lỗi lấy danh sách khóa học của mentor:", err);
-    return res.status(500).json({ error: "Lỗi server: " + err.message });
+    return sendServerError(res, "Lỗi server", err);
   }
 };
 

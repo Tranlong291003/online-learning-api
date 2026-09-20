@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const getUserQuizzesGroupedByEnrollment = async (req, res) => {
@@ -113,9 +114,7 @@ const getUserQuizzesGroupedByEnrollment = async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({
-      error: "Lỗi khi lấy dữ liệu: " + err.message,
-    });
+    sendServerError(res, "Lỗi khi lấy dữ liệu", err);
   }
 };
 

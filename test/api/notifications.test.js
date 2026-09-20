@@ -223,7 +223,7 @@ test("PUT /api/notifications/update/:id marks a notification as read", async () 
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
-    const response = await json("/api/notifications/update/noti-uuid-1", {
+    const response = await json("/api/notifications/update/11111111-1111-1111-1111-111111111111", {
       method: "PUT",
       headers: authHeaders({ uid: "user-1", role: "user" }),
       body: {},
@@ -234,7 +234,7 @@ test("PUT /api/notifications/update/:id marks a notification as read", async () 
     assert.match(body.message, /đã đọc/);
 
     // noti_id là UUID -> phải truyền nguyên chuỗi vào SQL, không ép về số.
-    assert.deepEqual(poolMock.calls[0].params, ["noti-uuid-1", "user-1"]);
+    assert.deepEqual(poolMock.calls[0].params, ["11111111-1111-1111-1111-111111111111", "user-1"]);
     assert.ok(poolMock.calls[0].sql.includes("UPDATE notifications"));
     // Chỉ được sửa thông báo của chính người gọi (uid lấy từ token).
     assert.ok(poolMock.calls[0].sql.includes("uid = $2"));
@@ -247,7 +247,7 @@ test("PUT /api/notifications/update/:id returns 404 when the notification is not
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
-    const response = await json("/api/notifications/update/noti-cua-nguoi-khac", {
+    const response = await json("/api/notifications/update/11111111-1111-1111-1111-111111111111", {
       method: "PUT",
       headers: authHeaders(),
       body: {},
@@ -264,7 +264,7 @@ test("DELETE /api/notifications/delete/1 returns 200", async () => {
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
-    const response = await json("/api/notifications/delete/1", {
+    const response = await json("/api/notifications/delete/11111111-1111-1111-1111-111111111111", {
       method: "DELETE",
       headers: authHeaders(),
       body: { uid: "user-1" },
@@ -274,7 +274,10 @@ test("DELETE /api/notifications/delete/1 returns 200", async () => {
     assert.equal(response.status, 200);
     assert.match(body.message, /đã bị xóa/);
     // noti_id là UUID trong DB thật — giữ nguyên chuỗi, không ép về số
-    assert.deepEqual(poolMock.calls[0].params, ["1", "user-1"]);
+    assert.deepEqual(poolMock.calls[0].params, [
+      "11111111-1111-1111-1111-111111111111",
+      "user-1",
+    ]);
     assert.ok(poolMock.calls[0].sql.includes("DELETE FROM notifications"));
   });
 });
@@ -284,7 +287,7 @@ test("DELETE /api/notifications/delete/1 rejects spoofed uid (regression)", asyn
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
-    const response = await json("/api/notifications/delete/1", {
+    const response = await json("/api/notifications/delete/11111111-1111-1111-1111-111111111111", {
       method: "DELETE",
       headers: authHeaders({ uid: "student-1", role: "user" }),
       body: { uid: "admin-1" },
@@ -300,7 +303,7 @@ test("DELETE /api/notifications/delete/1 returns 404 when notification not found
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
-    const response = await json("/api/notifications/delete/1", {
+    const response = await json("/api/notifications/delete/11111111-1111-1111-1111-111111111111", {
       method: "DELETE",
       headers: authHeaders(),
       body: { uid: "user-1" },

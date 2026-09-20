@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const deleteQuestion = async (req, res) => {
@@ -48,7 +49,7 @@ const deleteQuestion = async (req, res) => {
     res.status(200).json({ message: "Xóa câu hỏi thành công" });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Lỗi khi xóa câu hỏi: " + err.message });
+    sendServerError(res, "Lỗi khi xóa câu hỏi", err);
   }
 };
 

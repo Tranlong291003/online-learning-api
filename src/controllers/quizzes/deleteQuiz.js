@@ -1,8 +1,14 @@
 const { pool } = require("../../config/db.config");
+const { parsePositiveInt } = require("../../utils/parseId");
+const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const deleteQuiz = async (req, res) => {
-  const { quiz_id } = req.params;
+  const quiz_id = parsePositiveInt(req.params.quiz_id);
+
+  if (!quiz_id) {
+    return res.status(400).json({ error: "quiz_id không hợp lệ" });
+  }
 
   // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
   const uid = resolveActorUid(req, res, req.body.uid);
@@ -38,9 +44,7 @@ const deleteQuiz = async (req, res) => {
 
     res.status(200).json({ message: "Xoá bài kiểm tra thành công" });
   } catch (err) {
-    res.status(500).json({
-      error: "Lỗi xoá bài kiểm tra: " + err.message,
-    });
+    sendServerError(res, "Lỗi xoá bài kiểm tra", err);
   }
 };
 

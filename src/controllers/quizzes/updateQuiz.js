@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const updateQuiz = async (req, res) => {
@@ -60,9 +61,7 @@ const updateQuiz = async (req, res) => {
       data: updated,
     });
   } catch (err) {
-    res.status(500).json({
-      error: "Lỗi cập nhật bài kiểm tra: " + err.message,
-    });
+    sendServerError(res, "Lỗi cập nhật bài kiểm tra", err);
   }
 };
 

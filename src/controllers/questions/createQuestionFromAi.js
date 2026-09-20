@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { OpenAI } = require("openai");
 const { resolveActorUid } = require("../../middleware/actor");
 
@@ -199,7 +200,7 @@ Yêu cầu:
       });
     }
 
-    res.status(500).json({ error: "Lỗi khi tạo câu hỏi từ AI: " + err.message });
+    sendServerError(res, "Lỗi khi tạo câu hỏi từ AI", err);
   }
 };
 

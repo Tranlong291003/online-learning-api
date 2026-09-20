@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 
 const getAllCourses = async (req, res) => {
   try {
@@ -139,7 +140,7 @@ const getAllCourses = async (req, res) => {
       total: courses.length,
     });
   } catch (err) {
-    return res.status(500).json({ error: "Lỗi server: " + err.message });
+    return sendServerError(res, "Lỗi server", err);
   }
 };
 

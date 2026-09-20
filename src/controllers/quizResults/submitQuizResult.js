@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 /**
@@ -125,7 +126,7 @@ const submitQuizResult = async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: "Lỗi khi nộp bài làm: " + err.message });
+    return sendServerError(res, "Lỗi khi nộp bài làm", err);
   }
 };
 

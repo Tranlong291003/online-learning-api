@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const createQuiz = async (req, res) => {
@@ -50,7 +51,7 @@ const createQuiz = async (req, res) => {
       data: quiz,
     });
   } catch (err) {
-    res.status(500).json({ error: "Lỗi khi tạo bài kiểm tra: " + err.message });
+    sendServerError(res, "Lỗi khi tạo bài kiểm tra", err);
   }
 };
 

@@ -1,5 +1,6 @@
 require("dotenv").config();
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const axios = require("axios");
 const { resolveActorUid } = require("../../middleware/actor");
 
@@ -123,7 +124,7 @@ const createLesson = async (req, res) => {
       data: insertResult.rows[0],
     });
   } catch (err) {
-    res.status(500).json({ error: "Lỗi tạo bài học: " + err.message });
+    sendServerError(res, "Lỗi tạo bài học", err);
   }
 };
 

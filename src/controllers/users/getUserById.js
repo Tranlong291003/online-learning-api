@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 
 const getUserById = async (req, res) => {
   const { id } = req.params;
@@ -33,7 +34,7 @@ const getUserById = async (req, res) => {
     });
   } catch (err) {
     console.error("Error in getUserById:", err);
-    res.status(500).json({ error: "Lỗi server: " + err.message });
+    sendServerError(res, "Lỗi server", err);
   }
 };
 

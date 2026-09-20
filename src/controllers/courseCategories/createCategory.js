@@ -1,4 +1,5 @@
 const path = require("path");
+const { sendServerError } = require("../../utils/errorResponse");
 const { pool } = require("../../config/db.config");
 const { sendNotification } = require("../../services/notificationService");
 const { resolveActorUid } = require("../../middleware/actor");
@@ -71,7 +72,7 @@ const createCategory = async (req, res) => {
     });
   } catch (err) {
     console.error("createCategory error:", err);
-    return res.status(500).json({ error: "❌ Lỗi tạo danh mục: " + err.message });
+    return sendServerError(res, "❌ Lỗi tạo danh mục", err);
   }
 };
 

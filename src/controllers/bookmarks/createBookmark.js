@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const createBookmark = async (req, res) => {
@@ -44,7 +45,7 @@ const createBookmark = async (req, res) => {
     const bookmarkId = result.rows[0].bookmark_id;
     return res.status(201).json({ data: { bookmark_id: bookmarkId } });
   } catch (err) {
-    return res.status(500).json({ error: "Lỗi server: " + err.message });
+    return sendServerError(res, "Lỗi server", err);
   }
 };
 

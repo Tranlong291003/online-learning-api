@@ -1,9 +1,15 @@
 const { pool } = require("../../config/db.config");
+const { parsePositiveInt } = require("../../utils/parseId");
+const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const deleteCategory = async (req, res) => {
   try {
-    const { category_id } = req.params;
+    const category_id = parsePositiveInt(req.params.category_id);
+
+  if (!category_id) {
+    return res.status(400).json({ error: "category_id không hợp lệ" });
+  }
 
     // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
     const uid = resolveActorUid(req, res, req.body.uid);
@@ -39,7 +45,7 @@ const deleteCategory = async (req, res) => {
     if (err.code === "23503") {
       return res.status(409).json({ error: "Không thể xoá danh mục đang có khóa học" });
     }
-    res.status(500).json({ error: "❌ Lỗi xoá danh mục: " + err.message });
+    sendServerError(res, "❌ Lỗi xoá danh mục", err);
   }
 };
 

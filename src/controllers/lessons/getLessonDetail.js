@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
 
 const getLessonDetail = async (req, res) => {
   const { lessonId } = req.params;
@@ -38,7 +39,7 @@ const getLessonDetail = async (req, res) => {
     });
   } catch (err) {
     console.error("getLessonDetail error:", err);
-    res.status(500).json({ error: "Lỗi server: " + err.message });
+    sendServerError(res, "Lỗi server", err);
   }
 };
 

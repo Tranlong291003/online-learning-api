@@ -1,12 +1,22 @@
 const { pool } = require("../../config/db.config");
 const { resolveActorUid } = require("../../middleware/actor");
 
+// noti_id là UUID trong DB nên KHÔNG ép về số — nhưng vẫn phải kiểm tra định
+// dạng. Nếu để nguyên, giá trị rác ("abc") khiến PostgreSQL ném lỗi
+// "invalid input syntax for type uuid" và trả 500, trong khi lỗi thật là
+// "client gửi sai" nên phải là 400.
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const updateNotification = async (req, res) => {
-  // noti_id là UUID trong DB — không ép về số
   const notiId = req.params.id;
 
   if (!notiId) {
     return res.status(400).json({ error: "Thiếu noti_id" });
+  }
+
+  if (!UUID_PATTERN.test(String(notiId).trim())) {
+    return res.status(400).json({ error: "noti_id không hợp lệ" });
   }
 
   // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
