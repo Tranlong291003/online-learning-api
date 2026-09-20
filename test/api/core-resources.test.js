@@ -72,8 +72,9 @@ test("GET /api/course-categories returns categories with course counts", async (
 
 test("POST /api/bookmarks/create creates bookmark", async () => {
   const poolMock = createPoolMock([
-    { rows: [] },
-    { rows: [{ bookmark_id: 99 }] },
+    { rows: [{ course_id: 1 }] }, // kiểm tra khóa học tồn tại
+    { rows: [] }, // chưa bookmark
+    { rows: [{ bookmark_id: 99 }] }, // INSERT
   ]);
   const { app } = loadApp({ poolMock });
 

@@ -171,6 +171,9 @@ test("GET /api/courses/mentor/ returns 400 for missing param", async () => {
 test("POST /api/courses/create returns 201 for mentor", async () => {
   const poolMock = createPoolMock(sqlMock((sql) => {
       const q = sql.toLowerCase();
+      if (q.includes("from course_categories where category_id")) {
+        return { rows: [{ category_id: 1 }] };
+      }
       if (q.includes("select name, role from users")) {
         return { rows: [{ name: "Mentor A", role: "mentor" }] };
       }
@@ -220,6 +223,9 @@ test("POST /api/courses/create returns 400 when title missing", async () => {
 test("POST /api/courses/create returns 403 when role is user", async () => {
   const poolMock = createPoolMock(sqlMock((sql) => {
       const q = sql.toLowerCase();
+      if (q.includes("from course_categories where category_id")) {
+        return { rows: [{ category_id: 1 }] };
+      }
       if (q.includes("select name, role from users")) {
         return { rows: [{ name: "Student", role: "user" }] };
       }
@@ -242,6 +248,37 @@ test("POST /api/courses/create returns 403 when role is user", async () => {
 
     assert.equal(response.status, 403);
     assert.equal(body.error, "Bạn không có quyền tạo khóa học");
+  });
+});
+
+test("POST /api/courses/create returns 404 for an unknown category (regression)", async () => {
+  // Trước đây thiếu bước kiểm tra này nên category_id không tồn tại sẽ vi phạm
+  // khoá ngoại -> 500 kèm tên constraint nội bộ (fk_courses_category_id) lộ ra
+  // client. Lỗi thật là "dữ liệu client gửi sai" nên phải là 404.
+  const poolMock = createPoolMock(sqlMock((sql) => {
+    const q = sql.toLowerCase();
+    if (q.includes("select name, role from users")) {
+      return { rows: [{ name: "Mentor A", role: "mentor" }] };
+    }
+    if (q.includes("from course_categories where category_id")) {
+      return { rows: [] }; // danh mục không tồn tại
+    }
+    return { rows: [] };
+  }));
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/courses/create", {
+      method: "POST",
+      headers: authHeaders({ role: "mentor", uid: "mentor-1" }),
+      body: { title: "Course", category_id: 99999, level: "beginner", uid: "mentor-1" },
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 404);
+    assert.equal(body.error, "Không tìm thấy danh mục");
+    // Không được chạy INSERT khi danh mục không hợp lệ.
+    assert.ok(!poolMock.calls.some((c) => /INSERT INTO courses/i.test(c.sql)));
   });
 });
 
@@ -274,6 +311,9 @@ test("POST /api/courses/create returns 404 when user not found", async () => {
 test("POST /api/courses/create keeps price 0 in INSERT params", async () => {
   const poolMock = createPoolMock(sqlMock((sql) => {
       const q = sql.toLowerCase();
+      if (q.includes("from course_categories where category_id")) {
+        return { rows: [{ category_id: 1 }] };
+      }
       if (q.includes("select name, role from users")) {
         return { rows: [{ name: "Mentor A", role: "mentor" }] };
       }

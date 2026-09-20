@@ -58,11 +58,14 @@ test("GET /api/bookmarks/ with missing user_uid is not routable", async () => {
 });
 
 test("POST /api/bookmarks/create returns 201 with bookmark_id", async () => {
-  const bySql = (sql) =>
-    sql.includes("SELECT 1 FROM bookmarks")
-      ? { rows: [] }
-      : { rows: [{ bookmark_id: 9 }] };
-  const poolMock = createPoolMock([bySql, bySql]);
+  const bySql = (sql) => {
+    const q = sql.toLowerCase();
+    // Kiểm tra khóa học tồn tại (thêm sau khi vá lỗi 500 do vi phạm khoá ngoại)
+    if (q.includes("from courses where course_id")) return { rows: [{ course_id: 3 }] };
+    if (q.includes("select 1 from bookmarks")) return { rows: [] };
+    return { rows: [{ bookmark_id: 9 }] };
+  };
+  const poolMock = createPoolMock([bySql, bySql, bySql]);
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
@@ -75,9 +78,29 @@ test("POST /api/bookmarks/create returns 201 with bookmark_id", async () => {
 
     assert.equal(response.status, 201);
     assert.equal(body.data.bookmark_id, 9);
-    assert.equal(poolMock.calls.length, 2);
-    assert.deepEqual(poolMock.calls[1].params, [3, "user-1"]);
-    assert.ok(poolMock.calls[1].sql.includes("INSERT INTO bookmarks"));
+    const insert = poolMock.calls.find((c) => c.sql.includes("INSERT INTO bookmarks"));
+    assert.ok(insert, "phải có truy vấn INSERT");
+    assert.deepEqual(insert.params, [3, "user-1"]);
+  });
+});
+
+test("POST /api/bookmarks/create returns 404 for an unknown course (regression)", async () => {
+  // Trước đây thiếu bước kiểm tra này nên courseId không tồn tại sẽ vi phạm khoá
+  // ngoại -> 500 kèm tên constraint nội bộ lộ ra client. Phải là 404.
+  const poolMock = createPoolMock([{ rows: [] }]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/bookmarks/create", {
+      method: "POST",
+      headers: authHeaders(),
+      body: { courseId: 99999, userUid: "user-1" },
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 404);
+    assert.equal(body.error, "Không tìm thấy khóa học");
+    assert.ok(!poolMock.calls.some((c) => /INSERT INTO bookmarks/i.test(c.sql)));
   });
 });
 
@@ -116,9 +139,14 @@ test("POST /api/bookmarks/create ignores a spoofed userUid for a non-admin", asy
 });
 
 test("POST /api/bookmarks/create returns 400 when already bookmarked", async () => {
-  const poolMock = createPoolMock([
-    (sql) => (sql.includes("SELECT 1 FROM bookmarks") ? { rows: [{ 1: 1 }] } : null),
-  ]);
+  // Dùng mảng vì createPoolMock tiêu thụ queue theo từng lần gọi.
+  const respond = (sql) => {
+    const q = sql.toLowerCase();
+    if (q.includes("from courses where course_id")) return { rows: [{ course_id: 3 }] };
+    if (q.includes("select 1 from bookmarks")) return { rows: [{ 1: 1 }] };
+    return { rows: [] };
+  };
+  const poolMock = createPoolMock([respond, respond, respond]);
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
@@ -131,7 +159,8 @@ test("POST /api/bookmarks/create returns 400 when already bookmarked", async () 
 
     assert.equal(response.status, 400);
     assert.match(body.error, /đã bookmark/);
-    assert.equal(poolMock.calls.length, 1);
+    // Có thêm 1 truy vấn kiểm tra khóa học tồn tại trước đó.
+    assert.equal(poolMock.calls.length, 2);
   });
 });
 

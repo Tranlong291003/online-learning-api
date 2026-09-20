@@ -26,7 +26,8 @@
     "api:authz": "node scripts/live-authz-probe.cjs",
     "api:coverage": "node scripts/live-full-coverage.cjs",
     "api:leftover": "node scripts/live-leftover-check.cjs",
-    "db:migrate:auth": "node scripts/migrate-auth.js"
+    "db:migrate:auth": "node scripts/migrate-auth.js",
+    "api:e2e": "node scripts/live-full-e2e.cjs"
   },
   "keywords": [],
   "author": "",

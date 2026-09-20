@@ -47,6 +47,17 @@ const createCourse = async (req, res) => {
       return res.status(403).json({ error: "Bạn không có quyền tạo khóa học" });
     }
 
+    // Kiểm tra danh mục tồn tại trước khi insert. Nếu bỏ bước này, category_id
+    // không tồn tại sẽ vi phạm khoá ngoại và trả 500 kèm tên constraint nội bộ,
+    // trong khi lỗi thật là "dữ liệu client gửi sai" (404).
+    const categoryResult = await pool.query(
+      "SELECT category_id FROM course_categories WHERE category_id = $1",
+      [category_id]
+    );
+    if (categoryResult.rows.length === 0) {
+      return res.status(404).json({ error: "Không tìm thấy danh mục" });
+    }
+
     // Xử lý thumbnail
     let thumbnail_url = null;
     if (req.file) {

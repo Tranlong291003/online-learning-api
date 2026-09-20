@@ -109,6 +109,7 @@ test("GET /api/quizzes/getquizbycoures/1 returns 404 when no quizzes", async () 
 test("POST /api/quizzes/create returns 201", async () => {
   const poolMock = createPoolMock([
     { rows: [{ role: "admin" }] },
+    { rows: [{ course_id: 1 }] }, // kiểm tra khóa học tồn tại
     {
       rows: [
         {
@@ -135,9 +136,33 @@ test("POST /api/quizzes/create returns 201", async () => {
     assert.equal(body.message, "Tạo bài kiểm tra thành công");
     assert.equal(body.data.quiz_id, 1);
     assert.match(poolMock.calls[0].sql, /SELECT role FROM users/);
-    assert.match(poolMock.calls[1].sql, /INSERT INTO quizzes/);
-    assert.equal(poolMock.calls[1].params[0], 1);
-    assert.equal(poolMock.calls[1].params[2], "trac_nghiem");
+    const insert = poolMock.calls.find((c) => /INSERT INTO quizzes/.test(c.sql));
+    assert.ok(insert, "phải có truy vấn INSERT");
+    assert.equal(insert.params[0], 1);
+    assert.equal(insert.params[2], "trac_nghiem");
+  });
+});
+
+test("POST /api/quizzes/create returns 404 for an unknown course (regression)", async () => {
+  // Trước đây thiếu bước kiểm tra này nên course_id không tồn tại sẽ vi phạm
+  // khoá ngoại -> 500 kèm tên constraint nội bộ lộ ra client. Phải là 404.
+  const poolMock = createPoolMock([
+    { rows: [{ role: "admin" }] },
+    { rows: [] }, // khóa học không tồn tại
+  ]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/quizzes/create", {
+      method: "POST",
+      headers: authHeaders({ role: "admin", uid: "admin-1" }),
+      body: { course_id: 99999, title: "Quiz", uid: "admin-1" },
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 404);
+    assert.equal(body.error, "Không tìm thấy khóa học");
+    assert.ok(!poolMock.calls.some((c) => /INSERT INTO quizzes/i.test(c.sql)));
   });
 });
 
