@@ -13,33 +13,59 @@
 BEGIN;
 
 -- ------------------------------------------------------------
--- 1. users.id — khoá kỹ thuật dạng số
+-- 1. Kiểm tra dữ liệu TRƯỚC khi đổi gì
 -- ------------------------------------------------------------
--- quiz_results.graded_by là INT và trỏ vào cột này. DB thật đã có cột `id`
--- (vì FK đang hoạt động), nên đây thường là no-op; giữ lại để DB dựng mới từ
--- schema cũ vẫn chạy được.
-ALTER TABLE users ADD COLUMN IF NOT EXISTS id SERIAL;
-
--- Chỉ thêm ràng buộc UNIQUE nếu chưa có ràng buộc nào trên cột id.
+-- Chạy kiểm tra trước mọi thay đổi để thông báo lỗi rõ ràng kịp xuất hiện. Nếu
+-- hạ chữ thường email trước rồi mới kiểm tra, câu UPDATE có thể vỡ vì ràng buộc
+-- UNIQUE đang có, và ta nhận được lỗi khó hiểu thay vì chỉ đúng vấn đề.
+--
+-- Luồng đăng nhập tra theo LOWER(email). Nếu tồn tại cả 'A@x.com' và 'a@x.com'
+-- thì không xác định được tài khoản nào, nên phải xử lý thủ công.
 DO $$
+DECLARE
+  duplicate_emails TEXT;
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint c
-    JOIN pg_class t ON t.oid = c.conrelid
-    WHERE t.relname = 'users'
-      AND c.contype IN ('p', 'u')
-      AND c.conkey = ARRAY[(
-        SELECT attnum FROM pg_attribute
-        WHERE attrelid = 'users'::regclass AND attname = 'id'
-      )]
-  ) THEN
-    ALTER TABLE users ADD CONSTRAINT uq_users_id UNIQUE (id);
+  SELECT STRING_AGG(lower_email || ' (' || so_lan || ' dòng)', ', ')
+  INTO duplicate_emails
+  FROM (
+    SELECT LOWER(TRIM(email)) AS lower_email, COUNT(*) AS so_lan
+    FROM users
+    WHERE email IS NOT NULL
+    GROUP BY LOWER(TRIM(email))
+    HAVING COUNT(*) > 1
+  ) dup;
+
+  IF duplicate_emails IS NOT NULL THEN
+    RAISE EXCEPTION
+      'Có email trùng nhau trong bảng users: %. Đăng nhập tra theo LOWER(email) nên không xác định được tài khoản. Xử lý thủ công (đổi/xoá bớt) rồi chạy lại migration.',
+      duplicate_emails;
   END IF;
 END $$;
 
 -- ------------------------------------------------------------
--- 2. users: cột phục vụ đăng nhập bằng mật khẩu
+-- 2. users.id — khoá kỹ thuật dạng số
+-- ------------------------------------------------------------
+-- quiz_results.graded_by là INT và trỏ vào cột này. DB thật đã có cột `id`
+-- (vì FK đang hoạt động) nên bước này thường là no-op; giữ lại để DB dựng mới
+-- từ schema cũ vẫn chạy được.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS id SERIAL;
+
+-- Đảm bảo id là duy nhất (FK trỏ tới cột này yêu cầu điều đó). Kiểm tra qua
+-- pg_indexes — cách này nhận cả unique constraint lẫn unique index đang có.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE tablename = 'users'
+      AND indexdef ILIKE '%UNIQUE%'
+      AND indexdef ILIKE '%(id)%'
+  ) THEN
+    CREATE UNIQUE INDEX uq_users_id ON users(id);
+  END IF;
+END $$;
+
+-- ------------------------------------------------------------
+-- 3. users: cột phục vụ đăng nhập bằng mật khẩu
 -- ------------------------------------------------------------
 -- NULL với tài khoản cũ (tạo trước khi API tự quản lý mật khẩu). Những tài khoản
 -- này KHÔNG đăng nhập được bằng mật khẩu cho tới khi đặt lại qua
@@ -52,37 +78,27 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INT NOT NULL DE
 ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP;
 
 -- ------------------------------------------------------------
--- 3. users.email — chuẩn hoá về chữ thường + ràng buộc duy nhất
+-- 4. users.email — chuẩn hoá chữ thường và bảo đảm duy nhất
 -- ------------------------------------------------------------
--- Luồng đăng nhập tra theo LOWER(email), nên nếu tồn tại cả 'A@x.com' và 'a@x.com'
--- thì không xác định được tài khoản nào. Hạ hết về chữ thường trước khi thêm
--- ràng buộc UNIQUE.
-UPDATE users SET email = LOWER(TRIM(email)) WHERE email <> LOWER(TRIM(email));
+-- Đã kiểm tra trùng ở bước 1 nên UPDATE này an toàn kể cả khi đang có UNIQUE.
+UPDATE users
+SET email = LOWER(TRIM(email))
+WHERE email IS NOT NULL AND email <> LOWER(TRIM(email));
 
 DO $$
 BEGIN
-  IF EXISTS (
-    SELECT LOWER(email) FROM users GROUP BY LOWER(email) HAVING COUNT(*) > 1
-  ) THEN
-    RAISE EXCEPTION
-      'Có email trùng nhau trong bảng users. Xử lý thủ công trước khi chạy migration này.';
-  END IF;
-
   IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint c
-    JOIN pg_class t ON t.oid = c.conrelid
-    WHERE t.relname = 'users' AND c.contype = 'u'
-      AND c.conkey = ARRAY[(
-        SELECT attnum FROM pg_attribute
-        WHERE attrelid = 'users'::regclass AND attname = 'email'
-      )]
+    SELECT 1 FROM pg_indexes
+    WHERE tablename = 'users'
+      AND indexdef ILIKE '%UNIQUE%'
+      AND indexdef ILIKE '%(email)%'
   ) THEN
-    ALTER TABLE users ADD CONSTRAINT uq_users_email UNIQUE (email);
+    CREATE UNIQUE INDEX uq_users_email ON users(email);
   END IF;
 END $$;
 
 -- ------------------------------------------------------------
--- 4. refresh_tokens — phiên đăng nhập dài hạn, thu hồi được
+-- 5. refresh_tokens — phiên đăng nhập dài hạn, thu hồi được
 -- ------------------------------------------------------------
 -- Chỉ lưu SHA-256 của token, không lưu token gốc: DB bị lộ cũng không dùng lại
 -- được giá trị trong bảng để lấy access token mới.
@@ -106,7 +122,7 @@ CREATE INDEX IF NOT EXISTS idx_refresh_tokens_family ON refresh_tokens(family_id
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires ON refresh_tokens(expires_at);
 
 -- ------------------------------------------------------------
--- 5. password_resets — yêu cầu đặt lại mật khẩu
+-- 6. password_resets — yêu cầu đặt lại mật khẩu
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS password_resets (
     reset_id        UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -114,7 +130,7 @@ CREATE TABLE IF NOT EXISTS password_resets (
     token_hash      CHAR(64)        NOT NULL UNIQUE,
     expires_at      TIMESTAMP       NOT NULL,
     used_at         TIMESTAMP       NULL,
-    created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    created_at      TIMESTAMP       NOT NULL DEFAULT now(),
     FOREIGN KEY (uid) REFERENCES users(uid) ON DELETE CASCADE
 );
 
