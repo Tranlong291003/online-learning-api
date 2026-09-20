@@ -14,3 +14,4 @@ src/public/uploads/
 
 # Cấu hình local của công cụ soạn code (không phải cấu hình dự án)
 .claude/
+.vercel
