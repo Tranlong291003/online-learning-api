@@ -15,10 +15,31 @@ const path = require("path");
 const { Pool } = require("pg");
 require("dotenv").config();
 
+/** Giá trị còn nguyên trong file mẫu — chưa được thay bằng thông tin thật. */
+const PLACEHOLDERS = [
+  "MAT_KHAU_DB",
+  "YOUR-PASSWORD",
+  "your_postgres_password",
+  "MẬT_KHẨU",
+];
+
 function createPool() {
   const useSsl = process.env.DB_SSL === "true";
 
   const databaseUrl = (process.env.DATABASE_URL || "").trim();
+
+  // Bắt lỗi "quên điền mật khẩu" trước khi thử kết nối. Nếu để nguyên, Supabase
+  // trả về lỗi DNS khó hiểu (tenant/user not found) khiến khó đoán nguyên nhân.
+  if (databaseUrl) {
+    const found = PLACEHOLDERS.find((p) => databaseUrl.includes(p));
+    if (found) {
+      throw new Error(
+        `DATABASE_URL vẫn còn giá trị mẫu "${found}". Mở file .env và thay bằng ` +
+          "chuỗi kết nối thật (Supabase → Project Settings → Database → Connection string → URI)."
+      );
+    }
+  }
+
   if (databaseUrl) {
     return new Pool({
       connectionString: databaseUrl,
