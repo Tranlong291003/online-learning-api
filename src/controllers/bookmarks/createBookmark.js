@@ -1,11 +1,16 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const createBookmark = async (req, res) => {
   try {
-    const { courseId, userUid } = req.body;
-    if (!courseId || !userUid) {
-      return res.status(400).json({ error: "courseId và userUid là bắt buộc" });
+    const { courseId } = req.body;
+    if (!courseId) {
+      return res.status(400).json({ error: "courseId là bắt buộc" });
     }
+
+    // Lấy uid từ token; chỉ admin mới được bookmark thay người khác
+    const userUid = resolveActorUid(req, res, req.body.userUid || req.body.uid);
+    if (!userUid) return;
 
     // Kiểm tra đã bookmark chưa
     const exists = await pool.query(

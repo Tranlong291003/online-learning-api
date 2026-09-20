@@ -7,9 +7,9 @@ const {
   withServer,
 } = require("../helpers/apiTestUtils");
 
-function authHeaders() {
+function authHeaders(payload) {
   return {
-    authorization: `Bearer ${signTestToken()}`,
+    authorization: `Bearer ${signTestToken(payload)}`,
   };
 }
 
@@ -62,20 +62,38 @@ test("POST /api/notifications returns 200 with empty list when no rows", async (
   });
 });
 
-test("POST /api/notifications returns 400 when uid missing", async () => {
+test("POST /api/notifications uses token uid when body omits it (regression)", async () => {
+  const poolMock = createPoolMock([{ rows: [] }]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/notifications", {
+      method: "POST",
+      headers: authHeaders({ uid: "user-1", role: "user" }),
+      body: {},
+    });
+
+    assert.equal(response.status, 200);
+    const call = poolMock.calls.find((c) =>
+      c.sql.toLowerCase().includes("from notifications")
+    );
+    assert.ok(call, "phải truy vấn notifications bằng uid lấy từ token");
+    assert.equal(call.params[0], "user-1");
+  });
+});
+
+test("POST /api/notifications rejects spoofed uid (regression)", async () => {
   const poolMock = createPoolMock();
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
     const response = await json("/api/notifications", {
       method: "POST",
-      headers: authHeaders(),
-      body: {},
+      headers: authHeaders({ uid: "student-1", role: "user" }),
+      body: { uid: "admin-1" },
     });
-    const body = await response.json();
 
-    assert.equal(response.status, 400);
-    assert.match(body.error, /Thiếu uid/);
+    assert.equal(response.status, 403);
     assert.equal(poolMock.calls.length, 0);
   });
 });
@@ -125,7 +143,7 @@ test("POST /api/notifications/create returns 201 with created notification", asy
   });
 });
 
-test("POST /api/notifications/create returns 400 when uid/title/content missing", async () => {
+test("POST /api/notifications/create returns 400 when title/content missing", async () => {
   const poolMock = createPoolMock();
   const { app } = loadApp({ poolMock });
 
@@ -133,12 +151,12 @@ test("POST /api/notifications/create returns 400 when uid/title/content missing"
     const response = await json("/api/notifications/create", {
       method: "POST",
       headers: authHeaders(),
-      body: { title: "No uid" },
+      body: { title: "No content" },
     });
     const body = await response.json();
 
     assert.equal(response.status, 400);
-    assert.match(body.error, /Thiếu uid/);
+    assert.match(body.error, /Thiếu title hoặc content/);
     assert.equal(poolMock.calls.length, 0);
   });
 });
@@ -162,7 +180,7 @@ test("POST /api/notifications/mark-read returns 200", async () => {
   });
 });
 
-test("POST /api/notifications/mark-read returns 400 when uid or noti_id missing", async () => {
+test("POST /api/notifications/mark-read returns 400 when noti_id missing", async () => {
   const poolMock = createPoolMock();
   const { app } = loadApp({ poolMock });
 
@@ -170,12 +188,12 @@ test("POST /api/notifications/mark-read returns 400 when uid or noti_id missing"
     const response = await json("/api/notifications/mark-read", {
       method: "POST",
       headers: authHeaders(),
-      body: { uid: "user-1" },
+      body: {},
     });
     const body = await response.json();
 
     assert.equal(response.status, 400);
-    assert.match(body.error, /Thiếu uid hoặc noti_id/);
+    assert.match(body.error, /Thiếu noti_id/);
     assert.equal(poolMock.calls.length, 0);
   });
 });
@@ -211,25 +229,24 @@ test("DELETE /api/notifications/delete/1 returns 200", async () => {
 
     assert.equal(response.status, 200);
     assert.match(body.message, /đã bị xóa/);
+    // noti_id là UUID trong DB thật — giữ nguyên chuỗi, không ép về số
     assert.deepEqual(poolMock.calls[0].params, ["1", "user-1"]);
     assert.ok(poolMock.calls[0].sql.includes("DELETE FROM notifications"));
   });
 });
 
-test("DELETE /api/notifications/delete/1 returns 400 when uid missing", async () => {
+test("DELETE /api/notifications/delete/1 rejects spoofed uid (regression)", async () => {
   const poolMock = createPoolMock();
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
     const response = await json("/api/notifications/delete/1", {
       method: "DELETE",
-      headers: authHeaders(),
-      body: {},
+      headers: authHeaders({ uid: "student-1", role: "user" }),
+      body: { uid: "admin-1" },
     });
-    const body = await response.json();
 
-    assert.equal(response.status, 400);
-    assert.match(body.error, /Thiếu uid/);
+    assert.equal(response.status, 403);
     assert.equal(poolMock.calls.length, 0);
   });
 });

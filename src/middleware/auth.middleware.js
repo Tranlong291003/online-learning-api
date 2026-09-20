@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const { getAuthStateForUid } = require("../services/authUserLookup");
 
 // Token blacklist - nên lưu trong Redis/DB cho production
 const blacklist = new Set();
@@ -13,7 +14,10 @@ if (!JWT_SECRET) {
 const DEV_API_KEY = process.env.DEV_API_KEY;
 const DEV_KEY_ENABLED = !!DEV_API_KEY && process.env.NODE_ENV !== "production";
 
-module.exports = (req, res, next) => {
+// Cho phép tắt đối chiếu DB (dùng trong test đơn vị không mock được DB lookup).
+const SKIP_DB_CHECK = process.env.AUTH_SKIP_DB_CHECK === "true";
+
+module.exports = async (req, res, next) => {
   // Bypass JWT bằng dev key (dùng cho môi trường dev test nhanh)
   // Chấp nhận cả header "x-dev-api-key" lẫn "Authorization: Bearer <key>"
   if (DEV_KEY_ENABLED) {
@@ -44,16 +48,41 @@ module.exports = (req, res, next) => {
     return res.status(401).json({ error: "Token đã bị thu hồi" });
   }
 
+  let decoded;
   try {
     if (!JWT_SECRET) {
       return res.status(500).json({ error: "Server chưa được cấu hình JWT_SECRET" });
     }
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
+    decoded = jwt.verify(token, JWT_SECRET);
   } catch (err) {
     return res
       .status(401)
       .json({ error: "Token không hợp lệ hoặc đã hết hạn" });
   }
+
+  // Đối chiếu DB: role trong token có thể đã cũ (JWT hạn 7 ngày) và tài khoản có thể
+  // đã bị khoá/xoá sau khi token được phát hành. Chỉ verify chữ ký là chưa đủ — quyền
+  // bị thu hồi hoặc tài khoản bị khoá vẫn dùng được tới khi token hết hạn.
+  if (!SKIP_DB_CHECK) {
+    let state;
+    try {
+      state = await getAuthStateForUid(decoded.uid);
+    } catch (err) {
+      console.error("Lỗi tra cứu người dùng khi xác thực:", err.message);
+      return res.status(503).json({ error: "Không kiểm tra được trạng thái người dùng" });
+    }
+
+    if (!state) {
+      return res.status(401).json({ error: "Tài khoản không tồn tại" });
+    }
+    if (state.is_active === false) {
+      return res.status(403).json({ error: "Tài khoản đã bị khoá" });
+    }
+
+    // Role lấy từ DB là nguồn chân lý, không phải từ token.
+    decoded.role = state.role;
+  }
+
+  req.user = decoded;
+  next();
 };

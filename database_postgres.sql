@@ -138,11 +138,13 @@ CREATE TABLE IF NOT EXISTS quiz_results (
     explanation     TEXT            NULL,
     answers         TEXT            NULL,
     status          VARCHAR(20)     DEFAULT 'cho_cham',
-    graded_by_uid   VARCHAR(50)     NULL,
-    graded_at       TIMESTAMP       NULL,
+    -- Lưu users.id (INT) chứ không phải users.uid (VARCHAR) — khớp với DB thật
+    -- và với gradeQuizResult.js (giá trị $3 là số nguyên).
+    graded_by       INT             NULL,
+    graded_at       TIMESTAMPTZ     NULL,
     FOREIGN KEY (user_uid) REFERENCES users(uid) ON DELETE CASCADE,
     FOREIGN KEY (quiz_id) REFERENCES quizzes(quiz_id) ON DELETE NO ACTION,
-    FOREIGN KEY (graded_by_uid) REFERENCES users(uid) ON DELETE NO ACTION
+    FOREIGN KEY (graded_by) REFERENCES users(id) ON DELETE NO ACTION
 );
 
 -- =======================================
@@ -164,13 +166,17 @@ CREATE TABLE IF NOT EXISTS notifications (
 -- 🎓 BẢNG lesson_progress – Tiến độ bài học
 -- =======================================
 CREATE TABLE IF NOT EXISTS lesson_progress (
+    progress_id     SERIAL          PRIMARY KEY,
     user_uid        VARCHAR(50)     NOT NULL,
     course_id       INT             NOT NULL,
     lesson_id       INT             NOT NULL,
     is_completed    BOOLEAN         NOT NULL DEFAULT FALSE,
     completed_at    TIMESTAMP       NULL,
     created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (user_uid, lesson_id),
+    -- completeLesson.js dùng ON CONFLICT (user_uid, course_id, lesson_id) nên
+    -- cần unique constraint đúng 3 cột này (khớp DB thật).
+    CONSTRAINT uq_lesson_progress_user_course_lesson
+        UNIQUE (user_uid, course_id, lesson_id),
     FOREIGN KEY (user_uid) REFERENCES users(uid) ON DELETE CASCADE,
     FOREIGN KEY (course_id) REFERENCES courses(course_id) ON DELETE NO ACTION,
     FOREIGN KEY (lesson_id) REFERENCES lessons(lesson_id) ON DELETE NO ACTION

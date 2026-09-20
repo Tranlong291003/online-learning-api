@@ -23,7 +23,7 @@ $checks = @(
   @{ Method = "GET"; Path = "/api/enrollments/user/demo-user-1"; Auth = $true },
   @{ Method = "GET"; Path = "/api/enrollments/check/demo-user-1/1"; Auth = $true },
   @{ Method = "GET"; Path = "/api/enrollments/progress?userUid=demo-user-1&courseId=1"; Auth = $true },
-  @{ Method = "GET"; Path = "/api/quizzes/getquizbycoures/1"; Auth = $true },
+  @{ Method = "GET"; Path = "/api/quizzes/getquizbycourse/1"; Auth = $true },
   @{ Method = "GET"; Path = "/api/questions/1"; Auth = $true },
   @{ Method = "GET"; Path = "/api/quiz-results/users/demo-user-1/results"; Auth = $true },
   @{ Method = "GET"; Path = "/api/reviews/course/1"; Auth = $true },

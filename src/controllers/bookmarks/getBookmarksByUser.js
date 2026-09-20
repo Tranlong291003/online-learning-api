@@ -1,11 +1,11 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const getBookmarksByUser = async (req, res) => {
   try {
-    const { user_uid } = req.params;
-    if (!user_uid) {
-      return res.status(400).json({ error: "user_uid là bắt buộc" });
-    }
+    // Chỉ được xem bookmark của chính mình (admin xem được của người khác)
+    const user_uid = resolveActorUid(req, res, req.params.user_uid);
+    if (!user_uid) return;
 
     const result = await pool.query(
       `SELECT

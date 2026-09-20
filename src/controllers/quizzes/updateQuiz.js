@@ -1,12 +1,13 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const updateQuiz = async (req, res) => {
   const { quiz_id } = req.params;
-  const { uid, title, type, time_limit, attempt_limit } = req.body;
+  const { title, type, time_limit, attempt_limit } = req.body;
 
-  if (!uid) {
-    return res.status(400).json({ error: "Thiếu UID người dùng" });
-  }
+  // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
+  const uid = resolveActorUid(req, res, req.body.uid);
+  if (!uid) return;
 
   try {
     // Lấy vai trò

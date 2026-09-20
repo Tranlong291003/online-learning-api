@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const updateCourse = async (req, res) => {
   const { course_id } = req.params;
@@ -10,8 +11,11 @@ const updateCourse = async (req, res) => {
     discount_price,
     language,
     tags,
-    uid,
   } = req.body;
+
+  // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
+  const uid = resolveActorUid(req, res, req.body.uid);
+  if (!uid) return;
 
   try {
     // Kiểm tra role

@@ -126,6 +126,7 @@ test("PUT /api/mentor-requests/1/status rejects a request as admin", async () =>
     { rows: [] },
     { rows: [{ user_uid: "student-1" }] },
     { rows: [{ fcm_token: null }] },
+    { rows: [{ noti_id: 11 }] },
   ]);
   const { app } = loadApp({ poolMock });
 
@@ -184,6 +185,7 @@ test("PUT /api/mentor-requests/1/status approved updates user role to mentor", a
     { rows: [{ user_uid: "student-1" }] },
     { rows: [{ fcm_token: "fcm-token-1" }] },
     { rows: [] },
+    { rows: [{ noti_id: 12 }] },
   ]);
   const { app } = loadApp({ poolMock });
 

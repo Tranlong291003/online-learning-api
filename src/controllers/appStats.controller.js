@@ -1,12 +1,15 @@
 const { pool } = require("../config/db.config");
+const { resolveActorUid } = require("../middleware/actor");
 
 // API thống kê động theo role
 exports.getStats = async (req, res) => {
   try {
-    const uid = req.body.uid || req.query.uid;
-    if (!uid) {
-      return res.status(400).json({ error: "Thiếu uid" });
-    }
+    // Chấp nhận uid ở query/body cho tương thích FE, nhưng phải khớp token
+    const claimedUid =
+      (req.body && req.body.uid) || (req.query && req.query.uid);
+
+    const uid = resolveActorUid(req, res, claimedUid);
+    if (!uid) return;
 
     // Kiểm tra role từ DB
     const resultRole = await pool.query("SELECT role FROM users WHERE uid = $1", [uid]);

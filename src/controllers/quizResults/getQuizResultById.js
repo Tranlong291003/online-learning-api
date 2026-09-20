@@ -1,6 +1,7 @@
 const { pool } = require("../../config/db.config");
 const { OpenAI } = require("openai");
 const { Worker, isMainThread, parentPort, workerData } = require("worker_threads");
+const { parsePositiveInt } = require("../../utils/parseId");
 
 function getOpenAIClient() {
   if (!process.env.OPENAI_API_KEY) {
@@ -68,7 +69,11 @@ Các lựa chọn: ${options.join(" | ")}
 
 // Main thread code
 const getQuizResultById = async (req, res) => {
-  const { result_id } = req.params;
+  const result_id = parsePositiveInt(req.params.result_id);
+
+  if (!result_id) {
+    return res.status(400).json({ error: "result_id không hợp lệ" });
+  }
 
   try {
     // Lấy kết quả
@@ -79,6 +84,14 @@ const getQuizResultById = async (req, res) => {
 
     const { quiz_id, user_uid: uid, answers: answersData, score, explanation } = result.rows[0];
 
+    // Chống IDOR: chỉ chủ bài làm hoặc admin mới được xem kết quả.
+    // Thiếu kiểm tra này thì bất kỳ user đã đăng nhập nào cũng đọc được
+    // bài làm + điểm của mọi người khác bằng cách dò result_id.
+    const actor = req.user || {};
+    if (actor.role !== "admin" && String(actor.uid) !== String(uid)) {
+      return res.status(403).json({ error: "Bạn không có quyền xem kết quả này" });
+    }
+
     if (!answersData) {
       return res.status(400).json({ error: "Dữ liệu câu trả lời (answers) đang null hoặc rỗng" });
     }
@@ -88,6 +101,12 @@ const getQuizResultById = async (req, res) => {
       userAnswers = JSON.parse(answersData);
     } catch (error) {
       return res.status(400).json({ error: "Dữ liệu câu trả lời không phải JSON hợp lệ" });
+    }
+
+    // JSON.parse("null") trả về null, và Object.keys(null) sẽ ném TypeError -> 500.
+    // Dữ liệu cũ trong DB có thể không phải object, nên kiểm tra kiểu trước.
+    if (userAnswers === null || typeof userAnswers !== "object" || Array.isArray(userAnswers)) {
+      return res.status(400).json({ error: "Dữ liệu câu trả lời không đúng định dạng object" });
     }
 
     // Lấy câu hỏi
@@ -126,23 +145,32 @@ const getQuizResultById = async (req, res) => {
     const results = [];
     for (let i = 0; i < batches.length; i += optimalWorkers) {
       const currentBatches = batches.slice(i, i + optimalWorkers);
-      const semaphore = {
-        count: 0, queue: [],
-        async acquire() { if (this.count >= MAX_CONCURRENT_REQUESTS) await new Promise((r) => this.queue.push(r)); this.count++; },
-        release() { this.count--; if (this.queue.length > 0) this.queue.shift()(); },
-      };
 
-      const batchPromises = currentBatches.map(async (batch) => {
-        await semaphore.acquire();
-        try {
-          return new Promise((resolve, reject) => {
-            const worker = new Worker(__filename, { workerData: { questions: batch } });
-            worker.on("message", resolve);
-            worker.on("error", reject);
-            worker.on("exit", (code) => { if (code !== 0) reject(new Error(`Worker dừng với mã lỗi ${code}`)); });
+      // Chạy từng worker, giới hạn số worker đồng thời trong cả request.
+      // Không dùng semaphore acquire/release: release trong finally sẽ chạy ngay
+      // sau khi tạo Worker (chưa xong việc) nên không giới hạn được gì.
+      const runWorker = (batch) =>
+        new Promise((resolve, reject) => {
+          const worker = new Worker(__filename, { workerData: { questions: batch } });
+          worker.on("message", resolve);
+          worker.on("error", reject);
+          worker.on("exit", (code) => {
+            if (code !== 0) reject(new Error(`Worker dừng với mã lỗi ${code}`));
           });
-        } finally { semaphore.release(); }
-      });
+        });
+
+      const batchPromises = [];
+      const queue = [...currentBatches];
+      const workers = Array.from(
+        { length: Math.min(MAX_CONCURRENT_REQUESTS, queue.length) },
+        async () => {
+          while (queue.length > 0) {
+            const batch = queue.shift();
+            batchPromises.push(await runWorker(batch));
+          }
+        }
+      );
+      await Promise.all(workers);
 
       const batchResults = await Promise.all(batchPromises);
       results.push(...batchResults.flat());

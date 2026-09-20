@@ -1,16 +1,22 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const updateReview = async (req, res) => {
   try {
     const { reviewId } = req.params;
-    const { user_uid, rating, comment } = req.body;
+    const { rating, comment } = req.body;
 
-    if (!user_uid) {
-      return res.status(400).json({ error: "user_uid không được bỏ trống" });
-    }
     if (rating == null && comment == null) {
       return res.status(400).json({ error: "Không có dữ liệu để cập nhật" });
     }
+
+    if (rating != null && (!Number.isInteger(Number(rating)) || Number(rating) < 1 || Number(rating) > 5)) {
+      return res.status(400).json({ error: "rating phải là số nguyên từ 1 đến 5" });
+    }
+
+    // Lấy uid từ token; chỉ admin mới được sửa review thay người khác
+    const user_uid = resolveActorUid(req, res, req.body.user_uid);
+    if (!user_uid) return;
 
     // Kiểm tra tồn tại và chủ sở hữu
     const chk = await pool.query(

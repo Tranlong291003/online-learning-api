@@ -1,11 +1,13 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const deleteCategory = async (req, res) => {
   try {
     const { category_id } = req.params;
-    const { uid } = req.body;
 
-    if (!uid) return res.status(400).json({ error: "UID không được bỏ trống" });
+    // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
+    const uid = resolveActorUid(req, res, req.body.uid);
+    if (!uid) return;
 
     // Kiểm tra role
     const roleResult = await pool.query(

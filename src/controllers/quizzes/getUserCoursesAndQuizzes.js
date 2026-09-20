@@ -1,11 +1,10 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const getUserQuizzesGroupedByEnrollment = async (req, res) => {
-  const { user_uid } = req.params;
-
-  if (!user_uid) {
-    return res.status(400).json({ error: "Thiếu user_uid" });
-  }
+  // Chỉ được xem quiz theo khóa học đã đăng ký của chính mình
+  const user_uid = resolveActorUid(req, res, req.params.user_uid);
+  if (!user_uid) return;
 
   try {
     // 1. Lấy danh sách course_id user đã đăng ký

@@ -1,10 +1,10 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const getCoursesByUser = async (req, res) => {
-  const { uid } = req.params;
-  if (!uid) {
-    return res.status(400).json({ error: "Thiếu uid người dùng" });
-  }
+  // Chỉ được xem khóa học đã đăng ký của chính mình (admin xem được của người khác)
+  const uid = resolveActorUid(req, res, req.params.uid);
+  if (!uid) return;
 
   try {
     const result = await pool.query(

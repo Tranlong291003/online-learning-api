@@ -11,6 +11,10 @@
     "test": "node --test test/api/*.test.js",
     "api:smoke": "powershell -ExecutionPolicy Bypass -File scripts/smoke-api.ps1",
     "api:test:live": "powershell -ExecutionPolicy Bypass -File scripts/live-api-full-test.ps1",
+    "api:read": "node scripts/live-read-probe.cjs",
+    "api:write": "node scripts/live-write-e2e.cjs",
+    "api:sweep": "node scripts/live-write-sweep.cjs",
+    "api:cleanup": "node scripts/live-cleanup.cjs",
     "docker:doctor": "powershell -ExecutionPolicy Bypass -File scripts/docker-doctor.ps1",
     "docker:up": "powershell -ExecutionPolicy Bypass -File scripts/docker-up.ps1",
     "docker:down": "powershell -ExecutionPolicy Bypass -File scripts/docker-down.ps1",
@@ -18,7 +22,10 @@
     "db:init:pg": "node scripts/init-postgres.js",
     "db:seed:pg": "node scripts/seed-postgres.js",
     "db:verify:pg": "node scripts/verify-postgres.js",
-    "db:migrate:sqlserver-to-pg": "node scripts/migrate-sqlserver-to-postgres.js"
+    "db:migrate:sqlserver-to-pg": "node scripts/migrate-sqlserver-to-postgres.js",
+    "api:authz": "node scripts/live-authz-probe.cjs",
+    "api:coverage": "node scripts/live-full-coverage.cjs",
+    "api:leftover": "node scripts/live-leftover-check.cjs"
   },
   "keywords": [],
   "author": "",

@@ -1,11 +1,17 @@
 const { pool } = require("../../config/db.config");
+const { parsePositiveInt } = require("../../utils/parseId");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const checkEnrollStatus = async (req, res) => {
-  const { uid, course_id } = req.params;
+  const course_id = parsePositiveInt(req.params.course_id);
 
-  if (!uid || !course_id) {
-    return res.status(400).json({ error: "Thiếu uid hoặc course_id" });
+  if (!course_id) {
+    return res.status(400).json({ error: "course_id không hợp lệ" });
   }
+
+  // Chỉ được kiểm tra trạng thái đăng ký của chính mình (admin kiểm tra được của người khác)
+  const uid = resolveActorUid(req, res, req.params.uid);
+  if (!uid) return;
 
   try {
     // Kiểm tra khóa học

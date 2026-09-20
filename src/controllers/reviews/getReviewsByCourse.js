@@ -1,8 +1,14 @@
 const { pool } = require("../../config/db.config");
+const { parsePositiveInt } = require("../../utils/parseId");
 
 const getReviewsByCourse = async (req, res) => {
+  const courseId = parsePositiveInt(req.params.courseId);
+
+  if (!courseId) {
+    return res.status(400).json({ error: "courseId không hợp lệ" });
+  }
+
   try {
-    const { courseId } = req.params;
 
     const result = await pool.query(
       `SELECT

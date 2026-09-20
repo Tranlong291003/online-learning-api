@@ -3,8 +3,23 @@ const cors = require("cors");
 const app = express();
 const path = require("path");
 
-app.use(cors());
-app.use(express.json());
+// CORS: cho phép mọi origin ở dev; production nên set CORS_ORIGIN env.
+const allowedOrigin = process.env.CORS_ORIGIN;
+app.use(cors(allowedOrigin ? { origin: allowedOrigin } : {}));
+
+// express.json với giới hạn body 1 MB để chống DoS bằng request body khổng lồ.
+// Giá trị 1 MB đủ cho mọi endpoint hiện tại (payload lớn nhất ~quiz answers ~10 KB).
+// Tăng lên nếu cần endpoint nhận payload lớn hơn.
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: false, limit: "1mb" }));
+
+// Express 5 để `req.body` là undefined khi request không có body (Express 4 luôn cho {}).
+// Rất nhiều controller đọc thẳng req.body.uid nên sẽ ném TypeError -> 500.
+// Chuẩn hoá về {} để giữ hành vi cũ; đặt SAU express.json() để không bị ghi đè.
+app.use((req, res, next) => {
+  if (req.body === undefined) req.body = {};
+  next();
+});
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -40,7 +55,8 @@ app.use("/api/bookmarks", bookmarksRouter); // API cho bookmark
 app.use("/api/mentor-requests", mentorRequestRouter);
 app.use("/api/app-stats", appStatsRouter);
 
-app.use("/uploads", express.static("src/public/uploads"));
+// Dùng path tuyệt đối để không phụ thuộc thư mục chạy lệnh (cwd)
+app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
 
 // Swagger UI - http://localhost:3000/api-docs
 // Test nhanh: bấm Authorize, nhập dev key (x-api-key) từ .env

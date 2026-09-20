@@ -7,9 +7,9 @@ const {
   withServer,
 } = require("../helpers/apiTestUtils");
 
-function authHeaders() {
+function authHeaders(payload) {
   return {
-    authorization: `Bearer ${signTestToken()}`,
+    authorization: `Bearer ${signTestToken(payload)}`,
   };
 }
 
@@ -45,12 +45,30 @@ test("POST /api/reviews/create returns 400 when required fields are missing", as
     const response = await json("/api/reviews/create", {
       method: "POST",
       headers: authHeaders(),
-      body: { user_uid: "user-1" },
+      body: { course_id: 1 },
     });
     const body = await response.json();
 
     assert.equal(response.status, 400);
-    assert.match(body.error, /course_id, user_uid và rating/);
+    assert.match(body.error, /course_id và rating/);
+    assert.equal(poolMock.calls.length, 0);
+  });
+});
+
+test("POST /api/reviews/create returns 400 when rating out of range (regression)", async () => {
+  const poolMock = createPoolMock();
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/reviews/create", {
+      method: "POST",
+      headers: authHeaders(),
+      body: { course_id: 1, rating: 9 },
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.match(body.error, /rating/);
     assert.equal(poolMock.calls.length, 0);
   });
 });
@@ -101,7 +119,8 @@ test("GET /api/reviews/course/1 returns 200 with review list", async () => {
     assert.equal(response.status, 200);
     assert.equal(body.data.length, 1);
     assert.equal(body.data[0].user_name, "User One");
-    assert.deepEqual(poolMock.calls[0].params, ["1"]);
+    // courseId được ép về số trước khi query
+    assert.deepEqual(poolMock.calls[0].params, [1]);
   });
 });
 
@@ -149,20 +168,40 @@ test("PUT /api/reviews/update/1 returns 200 and updates rating", async () => {
   });
 });
 
-test("PUT /api/reviews/update/1 returns 400 when user_uid missing", async () => {
+test("PUT /api/reviews/update/1 uses token uid when body omits it (regression)", async () => {
+  const poolMock = createPoolMock([
+    { rows: [{ user_uid: "user-1" }] },
+    { rows: [{ review_id: 1 }] },
+  ]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/reviews/update/1", {
+      method: "PUT",
+      headers: authHeaders({ uid: "user-1", role: "user" }),
+      body: { rating: 4 },
+    });
+
+    assert.equal(response.status, 200);
+    const call = poolMock.calls.find((c) =>
+      c.sql.toLowerCase().includes("select user_uid from course_reviews")
+    );
+    assert.ok(call, "phải kiểm tra chủ sở hữu bằng uid lấy từ token");
+  });
+});
+
+test("PUT /api/reviews/update/1 rejects spoofed user_uid (regression)", async () => {
   const poolMock = createPoolMock();
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
     const response = await json("/api/reviews/update/1", {
       method: "PUT",
-      headers: authHeaders(),
-      body: { rating: 4 },
+      headers: authHeaders({ uid: "student-1", role: "user" }),
+      body: { rating: 4, user_uid: "someone-else" },
     });
-    const body = await response.json();
 
-    assert.equal(response.status, 400);
-    assert.match(body.error, /user_uid/);
+    assert.equal(response.status, 403);
     assert.equal(poolMock.calls.length, 0);
   });
 });
@@ -246,20 +285,18 @@ test("DELETE /api/reviews/delete/1 returns 200 when owner deletes", async () => 
   });
 });
 
-test("DELETE /api/reviews/delete/1 returns 400 when user_uid missing", async () => {
+test("DELETE /api/reviews/delete/1 rejects spoofed user_uid (regression)", async () => {
   const poolMock = createPoolMock();
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
     const response = await json("/api/reviews/delete/1", {
       method: "DELETE",
-      headers: authHeaders(),
-      body: {},
+      headers: authHeaders({ uid: "student-1", role: "user" }),
+      body: { user_uid: "someone-else" },
     });
-    const body = await response.json();
 
-    assert.equal(response.status, 400);
-    assert.match(body.error, /user_uid/);
+    assert.equal(response.status, 403);
     assert.equal(poolMock.calls.length, 0);
   });
 });

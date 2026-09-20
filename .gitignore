@@ -1,5 +1,16 @@
 node_modules/
 .env
+# Mọi biến thể của .env (.env.bak, .env.local, .env.production...) đều chứa secret.
+# Dùng .env* rồi mở ngoại lệ cho các file mẫu không có giá trị thật.
+.env*
+!.env.example
+!.env.docker.example
 src/firebaseServiceAccountKey.json
 server.*.log
 src/public/uploads/
+
+# Local embedded PostgreSQL data dir (dùng cho test thủ công)
+.localdb/
+
+# Cấu hình local của công cụ soạn code (không phải cấu hình dự án)
+.claude/

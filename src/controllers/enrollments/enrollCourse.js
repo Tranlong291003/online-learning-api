@@ -1,12 +1,17 @@
 const { pool } = require("../../config/db.config");
 const { sendNotification } = require("../../services/notificationService");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const enrollCourse = async (req, res) => {
-  const { userUid, courseId } = req.body;
+  const { courseId } = req.body;
 
-  if (!userUid || !courseId) {
-    return res.status(400).json({ error: "Thiếu userUid hoặc courseId" });
+  if (!courseId) {
+    return res.status(400).json({ error: "Thiếu courseId" });
   }
+
+  // Lấy uid từ token; chỉ admin mới được đăng ký thay người khác
+  const userUid = resolveActorUid(req, res, req.body.userUid || req.body.uid);
+  if (!userUid) return;
 
   try {
     // Kiểm tra khóa học

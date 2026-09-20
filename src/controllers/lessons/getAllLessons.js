@@ -1,14 +1,16 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const getAllLessons = async (req, res) => {
-  const { course_id, userUid } = req.params;
+  const { course_id } = req.params;
 
   if (!course_id || isNaN(+course_id)) {
     return res.status(400).json({ error: "Tham số course_id không hợp lệ" });
   }
-  if (!userUid) {
-    return res.status(400).json({ error: "Tham số userUid bắt buộc" });
-  }
+
+  // userUid chỉ dùng để đánh dấu is_completed; chỉ được xem tiến độ của chính mình
+  const userUid = resolveActorUid(req, res, req.params.userUid);
+  if (!userUid) return;
 
   try {
     const result = await pool.query(

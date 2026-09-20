@@ -1,14 +1,15 @@
 const { pool } = require("../../config/db.config");
 const path = require("path");
 const fs = require("fs");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const updateLesson = async (req, res) => {
   const { lesson_id } = req.params;
-  const { title, video_url, content, order, uid } = req.body;
+  const { title, video_url, content, order } = req.body;
 
-  if (!uid) {
-    return res.status(400).json({ error: "UID không hợp lệ" });
-  }
+  // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
+  const uid = resolveActorUid(req, res, req.body.uid);
+  if (!uid) return;
 
   try {
     // Kiểm tra vai trò
@@ -33,6 +34,12 @@ const updateLesson = async (req, res) => {
     }
 
     const current = currentResult.rows[0];
+
+    // Mentor chỉ được sửa bài học do mình tạo (giống deleteLesson).
+    // Không kiểm tra thì mentor bất kỳ sửa được nội dung bài học của mentor khác.
+    if (userRole === "mentor" && current.creator_uid !== uid) {
+      return res.status(403).json({ error: "Bạn chỉ được cập nhật bài học do bạn tạo" });
+    }
 
     // Xử lý file
     let newPdfUrl = current.pdf_url;

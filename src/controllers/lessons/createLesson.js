@@ -1,6 +1,7 @@
 require("dotenv").config();
 const { pool } = require("../../config/db.config");
 const axios = require("axios");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const extractVideoId = (url) => {
   const m = /(?:v=|\/)([A-Za-z0-9_-]{11})/.exec(url || "");
@@ -8,7 +9,11 @@ const extractVideoId = (url) => {
 };
 
 const parseISODuration = (iso) => {
+  // YouTube có thể trả contentDetails.duration = undefined (live stream, video
+  // đang xử lý). Gọi .match() trên undefined sẽ ném TypeError -> 500.
+  if (typeof iso !== "string") return 0;
   const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!m) return 0;
   const h = parseInt(m[1] || 0, 10);
   const min = parseInt(m[2] || 0, 10);
   const s = parseInt(m[3] || 0, 10);
@@ -23,13 +28,17 @@ const formatDuration = (sec) => {
 };
 
 const createLesson = async (req, res) => {
-  const { course_id, title, video_url, content, order, uid } = req.body;
+  const { course_id, title, video_url, content, order } = req.body;
 
-  if (!course_id || !title || !uid) {
+  if (!course_id || !title) {
     return res.status(400).json({
-      error: "Các trường course_id, title và uid là bắt buộc",
+      error: "Các trường course_id và title là bắt buộc",
     });
   }
+
+  // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
+  const uid = resolveActorUid(req, res, req.body.uid);
+  if (!uid) return;
 
   let videoId = null;
   let durationInfo = null;

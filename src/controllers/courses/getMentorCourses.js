@@ -66,16 +66,18 @@ const getMentorCourses = async (req, res) => {
                 CAST(SUBSTRING(video_duration, 1, 2) AS INT) * 3600 +
                 CAST(SUBSTRING(video_duration, 4, 2) AS INT) * 60 +
                 CAST(SUBSTRING(video_duration, 7, 2) AS INT)
+              WHEN video_duration ~ '^[0-9]{2}:[0-9]{2}$' THEN
+                CAST(SUBSTRING(video_duration, 1, 2) AS INT) * 60 +
+                CAST(SUBSTRING(video_duration, 4, 2) AS INT)
               ELSE 0
             END
           ) as total_seconds
         FROM lessons
-        WHERE video_duration IS NOT NULL
         GROUP BY course_id
       ) l ON l.course_id = c.course_id
 
       WHERE c.instructor_uid = $1
-      ORDER BY c.updated_at DESC
+      ORDER BY c.updated_at DESC NULLS LAST, c.created_at DESC
     `;
 
     const result = await pool.query(sqlQuery, [instructor_uid]);

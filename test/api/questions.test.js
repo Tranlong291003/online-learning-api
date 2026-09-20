@@ -220,8 +220,10 @@ test("POST /api/questions/createbyai returns 201 with OpenAI-generated questions
   const poolMock = createPoolMock([
     { rows: [{ role: "admin" }] },
     { rows: [{ type: "trac_nghiem" }] },
-    { rows: [] },
-    { rows: [] },
+    { rows: [] }, // BEGIN
+    { rows: [{ question_id: 11 }] },
+    { rows: [{ question_id: 12 }] },
+    { rows: [] }, // COMMIT
   ]);
   const { app } = loadApp({
     poolMock,
@@ -291,19 +293,19 @@ test("POST /api/questions/createbyai returns 400 for invalid difficulty", async 
   });
 });
 
-test("POST /api/questions/createbyai returns 400 when uid/quiz_id/topic missing", async () => {
+test("POST /api/questions/createbyai returns 400 when quiz_id/topic missing", async () => {
   const { app } = loadApp({ poolMock: createPoolMock() });
 
   await withServer(app, async ({ json }) => {
     const response = await json("/api/questions/createbyai", {
       method: "POST",
       headers: authHeaders(),
-      body: { uid: "admin-1", difficulty: "easy" },
+      body: { difficulty: "easy" },
     });
     const body = await response.json();
 
     assert.equal(response.status, 400);
-    assert.equal(body.error, "Thiếu uid, quiz_id hoặc topic");
+    assert.equal(body.error, "Thiếu quiz_id hoặc topic");
   });
 });
 
@@ -349,6 +351,56 @@ test("POST /api/questions/createbyai returns 404 when quiz missing", async () =>
     assert.equal(response.status, 404);
     assert.equal(body.error, "Quiz không tồn tại");
   });
+});
+
+test("POST /api/questions/createbyai rejects an oversized number (regression: OOM crash)", async () => {
+  const poolMock = createPoolMock();
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/questions/createbyai", {
+      method: "POST",
+      headers: authHeaders(),
+      body: {
+        uid: "admin-1",
+        quiz_id: 1,
+        topic: "Toán học",
+        difficulty: "easy",
+        number: 1000000,
+      },
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.match(body.error, /Số lượng câu hỏi không hợp lệ/);
+    // Bị chặn trước khi chạm tới OpenAI/DB: không query nào được chạy.
+    assert.equal(poolMock.calls.length, 0);
+  });
+});
+
+test("POST /api/questions/createbyai rejects non-integer number values", async () => {
+  for (const badNumber of [0, -1, 1.5, "abc", 21]) {
+    const poolMock = createPoolMock();
+    const { app } = loadApp({ poolMock });
+
+    await withServer(app, async ({ json }) => {
+      const response = await json("/api/questions/createbyai", {
+        method: "POST",
+        headers: authHeaders(),
+        body: {
+          uid: "admin-1",
+          quiz_id: 1,
+          topic: "Toán học",
+          difficulty: "easy",
+          number: badNumber,
+        },
+      });
+      const body = await response.json();
+
+      assert.equal(response.status, 400, `number=${badNumber} phải bị từ chối`);
+      assert.match(body.error, /Số lượng câu hỏi không hợp lệ/);
+    });
+  }
 });
 
 test("PUT /api/questions/update/1 keeps old expected_keywords for tu_luan", async () => {
@@ -465,19 +517,19 @@ test("PUT /api/questions/update/1 returns 400 when correct_index out of range", 
   });
 });
 
-test("PUT /api/questions/update/1 requires uid", async () => {
-  const { app } = loadApp({ poolMock: createPoolMock() });
+test("PUT /api/questions/update/1 rejects spoofed uid (regression)", async () => {
+  const poolMock = createPoolMock();
+  const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
     const response = await json("/api/questions/update/1", {
       method: "PUT",
-      headers: authHeaders(),
-      body: { question: "New question" },
+      headers: authHeaders({ uid: "student-1", role: "user" }),
+      body: { question: "New question", uid: "admin-1" },
     });
-    const body = await response.json();
 
-    assert.equal(response.status, 400);
-    assert.equal(body.error, "UID không hợp lệ");
+    assert.equal(response.status, 403);
+    assert.equal(poolMock.calls.length, 0);
   });
 });
 
@@ -537,19 +589,19 @@ test("DELETE /api/questions/delete/1 returns 200", async () => {
   });
 });
 
-test("DELETE /api/questions/delete/1 returns 400 when uid missing", async () => {
-  const { app } = loadApp({ poolMock: createPoolMock() });
+test("DELETE /api/questions/delete/1 rejects spoofed uid (regression)", async () => {
+  const poolMock = createPoolMock();
+  const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
     const response = await json("/api/questions/delete/1", {
       method: "DELETE",
-      headers: authHeaders(),
-      body: {},
+      headers: authHeaders({ uid: "student-1", role: "user" }),
+      body: { uid: "admin-1" },
     });
-    const body = await response.json();
 
-    assert.equal(response.status, 400);
-    assert.equal(body.error, "UID không hợp lệ");
+    assert.equal(response.status, 403);
+    assert.equal(poolMock.calls.length, 0);
   });
 });
 

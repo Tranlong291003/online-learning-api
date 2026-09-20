@@ -1,18 +1,24 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const getCourseProgressForUser = async (req, res) => {
   const payload = {
     ...(req.query || {}),
     ...(req.body || {}),
   };
-  const userUid = payload.userUid || payload.user_uid || payload.uid;
   const courseId = payload.courseId || payload.course_id;
 
-  if (!userUid || !courseId) {
-    return res
-      .status(400)
-      .json({ error: "Thiếu userUid hoặc courseId" });
+  if (!courseId) {
+    return res.status(400).json({ error: "Thiếu courseId" });
   }
+
+  // Lấy uid từ token; chỉ admin mới được xem tiến độ của người khác
+  const userUid = resolveActorUid(
+    req,
+    res,
+    payload.userUid || payload.user_uid || payload.uid
+  );
+  if (!userUid) return;
 
   try {
     // Tổng số bài học

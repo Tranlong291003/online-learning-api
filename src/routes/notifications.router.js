@@ -12,8 +12,11 @@ router.post("/create", notificationController.createNotification);
 // Endpoint để lấy thông báo của user
 router.post("/", notificationController.getNotifications);
 
-// Endpoint để đánh dấu thông báo đã đọc
+// Endpoint để đánh dấu thông báo đã đọc (noti_id nằm trong body)
 router.post("/mark-read", notificationController.markAsRead);
+
+// Endpoint để đánh dấu đã đọc theo noti_id trên URL
+router.put("/update/:id", notificationController.updateNotification);
 
 // Endpoint để xóa thông báo
 router.delete("/delete/:id", notificationController.deleteNotification);

@@ -1,12 +1,17 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const deleteNotification = async (req, res) => {
-  const { uid } = req.body;
+  // noti_id là UUID trong DB — không ép về số
   const notiId = req.params.id;
 
-  if (!uid) {
-    return res.status(400).json({ error: "Thiếu uid" });
+  if (!notiId) {
+    return res.status(400).json({ error: "Thiếu noti_id" });
   }
+
+  // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
+  const uid = resolveActorUid(req, res, req.body.uid);
+  if (!uid) return;
 
   try {
     const result = await pool.query(

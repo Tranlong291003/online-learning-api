@@ -48,7 +48,8 @@ test("GET /api/quizzes/getquizbycoures/1 returns quizzes with stats", async () =
     assert.equal(body.data[0].average_score, "7.50");
     assert.equal(body.data[0].passing_rate, "80.00");
     assert.match(poolMock.calls[0].sql, /FROM quizzes q/);
-    assert.equal(poolMock.calls[0].params[0], "1");
+    // course_id được ép về số trước khi query
+    assert.equal(poolMock.calls[0].params[0], 1);
   });
 });
 
@@ -183,19 +184,19 @@ test("PUT /api/quizzes/update/1 returns 200", async () => {
   });
 });
 
-test("PUT /api/quizzes/update/1 returns 400 when uid missing", async () => {
-  const { app } = loadApp({ poolMock: createPoolMock() });
+test("PUT /api/quizzes/update/1 rejects spoofed uid (regression)", async () => {
+  const poolMock = createPoolMock();
+  const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
     const response = await json("/api/quizzes/update/1", {
       method: "PUT",
-      headers: authHeaders(),
-      body: { title: "New title" },
+      headers: authHeaders({ uid: "student-1", role: "user" }),
+      body: { title: "New title", uid: "admin-1" },
     });
-    const body = await response.json();
 
-    assert.equal(response.status, 400);
-    assert.equal(body.error, "Thiếu UID người dùng");
+    assert.equal(response.status, 403);
+    assert.equal(poolMock.calls.length, 0);
   });
 });
 
@@ -271,19 +272,19 @@ test("DELETE /api/quizzes/delete/1 returns 200 and deletes quiz_results BEFORE q
   });
 });
 
-test("DELETE /api/quizzes/delete/1 returns 400 when uid missing", async () => {
-  const { app } = loadApp({ poolMock: createPoolMock() });
+test("DELETE /api/quizzes/delete/1 rejects spoofed uid (regression)", async () => {
+  const poolMock = createPoolMock();
+  const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
     const response = await json("/api/quizzes/delete/1", {
       method: "DELETE",
-      headers: authHeaders(),
-      body: {},
+      headers: authHeaders({ uid: "student-1", role: "user" }),
+      body: { uid: "admin-1" },
     });
-    const body = await response.json();
 
-    assert.equal(response.status, 400);
-    assert.equal(body.error, "Thiếu UID người dùng");
+    assert.equal(response.status, 403);
+    assert.equal(poolMock.calls.length, 0);
   });
 });
 

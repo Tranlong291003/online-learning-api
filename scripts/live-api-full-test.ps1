@@ -98,7 +98,7 @@ Invoke-Api "GET" "/api/lessons/detail/$readLessonId" | Out-Null
 Invoke-Api "GET" "/api/enrollments/user/$userUid" | Out-Null
 Invoke-Api "GET" "/api/enrollments/check/$userUid/$readCourseId" | Out-Null
 Invoke-Api "GET" "/api/enrollments/progress?userUid=$userUid&courseId=$readCourseId" | Out-Null
-Invoke-Api "GET" "/api/quizzes/getquizbycoures/$readCourseId" | Out-Null
+Invoke-Api "GET" "/api/quizzes/getquizbycourse/$readCourseId" | Out-Null
 Invoke-Api "GET" "/api/quizzes/getquizuser/$userUid" | Out-Null
 Invoke-Api "GET" "/api/questions/$readQuizId" | Out-Null
 Invoke-Api "GET" "/api/quiz-results/users/$userUid/results" | Out-Null

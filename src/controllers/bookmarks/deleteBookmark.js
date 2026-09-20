@@ -1,11 +1,16 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const deleteBookmark = async (req, res) => {
   try {
-    const { bookmarkId, userUid } = req.body;
-    if (!bookmarkId || !userUid) {
-      return res.status(400).json({ error: "bookmarkId và userUid là bắt buộc" });
+    const { bookmarkId } = req.body;
+    if (!bookmarkId) {
+      return res.status(400).json({ error: "bookmarkId là bắt buộc" });
     }
+
+    // Lấy uid từ token; chỉ admin mới được xóa bookmark thay người khác
+    const userUid = resolveActorUid(req, res, req.body.userUid || req.body.uid);
+    if (!userUid) return;
 
     // Kiểm tra tồn tại và chủ sở hữu
     const check = await pool.query(

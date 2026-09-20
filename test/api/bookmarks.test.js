@@ -7,9 +7,9 @@ const {
   withServer,
 } = require("../helpers/apiTestUtils");
 
-function authHeaders() {
+function authHeaders(payload) {
   return {
-    authorization: `Bearer ${signTestToken()}`,
+    authorization: `Bearer ${signTestToken(payload)}`,
   };
 }
 
@@ -81,7 +81,7 @@ test("POST /api/bookmarks/create returns 201 with bookmark_id", async () => {
   });
 });
 
-test("POST /api/bookmarks/create returns 400 when fields missing", async () => {
+test("POST /api/bookmarks/create returns 400 when courseId missing", async () => {
   const poolMock = createPoolMock();
   const { app } = loadApp({ poolMock });
 
@@ -94,7 +94,23 @@ test("POST /api/bookmarks/create returns 400 when fields missing", async () => {
     const body = await response.json();
 
     assert.equal(response.status, 400);
-    assert.match(body.error, /courseId và userUid/);
+    assert.match(body.error, /courseId/);
+    assert.equal(poolMock.calls.length, 0);
+  });
+});
+
+test("POST /api/bookmarks/create ignores a spoofed userUid for a non-admin", async () => {
+  const poolMock = createPoolMock();
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/bookmarks/create", {
+      method: "POST",
+      headers: authHeaders({ uid: "user-1", role: "user" }),
+      body: { courseId: 3, userUid: "victim-2" },
+    });
+
+    assert.equal(response.status, 403);
     assert.equal(poolMock.calls.length, 0);
   });
 });
@@ -143,7 +159,7 @@ test("DELETE /api/bookmarks/delete returns 200 when owner deletes", async () => 
   });
 });
 
-test("DELETE /api/bookmarks/delete returns 400 when fields missing", async () => {
+test("DELETE /api/bookmarks/delete returns 400 when bookmarkId missing", async () => {
   const poolMock = createPoolMock();
   const { app } = loadApp({ poolMock });
 
@@ -156,7 +172,23 @@ test("DELETE /api/bookmarks/delete returns 400 when fields missing", async () =>
     const body = await response.json();
 
     assert.equal(response.status, 400);
-    assert.match(body.error, /bookmarkId và userUid/);
+    assert.match(body.error, /bookmarkId/);
+    assert.equal(poolMock.calls.length, 0);
+  });
+});
+
+test("DELETE /api/bookmarks/delete ignores a spoofed userUid for a non-admin", async () => {
+  const poolMock = createPoolMock();
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/bookmarks/delete", {
+      method: "DELETE",
+      headers: authHeaders({ uid: "user-1", role: "user" }),
+      body: { bookmarkId: 5, userUid: "victim-2" },
+    });
+
+    assert.equal(response.status, 403);
     assert.equal(poolMock.calls.length, 0);
   });
 });

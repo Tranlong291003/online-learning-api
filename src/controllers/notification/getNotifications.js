@@ -1,11 +1,14 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const getNotifications = async (req, res) => {
-  const { uid } = req.body;
+  // Chấp nhận uid ở query (GET) hoặc body (POST) cho tương thích FE
+  const claimedUid =
+    (req.query && req.query.uid) || (req.body && req.body.uid);
 
-  if (!uid) {
-    return res.status(400).json({ error: "Thiếu uid" });
-  }
+  // Lấy uid từ token; chỉ admin mới được xem thông báo của người khác
+  const uid = resolveActorUid(req, res, claimedUid);
+  if (!uid) return;
 
   try {
     const result = await pool.query(

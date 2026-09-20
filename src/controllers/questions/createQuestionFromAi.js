@@ -1,5 +1,6 @@
 const { pool } = require("../../config/db.config");
 const { OpenAI } = require("openai");
+const { resolveActorUid } = require("../../middleware/actor");
 
 function getOpenAIClient() {
   if (!process.env.OPENAI_API_KEY) {
@@ -15,18 +16,32 @@ const createQuestionFromAi = async (req, res) => {
     number = 3,
     difficulty,
     type = "trac_nghiem",
-    uid,
     language = "vi",
   } = req.body;
 
-  if (!uid || !quiz_id || !topic) {
-    return res.status(400).json({ error: "Thiếu uid, quiz_id hoặc topic" });
+  if (!quiz_id || !topic) {
+    return res.status(400).json({ error: "Thiếu quiz_id hoặc topic" });
   }
+
+  // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
+  const uid = resolveActorUid(req, res, req.body.uid);
+  if (!uid) return;
 
   const allowedDifficulties = ["easy", "medium", "hard"];
   if (!allowedDifficulties.includes(difficulty)) {
     return res.status(400).json({
       error: "Giá trị difficulty không hợp lệ. Chỉ chấp nhận: easy, medium, hard",
+    });
+  }
+
+  // `number` được dùng trực tiếp làm độ dài mảng gọi OpenAI song song, nên phải
+  // chặn ở đây: một số lớn (vd 1e6) sẽ tạo hàng trăm nghìn request đồng thời và
+  // làm cạn heap của tiến trình Node (server sập OOM).
+  const MAX_AI_QUESTIONS = 20;
+  const count = Number(number);
+  if (!Number.isInteger(count) || count < 1 || count > MAX_AI_QUESTIONS) {
+    return res.status(400).json({
+      error: `Số lượng câu hỏi không hợp lệ. Chỉ chấp nhận số nguyên từ 1 đến ${MAX_AI_QUESTIONS}`,
     });
   }
   const difficultyMap = { easy: "dễ", medium: "trung bình", hard: "khó" };
@@ -79,7 +94,7 @@ Yêu cầu:
 
     // Gửi nhiều request song song
     const aiResponses = await Promise.all(
-      Array.from({ length: number }).map(() =>
+      Array.from({ length: count }).map(() =>
         openai.chat.completions.create({
           model: "gpt-3.5-turbo",
           messages: [{ role: "user", content: singlePrompt(topic, difficultyText) }],
@@ -127,27 +142,63 @@ Yêu cầu:
       }
     }
 
-    // Lưu vào DB
-    await Promise.all(
-      questions.map(async (q) => {
-        const question = q.question;
-        const options = type === "trac_nghiem" ? JSON.stringify(q.options) : null;
-        const correct_index = type === "trac_nghiem" ? q.correct_index - 1 : null;
-        await pool.query(
-          `INSERT INTO quiz_questions (quiz_id, question, options, correct_index, created_at)
-           VALUES ($1, $2, $3, $4, NOW())`,
-          [quiz_id, question, options, correct_index]
-        );
-      })
-    );
+    // Lưu vào DB trong 1 transaction: nếu 1 câu lỗi thì không để lại dữ liệu rác
+    const client = await pool.connect();
+    let savedQuestions;
+    try {
+      await client.query("BEGIN");
+      savedQuestions = await Promise.all(
+        questions.map(async (q) => {
+          const question = q.question;
+          const options = type === "trac_nghiem" ? JSON.stringify(q.options) : null;
+          const correct_index = type === "trac_nghiem" ? q.correct_index - 1 : null;
+          const inserted = await client.query(
+            `INSERT INTO quiz_questions (quiz_id, question, options, correct_index, created_at)
+             VALUES ($1, $2, $3, $4, NOW())
+             RETURNING question_id`,
+            [quiz_id, question, options, correct_index]
+          );
+          return { ...q, question_id: inserted.rows[0].question_id };
+        })
+      );
+      await client.query("COMMIT");
+    } catch (txErr) {
+      await client.query("ROLLBACK");
+      throw txErr;
+    } finally {
+      client.release();
+    }
 
     res.status(201).json({
       message: `✅ Đã tạo thành công ${questions.length} câu hỏi từ AI`,
       topic,
-      questions,
+      questions: savedQuestions,
     });
   } catch (err) {
     console.error("Lỗi tạo câu hỏi từ AI:", err);
+
+    // Dịch vụ AI bên ngoài hỏng/hết credit/hết hạn mức là lỗi phía upstream,
+    // không phải lỗi của API này -> trả 503 để client biết là tạm thời,
+    // thay vì 500 khiến người dùng tưởng server mình hỏng.
+    const upstreamStatus = err?.status || err?.response?.status;
+    if (upstreamStatus === 429) {
+      return res.status(503).json({
+        error:
+          "Dịch vụ AI tạm thời không khả dụng (hết hạn mức). Vui lòng thử lại sau hoặc dùng tạo câu hỏi thủ công.",
+      });
+    }
+    if (upstreamStatus === 401 || upstreamStatus === 403) {
+      return res.status(503).json({
+        error:
+          "Dịch vụ AI tạm thời không khả dụng (API key không hợp lệ). Vui lòng kiểm tra cấu hình OPENAI_API_KEY.",
+      });
+    }
+    if (upstreamStatus >= 500 || err?.code === "ETIMEDOUT" || err?.code === "ECONNREFUSED") {
+      return res.status(503).json({
+        error: "Dịch vụ AI tạm thời không khả dụng. Vui lòng thử lại sau.",
+      });
+    }
+
     res.status(500).json({ error: "Lỗi khi tạo câu hỏi từ AI: " + err.message });
   }
 };

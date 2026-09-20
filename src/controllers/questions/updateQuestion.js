@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const updateQuestion = async (req, res) => {
   const { question_id } = req.params;
@@ -8,12 +9,11 @@ const updateQuestion = async (req, res) => {
     options,
     correct_index,
     expected_keywords,
-    uid,
   } = req.body;
 
-  if (!uid) {
-    return res.status(400).json({ error: "UID không hợp lệ" });
-  }
+  // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
+  const uid = resolveActorUid(req, res, req.body.uid);
+  if (!uid) return;
 
   try {
     // Kiểm tra quyền
