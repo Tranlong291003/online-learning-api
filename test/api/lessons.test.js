@@ -136,7 +136,7 @@ test("POST /api/lessons/create returns 400 when fields missing", async () => {
     assert.equal(response.status, 400);
     assert.equal(
       body.error,
-      "Các trường course_id, title và uid là bắt buộc"
+      "Các trường course_id và title là bắt buộc"
     );
   });
 });
@@ -230,19 +230,19 @@ test("PUT /api/lessons/update/1 returns 200", async () => {
   });
 });
 
-test("PUT /api/lessons/update/1 returns 400 when uid missing", async () => {
-  const { app } = loadApp();
+test("PUT /api/lessons/update/1 rejects spoofed uid (regression)", async () => {
+  const poolMock = createPoolMock([]);
+  const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
     const response = await json("/api/lessons/update/1", {
       method: "PUT",
-      headers: authHeaders(),
-      body: { title: "New title" },
+      headers: authHeaders({ uid: "student-1", role: "user" }),
+      body: { title: "New title", uid: "admin-1" },
     });
-    const body = await response.json();
 
-    assert.equal(response.status, 400);
-    assert.equal(body.error, "UID không hợp lệ");
+    assert.equal(response.status, 403);
+    assert.equal(poolMock.calls.length, 0);
   });
 });
 
@@ -452,6 +452,34 @@ test("POST /api/lessons/complete returns 200 with insert status", async () => {
   });
 });
 
+test("POST /api/lessons/complete dùng đúng ON CONFLICT target của DB thật", async () => {
+  // DB thật chỉ có unique (user_uid, course_id, lesson_id) và lesson_progress
+  // KHÔNG có cột created_at. Sai target -> lỗi 42P10; cột lạ -> 42703.
+  const completeSql = sqlMock((sql) => {
+    const q = sql.toLowerCase();
+    if (q.includes("select 1 from lessons")) return { rows: [{ exists: 1 }] };
+    if (q.includes("select 1 from enrollments")) return { rows: [{ exists: 1 }] };
+    if (q.includes("insert into lesson_progress")) return { rows: [{ action: "INSERT" }] };
+    return { rows: [] };
+  });
+  const poolMock = createPoolMock(completeSql);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/lessons/complete", {
+      method: "POST",
+      headers: authHeaders(),
+      body: { userUid: "user-1", courseId: 1, lessonId: 5 },
+    });
+    assert.equal(response.status, 200);
+  });
+
+  const insert = poolMock.calls.find((c) => /insert into lesson_progress/i.test(c.sql));
+  assert.ok(insert, "phải có câu INSERT lesson_progress");
+  assert.match(insert.sql, /ON CONFLICT \(user_uid, course_id, lesson_id\)/i);
+  assert.doesNotMatch(insert.sql, /created_at/i, "lesson_progress không có cột created_at");
+});
+
 test("POST /api/lessons/complete returns 400 when fields missing", async () => {
   const { app } = loadApp();
 
@@ -464,7 +492,23 @@ test("POST /api/lessons/complete returns 400 when fields missing", async () => {
     const body = await response.json();
 
     assert.equal(response.status, 400);
-    assert.equal(body.error, "Thiếu userUid, courseId hoặc lessonId");
+    assert.equal(body.error, "Thiếu courseId hoặc lessonId");
+  });
+});
+
+test("POST /api/lessons/complete ignores a spoofed userUid for a non-admin", async () => {
+  const poolMock = createPoolMock();
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/lessons/complete", {
+      method: "POST",
+      headers: authHeaders({ uid: "user-1", role: "user" }),
+      body: { userUid: "victim-2", courseId: 1, lessonId: 5 },
+    });
+
+    assert.equal(response.status, 403);
+    assert.equal(poolMock.calls.length, 0);
   });
 });
 

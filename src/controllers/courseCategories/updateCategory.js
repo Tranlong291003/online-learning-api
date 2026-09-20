@@ -1,6 +1,8 @@
 const { pool } = require("../../config/db.config");
 const fs = require("fs");
 const path = require("path");
+const { resolveActorUid } = require("../../middleware/actor");
+const { parsePositiveInt } = require("../../utils/parseId");
 
 const removeOldIcon = (oldIconPath) => {
   if (!oldIconPath) return;
@@ -10,12 +12,18 @@ const removeOldIcon = (oldIconPath) => {
 
 const updateCategory = async (req, res) => {
   try {
-    const { category_id } = req.params;
-    const { name, description, uid } = req.body;
+    const category_id = parsePositiveInt(req.params.category_id);
+    const { name, description } = req.body;
     const iconFile = req.file;
 
+    if (!category_id) {
+      return res.status(400).json({ error: "category_id không hợp lệ" });
+    }
     if (!name) return res.status(400).json({ error: "Tên danh mục không được bỏ trống" });
-    if (!uid) return res.status(400).json({ error: "UID không được bỏ trống" });
+
+    // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
+    const uid = resolveActorUid(req, res, req.body.uid);
+    if (!uid) return;
 
     // Kiểm quyền
     const roleResult = await pool.query(
@@ -39,20 +47,32 @@ const updateCategory = async (req, res) => {
     }
 
     // Update
+    let updateResult;
     if (iconFile) {
       const newIcon = `/uploads/categories/${iconFile.filename}`;
-      await pool.query(
-        "UPDATE course_categories SET name = $1, description = $2, icon = $3, updated_at = NOW() WHERE category_id = $4",
+      updateResult = await pool.query(
+        `UPDATE course_categories SET name = $1, description = $2, icon = $3, updated_at = NOW()
+         WHERE category_id = $4
+         RETURNING category_id, name, description, icon`,
         [name, description, newIcon, category_id]
       );
     } else {
-      await pool.query(
-        "UPDATE course_categories SET name = $1, description = $2, updated_at = NOW() WHERE category_id = $3",
+      updateResult = await pool.query(
+        `UPDATE course_categories SET name = $1, description = $2, updated_at = NOW()
+         WHERE category_id = $3
+         RETURNING category_id, name, description, icon`,
         [name, description, category_id]
       );
     }
 
-    return res.status(200).json({ message: "✅ Cập nhật thành công" });
+    if (updateResult.rows.length === 0) {
+      return res.status(404).json({ error: "Không tìm thấy danh mục" });
+    }
+
+    return res.status(200).json({
+      message: "✅ Cập nhật thành công",
+      data: updateResult.rows[0],
+    });
   } catch (err) {
     return res.status(500).json({ error: "❌ Lỗi cập nhật: " + err.message });
   }

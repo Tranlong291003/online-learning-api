@@ -1,11 +1,16 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const markAsRead = async (req, res) => {
-  const { uid, noti_id } = req.body;
+  const { noti_id } = req.body;
 
-  if (!uid || !noti_id) {
-    return res.status(400).json({ error: "Thiếu uid hoặc noti_id" });
+  if (!noti_id) {
+    return res.status(400).json({ error: "Thiếu noti_id" });
   }
+
+  // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
+  const uid = resolveActorUid(req, res, req.body.uid);
+  if (!uid) return;
 
   try {
     const result = await pool.query(

@@ -1,13 +1,13 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const deleteReview = async (req, res) => {
   try {
     const { reviewId } = req.params;
-    const { user_uid } = req.body;
 
-    if (!user_uid) {
-      return res.status(400).json({ error: "user_uid không được bỏ trống" });
-    }
+    // Lấy uid từ token; chỉ admin mới được xoá review thay người khác
+    const user_uid = resolveActorUid(req, res, req.body.user_uid);
+    if (!user_uid) return;
 
     // Kiểm tra tồn tại và chủ sở hữu
     const chk = await pool.query(

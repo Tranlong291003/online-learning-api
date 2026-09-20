@@ -1,11 +1,16 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const createNotification = async (req, res) => {
-  const { uid, title, content, icon, color } = req.body;
+  const { title, content, icon, color } = req.body;
 
-  if (!uid || !title || !content) {
-    return res.status(400).json({ error: "Thiếu uid, title hoặc content" });
+  if (!title || !content) {
+    return res.status(400).json({ error: "Thiếu title hoặc content" });
   }
+
+  // Lấy uid từ token; chỉ admin mới được tạo thông báo cho người khác
+  const uid = resolveActorUid(req, res, req.body.uid);
+  if (!uid) return;
 
   try {
     const result = await pool.query(

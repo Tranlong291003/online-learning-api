@@ -1,8 +1,10 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const getQuizResultsByUser = async (req, res) => {
-  const { user_uid } = req.params;
-  if (!user_uid) return res.status(400).json({ error: "Thiếu user_uid" });
+  // Chỉ được xem kết quả của chính mình (admin xem được của người khác)
+  const user_uid = resolveActorUid(req, res, req.params.user_uid);
+  if (!user_uid) return;
 
   try {
     const listRes = await pool.query(
@@ -25,7 +27,8 @@ const getQuizResultsByUser = async (req, res) => {
       results: listRes.rows.map((r) => ({
         ...r,
         passed: !!parseInt(r.passed),
-        submitted_at: r.submitted_at.toISOString(),
+        // submitted_at có thể NULL ở dữ liệu cũ, không được gọi toISOString trực tiếp
+        submitted_at: r.submitted_at ? new Date(r.submitted_at).toISOString() : null,
       })),
     });
   } catch (err) {

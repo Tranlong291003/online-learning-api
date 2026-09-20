@@ -4,6 +4,25 @@ const deleteEnrollment = async (req, res) => {
   try {
     const { enrollment_id } = req.params;
 
+    // Chỉ chủ sở hữu hoặc admin mới được huỷ đăng ký
+    const actorUid = req.user && req.user.uid;
+    if (!actorUid) {
+      return res.status(401).json({ error: "Không xác định được người dùng từ token" });
+    }
+
+    const owner = await pool.query(
+      "SELECT user_uid FROM enrollments WHERE enrollment_id = $1",
+      [enrollment_id]
+    );
+
+    if (owner.rows.length === 0) {
+      return res.status(404).json({ error: "❌ Không tìm thấy đăng ký để huỷ" });
+    }
+
+    if (req.user.role !== "admin" && owner.rows[0].user_uid !== actorUid) {
+      return res.status(403).json({ error: "Bạn không có quyền huỷ đăng ký của người khác" });
+    }
+
     const result = await pool.query(
       "DELETE FROM enrollments WHERE enrollment_id = $1 RETURNING enrollment_id",
       [enrollment_id]

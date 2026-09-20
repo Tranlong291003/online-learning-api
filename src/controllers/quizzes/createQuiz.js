@@ -1,15 +1,16 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const createQuiz = async (req, res) => {
-  const { course_id, title, type, time_limit, attempt_limit, uid } = req.body;
+  const { course_id, title, type, time_limit, attempt_limit } = req.body;
 
   if (!course_id || !title) {
     return res.status(400).json({ error: "Thiếu thông tin khóa học hoặc tiêu đề" });
   }
 
-  if (!uid) {
-    return res.status(400).json({ error: "UID không hợp lệ" });
-  }
+  // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
+  const uid = resolveActorUid(req, res, req.body.uid);
+  if (!uid) return;
 
   try {
     // Kiểm tra vai trò

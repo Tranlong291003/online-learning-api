@@ -60,19 +60,35 @@ test("POST /api/quiz-results/submit returns 201 with auto-graded score", async (
   });
 });
 
-test("POST /api/quiz-results/submit returns 400 when fields missing", async () => {
+test("POST /api/quiz-results/submit returns 400 when quiz_id missing", async () => {
   const { app } = loadApp({ poolMock: createPoolMock() });
 
   await withServer(app, async ({ json }) => {
     const response = await json("/api/quiz-results/submit", {
       method: "POST",
       headers: authHeaders(),
-      body: { quiz_id: 1, answers: {} },
+      body: { answers: {} },
     });
     const body = await response.json();
 
     assert.equal(response.status, 400);
-    assert.equal(body.error, "Thiếu user_uid, quiz_id hoặc câu trả lời");
+    assert.equal(body.error, "Thiếu quiz_id hoặc câu trả lời");
+  });
+});
+
+test("POST /api/quiz-results/submit ignores a spoofed uid for a non-admin", async () => {
+  const poolMock = createPoolMock([{ rows: [{ type: "trac_nghiem" }] }]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/quiz-results/submit", {
+      method: "POST",
+      headers: authHeaders({ uid: "student-1", role: "user" }),
+      body: { quiz_id: 1, answers: { 1: 0 }, uid: "victim-2" },
+    });
+
+    assert.equal(response.status, 403);
+    assert.equal(poolMock.calls.length, 0);
   });
 });
 
@@ -220,9 +236,9 @@ test("GET /api/quiz-results/1 returns 404 when result missing", async () => {
   });
 });
 
-test("PATCH /api/quiz-results/quiz-results/1/grade returns 200 with graded_by_uid", async () => {
+test("PATCH /api/quiz-results/quiz-results/1/grade returns 200 and sets graded_by", async () => {
   const poolMock = createPoolMock([
-    { rows: [{ uid: "mentor-1", role: "mentor" }] },
+    { rows: [{ id: 7, role: "mentor" }] },
     { rows: [{ result_id: 1 }] },
   ]);
   const { app } = loadApp({ poolMock });
@@ -238,14 +254,21 @@ test("PATCH /api/quiz-results/quiz-results/1/grade returns 200 with graded_by_ui
     assert.equal(response.status, 200);
     assert.equal(body.message, "Chấm điểm bài kiểm tra thành công");
     assert.equal(poolMock.calls.length, 2);
-    assert.match(poolMock.calls[0].sql, /SELECT uid, role FROM users/);
+    assert.match(poolMock.calls[0].sql, /SELECT id, role FROM users/);
     assert.equal(poolMock.calls[0].params[0], "mentor-1");
+    // Cột thật trong DB là graded_by (int, FK -> users.id). Dùng graded_by_uid
+    // sẽ khiến PostgreSQL báo "column does not exist" -> 500 trên server thật.
     assert.match(
       poolMock.calls[1].sql,
-      /graded_by_uid/,
-      "UPDATE must set graded_by_uid"
+      /graded_by = \$3/,
+      "UPDATE must set graded_by"
     );
-    assert.equal(poolMock.calls[1].params[2], "mentor-1");
+    assert.doesNotMatch(
+      poolMock.calls[1].sql,
+      /graded_by_uid/,
+      "graded_by_uid không tồn tại trong DB thật"
+    );
+    assert.equal(poolMock.calls[1].params[2], 7, "phải lưu users.id, không phải uid chuỗi");
     assert.equal(poolMock.calls[1].params[3], "1");
   });
 });

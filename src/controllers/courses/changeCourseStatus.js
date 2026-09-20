@@ -1,13 +1,18 @@
 const { pool } = require("../../config/db.config");
 const { sendNotification } = require("../../services/notificationService");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const changeCourseStatus = async (req, res) => {
   const { course_id } = req.params;
-  const { status, rejectionReason, uid } = req.body;
+  const { status, rejectionReason } = req.body;
 
-  if (!status || !uid) {
-    return res.status(400).json({ error: "Thiếu trạng thái hoặc UID" });
+  if (!status) {
+    return res.status(400).json({ error: "Thiếu trạng thái" });
   }
+
+  // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
+  const uid = resolveActorUid(req, res, req.body.uid);
+  if (!uid) return;
 
   try {
     // Kiểm tra vai trò người dùng

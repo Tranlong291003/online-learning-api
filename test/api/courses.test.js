@@ -185,7 +185,12 @@ test("POST /api/courses/create returns 201 for mentor", async () => {
     const response = await json("/api/courses/create", {
       method: "POST",
       headers: authHeaders({ role: "mentor", uid: "mentor-1" }),
-      body: { title: "New course", category_id: 1, uid: "mentor-1" },
+      body: {
+        title: "New course",
+        category_id: 1,
+        level: "beginner",
+        uid: "mentor-1",
+      },
     });
     const body = await response.json();
 
@@ -226,7 +231,12 @@ test("POST /api/courses/create returns 403 when role is user", async () => {
     const response = await json("/api/courses/create", {
       method: "POST",
       headers: authHeaders({ role: "user", uid: "student-1" }),
-      body: { title: "New course", category_id: 1, uid: "student-1" },
+      body: {
+        title: "New course",
+        category_id: 1,
+        level: "beginner",
+        uid: "student-1",
+      },
     });
     const body = await response.json();
 
@@ -246,8 +256,13 @@ test("POST /api/courses/create returns 404 when user not found", async () => {
   await withServer(app, async ({ json }) => {
     const response = await json("/api/courses/create", {
       method: "POST",
-      headers: authHeaders(),
-      body: { title: "New course", category_id: 1, uid: "ghost" },
+      headers: authHeaders({ role: "mentor", uid: "ghost" }),
+      body: {
+        title: "New course",
+        category_id: 1,
+        level: "beginner",
+        uid: "ghost",
+      },
     });
     const body = await response.json();
 
@@ -272,10 +287,11 @@ test("POST /api/courses/create keeps price 0 in INSERT params", async () => {
   await withServer(app, async ({ json }) => {
     const response = await json("/api/courses/create", {
       method: "POST",
-      headers: authHeaders(),
+      headers: authHeaders({ role: "mentor", uid: "mentor-1" }),
       body: {
         title: "Free course",
         category_id: 1,
+        level: "beginner",
         uid: "mentor-1",
         price: 0,
         discount_price: 0,
@@ -455,7 +471,7 @@ test("PATCH /api/courses/1/status returns 200 and sends notification", async () 
   });
 });
 
-test("PATCH /api/courses/1/status returns 400 when status/uid missing", async () => {
+test("PATCH /api/courses/1/status returns 400 when status missing", async () => {
   const { app } = loadApp();
 
   await withServer(app, async ({ json }) => {
@@ -467,7 +483,23 @@ test("PATCH /api/courses/1/status returns 400 when status/uid missing", async ()
     const body = await response.json();
 
     assert.equal(response.status, 400);
-    assert.equal(body.error, "Thiếu trạng thái hoặc UID");
+    assert.equal(body.error, "Thiếu trạng thái");
+  });
+});
+
+test("PATCH /api/courses/1/status rejects spoofed uid (regression)", async () => {
+  const poolMock = createPoolMock([]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/courses/1/status", {
+      method: "PATCH",
+      headers: authHeaders({ uid: "student-1", role: "user" }),
+      body: { status: "approved", uid: "admin-1" },
+    });
+
+    assert.equal(response.status, 403);
+    assert.equal(poolMock.calls.length, 0);
   });
 });
 
@@ -539,19 +571,19 @@ test("DELETE /api/courses/delete/1 returns 200 for admin", async () => {
   });
 });
 
-test("DELETE /api/courses/delete/1 returns 400 when uid missing", async () => {
-  const { app } = loadApp();
+test("DELETE /api/courses/delete/1 rejects spoofed uid (regression)", async () => {
+  const poolMock = createPoolMock([]);
+  const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
     const response = await json("/api/courses/delete/1", {
       method: "DELETE",
-      headers: authHeaders(),
-      body: {},
+      headers: authHeaders({ uid: "student-1", role: "user" }),
+      body: { uid: "admin-1" },
     });
-    const body = await response.json();
 
-    assert.equal(response.status, 400);
-    assert.equal(body.error, "Thiếu uid hoặc course_id");
+    assert.equal(response.status, 403);
+    assert.equal(poolMock.calls.length, 0);
   });
 });
 
@@ -599,5 +631,29 @@ test("DELETE /api/courses/delete/1 returns 404 when course missing", async () =>
 
     assert.equal(response.status, 404);
     assert.equal(body.error, "Không tìm thấy khóa học để xóa");
+  });
+});
+
+test("DELETE /api/courses/delete/:id không có body không được trả 500 (Express 5 req.body undefined)", async () => {
+  // Express 5 đặt req.body = undefined khi request không có body. Controller đọc
+  // thẳng req.body.uid sẽ ném TypeError -> 500. Middleware trong app.js phải
+  // chuẩn hoá về {} để giữ hành vi của Express 4.
+  const poolMock = createPoolMock(sqlMock((sql) => {
+    const q = sql.toLowerCase();
+    if (q.includes("select role from users")) return { rows: [{ role: "admin" }] };
+    if (q.includes("select instructor_uid from courses")) return { rows: [] };
+    return { rows: [] };
+  }));
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ request }) => {
+    // Cố tình KHÔNG gửi body và KHÔNG set Content-Type.
+    const response = await request("/api/courses/delete/999", {
+      method: "DELETE",
+      headers: authHeaders({ uid: "admin-1", role: "admin" }),
+    });
+
+    assert.notEqual(response.status, 500, "không được 500 khi request thiếu body");
+    assert.equal(response.status, 404);
   });
 });

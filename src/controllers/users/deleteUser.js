@@ -19,8 +19,21 @@ const deleteUser = async (req, res) => {
       return res.status(404).json({ error: "Không tìm thấy người dùng" });
     }
 
-    // Xóa trong Firebase
-    await admin.auth().deleteUser(id);
+    // Xóa trong Firebase. Nếu user đã không còn trên Firebase thì coi như xong —
+    // row trong DB đã bị xóa nên không được trả 500 vì lý do đó.
+    try {
+      await admin.auth().deleteUser(id);
+    } catch (firebaseError) {
+      if (firebaseError.code === "auth/user-not-found") {
+        console.warn("Firebase user already deleted:", id);
+      } else {
+        console.error("Firebase deleteUser failed after DB delete:", firebaseError.message);
+        return res.status(500).json({
+          error:
+            "Đã xóa trong cơ sở dữ liệu nhưng chưa xóa được tài khoản đăng nhập. Vui lòng thử lại.",
+        });
+      }
+    }
 
     res.json({ message: "Đã xóa người dùng thành công" });
   } catch (err) {

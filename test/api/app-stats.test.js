@@ -116,20 +116,37 @@ test("POST /api/app-stats returns 403 for a regular user", async () => {
   });
 });
 
-test("POST /api/app-stats returns 400 when uid is missing", async () => {
+test("POST /api/app-stats uses the token uid when body omits uid", async () => {
+  const poolMock = createPoolMock([{ rows: [{ role: "admin" }] }]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/app-stats", {
+      method: "POST",
+      headers: authHeaders({ uid: "admin-1", role: "admin" }),
+      body: {},
+    });
+
+    // uid lấy từ token, không được trả 400 chỉ vì body thiếu uid
+    assert.equal(response.status, 200);
+    assert.deepEqual(poolMock.calls[0].params, ["admin-1"]);
+  });
+});
+
+test("POST /api/app-stats returns 403 when uid in body does not match the token", async () => {
   const poolMock = createPoolMock([]);
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
     const response = await json("/api/app-stats", {
       method: "POST",
-      headers: authHeaders(),
-      body: {},
+      headers: authHeaders({ uid: "student-1", role: "user" }),
+      body: { uid: "admin-1" },
     });
     const body = await response.json();
 
-    assert.equal(response.status, 400);
-    assert.equal(body.error, "Thiếu uid");
+    assert.equal(response.status, 403);
+    assert.match(body.error, /không có quyền thao tác thay người dùng khác/);
     assert.equal(poolMock.calls.length, 0);
   });
 });

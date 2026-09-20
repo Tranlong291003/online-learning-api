@@ -179,7 +179,7 @@ const endpoints = [
   ["GET", "/api/quiz-results/users/user-1/results"],
   ["GET", "/api/quiz-results/1"],
   ["PATCH", "/api/quiz-results/quiz-results/1/grade", { uid: "admin-1", score: 10, explanation: "OK" }],
-  ["GET", "/api/quizzes/getquizbycoures/1"],
+  ["GET", "/api/quizzes/getquizbycourse/1"],
   ["GET", "/api/quizzes/getquizuser/user-1"],
   ["POST", "/api/quizzes/create", { uid: "admin-1", course_id: 1, title: "Quiz", type: "trac_nghiem" }],
   ["PUT", "/api/quizzes/update/1", { uid: "admin-1", title: "Quiz" }],

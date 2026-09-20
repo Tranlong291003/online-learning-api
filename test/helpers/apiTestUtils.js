@@ -84,6 +84,15 @@ function createFirebaseAdminMock(overrides = {}) {
   };
 }
 
+/**
+ * Sổ đăng ký user cho test: uid -> { role, is_active }.
+ *
+ * `signTestToken` tự ghi vào đây mỗi khi ký token, nên middleware xác thực (vốn
+ * đối chiếu role/is_active với DB) nhìn thấy đúng trạng thái mà test mong đợi.
+ * Nhờ vậy test không cần khai báo thêm gì, mà vẫn kiểm tra được đúng luồng thật.
+ */
+const testUserRegistry = new Map();
+
 function loadApp(options = {}) {
   process.env.JWT_SECRET = options.jwtSecret || "test-secret-key-with-at-least-32-chars";
   process.env.NODE_ENV = "test";
@@ -93,6 +102,16 @@ function loadApp(options = {}) {
 
   const poolMock = options.poolMock || createPoolMock();
   const firebaseAdmin = options.firebaseAdmin || createFirebaseAdminMock();
+
+  // Middleware xác thực tra cứu role/is_active từ DB. Mock lại để test không phải
+  // xếp hàng response SQL cho mỗi request, nhưng vẫn giữ đúng ngữ nghĩa:
+  // uid không có trong sổ -> null (bị chặn), is_active=false -> bị chặn.
+  mockModule(path.join(srcRoot, "services", "authUserLookup.js"), {
+    getAuthStateForUid: async (uid) => {
+      if (!testUserRegistry.has(uid)) return null;
+      return testUserRegistry.get(uid);
+    },
+  });
 
   mockModule(path.join(srcRoot, "config", "db.config.js"), { pool: poolMock.pool });
   mockModule(path.join(srcRoot, "config", "firebase.config.js"), firebaseAdmin);
@@ -121,16 +140,18 @@ function loadApp(options = {}) {
 }
 
 function signTestToken(payload = {}) {
-  return jwt.sign(
-    {
-      uid: "test-user",
-      email: "test@example.com",
-      role: "admin",
-      ...payload,
-    },
-    process.env.JWT_SECRET || "test-secret-key-with-at-least-32-chars",
-    { expiresIn: "1h" }
-  );
+  const claims = {
+    uid: "test-user",
+    email: "test@example.com",
+    role: "admin",
+    ...payload,
+  };
+  // Ghi uid vào sổ để middleware xác thực (đối chiếu DB) thấy user tồn tại.
+  // role đăng ký đúng bằng role trong token để test giữ nguyên ngữ nghĩa cũ.
+  testUserRegistry.set(claims.uid, { role: claims.role, is_active: true });
+  return jwt.sign(claims, process.env.JWT_SECRET || "test-secret-key-with-at-least-32-chars", {
+    expiresIn: "1h",
+  });
 }
 
 async function withServer(app, callback) {
@@ -168,5 +189,6 @@ module.exports = {
   createPoolMock,
   loadApp,
   signTestToken,
+  testUserRegistry,
   withServer,
 };

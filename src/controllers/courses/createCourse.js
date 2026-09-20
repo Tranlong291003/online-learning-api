@@ -1,4 +1,7 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
+
+const VALID_LEVELS = ["beginner", "intermediate", "advanced"];
 
 const createCourse = async (req, res) => {
   const {
@@ -10,16 +13,22 @@ const createCourse = async (req, res) => {
     discount_price,
     language,
     tags,
-    uid,
   } = req.body;
 
   if (!title || !category_id) {
     return res.status(400).json({ error: "Tên và danh mục là bắt buộc" });
   }
 
-  if (!uid) {
-    return res.status(400).json({ error: "UID không được bỏ trống" });
+  // level không bắt buộc (cột nullable trong DB thật); chỉ validate khi có gửi lên
+  if (level != null && level !== "" && !VALID_LEVELS.includes(level)) {
+    return res.status(400).json({
+      error: `Cấp độ không hợp lệ. Chỉ chấp nhận: ${VALID_LEVELS.join(", ")}`,
+    });
   }
+
+  // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
+  const uid = resolveActorUid(req, res, req.body.uid);
+  if (!uid) return;
 
   try {
     // Kiểm tra user và role

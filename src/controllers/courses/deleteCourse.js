@@ -1,12 +1,16 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const deleteCourse = async (req, res) => {
   const { course_id } = req.params;
-  const { uid } = req.body;
 
-  if (!uid || !course_id) {
-    return res.status(400).json({ error: "Thiếu uid hoặc course_id" });
+  if (!course_id) {
+    return res.status(400).json({ error: "Thiếu course_id" });
   }
+
+  // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
+  const uid = resolveActorUid(req, res, req.body.uid);
+  if (!uid) return;
 
   let client;
 

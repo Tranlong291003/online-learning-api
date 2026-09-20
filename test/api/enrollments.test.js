@@ -53,7 +53,7 @@ test("POST /api/enrollments/register returns 201 with enrollment and notificatio
   });
 });
 
-test("POST /api/enrollments/register returns 400 when fields missing", async () => {
+test("POST /api/enrollments/register returns 400 when courseId missing", async () => {
   const { app } = loadApp();
 
   await withServer(app, async ({ json }) => {
@@ -65,7 +65,23 @@ test("POST /api/enrollments/register returns 400 when fields missing", async () 
     const body = await response.json();
 
     assert.equal(response.status, 400);
-    assert.equal(body.error, "Thiếu userUid hoặc courseId");
+    assert.equal(body.error, "Thiếu courseId");
+  });
+});
+
+test("POST /api/enrollments/register ignores a spoofed userUid for a non-admin", async () => {
+  const poolMock = createPoolMock();
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/enrollments/register", {
+      method: "POST",
+      headers: authHeaders({ uid: "user-1", role: "user" }),
+      body: { userUid: "victim-2", courseId: 1 },
+    });
+
+    assert.equal(response.status, 403);
+    assert.equal(poolMock.calls.length, 0);
   });
 });
 
@@ -190,6 +206,7 @@ test("GET /api/enrollments/user/user-1 splits completed and in_progress", async 
 
 test("DELETE /api/enrollments/delete/1 returns 200", async () => {
   const poolMock = createPoolMock([
+    { rows: [{ user_uid: "user-1" }] },
     { rows: [{ enrollment_id: 1 }] },
   ]);
   const { app } = loadApp({ poolMock });
@@ -197,12 +214,29 @@ test("DELETE /api/enrollments/delete/1 returns 200", async () => {
   await withServer(app, async ({ request }) => {
     const response = await request("/api/enrollments/delete/1", {
       method: "DELETE",
-      headers: authHeaders(),
+      headers: authHeaders({ uid: "user-1", role: "user" }),
     });
     const body = await response.json();
 
     assert.equal(response.status, 200);
     assert.equal(body.message, "🗑️ Huỷ đăng ký thành công");
+  });
+});
+
+test("DELETE /api/enrollments/delete/1 returns 403 when not the owner (regression)", async () => {
+  const poolMock = createPoolMock([
+    { rows: [{ user_uid: "someone-else" }] },
+  ]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ request }) => {
+    const response = await request("/api/enrollments/delete/1", {
+      method: "DELETE",
+      headers: authHeaders({ uid: "student-1", role: "user" }),
+    });
+
+    assert.equal(response.status, 403);
+    assert.equal(poolMock.calls.length, 1);
   });
 });
 
@@ -250,7 +284,7 @@ test("GET /api/enrollments/progress returns progress percent", async () => {
   });
 });
 
-test("GET /api/enrollments/progress returns 400 when params missing", async () => {
+test("GET /api/enrollments/progress returns 400 when courseId missing", async () => {
   const { app } = loadApp();
 
   await withServer(app, async ({ request }) => {
@@ -260,7 +294,22 @@ test("GET /api/enrollments/progress returns 400 when params missing", async () =
     const body = await response.json();
 
     assert.equal(response.status, 400);
-    assert.equal(body.error, "Thiếu userUid hoặc courseId");
+    assert.equal(body.error, "Thiếu courseId");
+  });
+});
+
+test("GET /api/enrollments/progress ignores a spoofed userUid for a non-admin", async () => {
+  const poolMock = createPoolMock();
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ request }) => {
+    const response = await request(
+      "/api/enrollments/progress?courseId=1&userUid=victim-2",
+      { headers: authHeaders({ uid: "user-1", role: "user" }) }
+    );
+
+    assert.equal(response.status, 403);
+    assert.equal(poolMock.calls.length, 0);
   });
 });
 

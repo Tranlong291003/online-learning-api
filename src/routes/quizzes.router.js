@@ -6,6 +6,8 @@ const authMiddleware = require("../middleware/auth.middleware");
 // Tất cả các route đều cần token
 router.use(authMiddleware);
 
+router.get("/getquizbycourse/:course_id", quizzesController.getQuizzesByCourse);
+// Alias tương thích ngược cho FE cũ đang gọi sai chính tả. Sẽ bỏ ở phiên bản sau.
 router.get("/getquizbycoures/:course_id", quizzesController.getQuizzesByCourse);
 router.post("/create", quizzesController.createQuiz);
 router.put("/update/:quiz_id", quizzesController.updateQuiz);

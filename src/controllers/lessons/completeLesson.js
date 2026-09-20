@@ -1,14 +1,23 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const completeLesson = async (req, res) => {
-  const { userUid, courseId, lessonId } = req.body;
+  const body = req.body || {};
+  // Nhận cả camelCase lẫn snake_case: các endpoint khác trong API dùng snake_case
+  // nên FE rất dễ gửi course_id/lesson_id.
+  const courseId = body.courseId ?? body.course_id;
+  const lessonId = body.lessonId ?? body.lesson_id;
 
-  if (!userUid || !courseId || !lessonId) {
-    return res.status(400).json({ error: "Thiếu userUid, courseId hoặc lessonId" });
+  if (!courseId || !lessonId) {
+    return res.status(400).json({ error: "Thiếu courseId hoặc lessonId" });
   }
   if (!Number.isInteger(courseId) || !Number.isInteger(lessonId)) {
     return res.status(400).json({ error: "courseId và lessonId phải là số" });
   }
+
+  // Lấy uid từ token; chỉ admin mới được đánh dấu thay người khác
+  const userUid = resolveActorUid(req, res, req.body.userUid || req.body.uid);
+  if (!userUid) return;
 
   let client;
 
@@ -37,9 +46,9 @@ const completeLesson = async (req, res) => {
 
     // Upsert với INSERT ON CONFLICT (PostgreSQL)
     const upsertResult = await client.query(
-      `INSERT INTO lesson_progress (user_uid, course_id, lesson_id, is_completed, completed_at, created_at)
-       VALUES ($1, $2, $3, true, NOW(), NOW())
-       ON CONFLICT (user_uid, lesson_id)
+      `INSERT INTO lesson_progress (user_uid, course_id, lesson_id, is_completed, completed_at)
+       VALUES ($1, $2, $3, true, NOW())
+       ON CONFLICT (user_uid, course_id, lesson_id)
        DO UPDATE SET is_completed = true, completed_at = NOW()
        RETURNING
          CASE WHEN xmax = 0 THEN 'INSERT' ELSE 'UPDATE' END AS action`,
@@ -58,7 +67,15 @@ const completeLesson = async (req, res) => {
       message,
     });
   } catch (err) {
-    if (client) await client.query("ROLLBACK");
+    // Chỉ ROLLBACK khi đã thực sự mở transaction; nếu lỗi xảy ra trước BEGIN
+    // (ví dụ client.connect() fail) thì ROLLBACK sẽ ném lỗi thứ hai che mất lỗi gốc.
+    if (client) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        /* bỏ qua: transaction chưa mở */
+      }
+    }
     console.error(err);
     return res.status(500).json({ error: "Lỗi đánh dấu hoàn thành: " + err.message });
   } finally {

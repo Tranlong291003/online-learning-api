@@ -1,15 +1,39 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 /**
  * POST /api/quiz/submit
- * Body: { uid, quiz_id, answers: { [question_id]: index|null }, explanation? }
+ * Body: { quiz_id, answers: { [question_id]: index|null }, explanation? }
+ * uid được lấy từ token (chỉ admin mới được nộp thay người khác).
  */
 const submitQuizResult = async (req, res) => {
-  const { uid, quiz_id, answers = {}, explanation } = req.body;
+  const { quiz_id, answers = {}, explanation } = req.body;
 
-  if (!uid || !quiz_id || !answers) {
-    return res.status(400).json({ error: "Thiếu user_uid, quiz_id hoặc câu trả lời" });
+  if (!quiz_id || !answers) {
+    return res.status(400).json({ error: "Thiếu quiz_id hoặc câu trả lời" });
   }
+
+  // Chống type-confusion: answers phải là plain object, không phải string/null/array.
+  if (typeof answers !== "object" || Array.isArray(answers) || answers === null) {
+    return res.status(400).json({ error: "answers phải là object {question_id: index}" });
+  }
+
+  // Chống DoS: giới hạn số câu trả lời gửi lên. 500 là đủ cho bất kỳ quiz nào
+  // trong hệ thống; giá trị lớn hơn sẽ tạo vòng lặp lớn và INSERT quá khổ vào DB.
+  const MAX_ANSWERS = 500;
+  if (Object.keys(answers).length > MAX_ANSWERS) {
+    return res.status(400).json({ error: `Số câu trả lời vượt quá giới hạn cho phép (tối đa ${MAX_ANSWERS})` });
+  }
+
+  // Giới hạn độ dài explanation để chống DB bloat.
+  const MAX_EXPLANATION_LEN = 2000;
+  if (explanation != null && (typeof explanation !== "string" || explanation.length > MAX_EXPLANATION_LEN)) {
+    return res.status(400).json({ error: `explanation phải là chuỗi tối đa ${MAX_EXPLANATION_LEN} ký tự` });
+  }
+
+  // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
+  const uid = resolveActorUid(req, res, req.body.uid);
+  if (!uid) return;
 
   try {
     // Lấy loại quiz
@@ -28,9 +52,18 @@ const submitQuizResult = async (req, res) => {
 
     const questionMap = {};
     qRows.rows.forEach((q) => {
+      // options có thể NULL hoặc không phải JSON hợp lệ (dữ liệu cũ)
+      let parsedOptions = null;
+      if (q.options != null) {
+        try {
+          parsedOptions = JSON.parse(q.options);
+        } catch {
+          parsedOptions = null;
+        }
+      }
       questionMap[q.question_id] = {
         text: q.question,
-        options: JSON.parse(q.options),
+        options: parsedOptions,
         correct: q.correct_index,
       };
     });

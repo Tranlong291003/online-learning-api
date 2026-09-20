@@ -1,13 +1,22 @@
 const { pool } = require("../../config/db.config");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const createReview = async (req, res) => {
   try {
-    const { course_id, user_uid, rating, comment } = req.body;
-    if (!course_id || !user_uid || rating == null) {
+    const { course_id, rating, comment } = req.body;
+    if (!course_id || rating == null) {
       return res
         .status(400)
-        .json({ error: "course_id, user_uid và rating không được bỏ trống" });
+        .json({ error: "course_id và rating không được bỏ trống" });
     }
+
+    if (!Number.isInteger(Number(rating)) || Number(rating) < 1 || Number(rating) > 5) {
+      return res.status(400).json({ error: "rating phải là số nguyên từ 1 đến 5" });
+    }
+
+    // Lấy uid từ token; chỉ admin mới được đánh giá thay người khác
+    const user_uid = resolveActorUid(req, res, req.body.user_uid);
+    if (!user_uid) return;
 
     // Kiểm tra đã review chưa
     const check = await pool.query(

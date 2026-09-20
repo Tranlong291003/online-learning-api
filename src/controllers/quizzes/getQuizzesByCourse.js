@@ -1,10 +1,11 @@
 const { pool } = require("../../config/db.config");
+const { parsePositiveInt } = require("../../utils/parseId");
 
 const getQuizzesByCourse = async (req, res) => {
-  const { course_id } = req.params;
+  const course_id = parsePositiveInt(req.params.course_id);
 
   if (!course_id) {
-    return res.status(400).json({ error: "Thiếu course_id" });
+    return res.status(400).json({ error: "course_id không hợp lệ" });
   }
 
   try {

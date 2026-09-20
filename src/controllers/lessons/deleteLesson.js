@@ -1,14 +1,14 @@
 const { pool } = require("../../config/db.config");
 const fs = require("fs");
 const path = require("path");
+const { resolveActorUid } = require("../../middleware/actor");
 
 const deleteLesson = async (req, res) => {
   const { lesson_id } = req.params;
-  const { uid } = req.body;
 
-  if (!uid) {
-    return res.status(400).json({ error: "UID không hợp lệ" });
-  }
+  // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
+  const uid = resolveActorUid(req, res, req.body.uid);
+  if (!uid) return;
 
   try {
     // Lấy role
