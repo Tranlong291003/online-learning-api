@@ -313,10 +313,27 @@ async function phaseRead() {
   await t("GET /quizzes/getquizuser/:uid", "GET", "/api/quizzes/getquizuser/demo-student-01", { token: S() }, 200);
 
   if (ctx.quizId) {
-    await t("GET /questions/:quizId", "GET", `/api/questions/${ctx.quizId}`, { token: S() }, 200, (r) => {
+    // Admin luôn thấy đáp án (màn quản trị cần). Lấy question_id từ đây.
+    await t("GET /questions/:quizId (admin) có đáp án", "GET", `/api/questions/${ctx.quizId}`, { token: A() }, 200, (r) => {
       ctx.questionId = r.json?.data?.[0]?.question_id;
-      return r.json?.data?.length ? true : "không có câu hỏi";
+      if (!r.json?.data?.length) return "không có câu hỏi";
+      return "correct_index" in r.json.data[0] ? true : "admin phải thấy đáp án";
     });
+    // Học viên xem được ĐỀ BÀI nhưng không được thấy đáp án.
+    await t("GET /questions/:quizId (học viên) ẩn đáp án", "GET", `/api/questions/${ctx.quizId}`, { token: S() }, 200, (r) => {
+      const arr = r.json?.data;
+      if (!Array.isArray(arr) || arr.length === 0) return "không có câu hỏi";
+      if (!arr[0].question || !arr[0].options) return "thiếu đề bài — phải giữ lại để làm bài";
+      const leaked = arr.filter((q) => "correct_index" in q || "expected_keywords" in q);
+      return leaked.length ? `LỖ HỔNG: lộ đáp án ở ${leaked.length} câu hỏi` : true;
+    });
+    // Mentor không sở hữu quiz cũng không được thấy đáp án.
+    if (tokens.mentor2) {
+      await t("GET /questions/:quizId (mentor không sở hữu) ẩn đáp án", "GET", `/api/questions/${ctx.quizId}`, { token: tokens.mentor2.access }, 200, (r) => {
+        const arr = r.json?.data || [];
+        return arr.filter((q) => "correct_index" in q).length ? "LỖ HỔNG: mentor khác thấy đáp án" : true;
+      });
+    }
     await t("GET /questions/99999999", "GET", "/api/questions/99999999", { token: S() }, [200, 404]);
     await t("GET /questions/abc → 4xx", "GET", "/api/questions/abc", { token: S() }, [400, 404], (r) => (r.status === 500 ? "LỖ HỔNG: 500" : true));
   }
@@ -690,10 +707,7 @@ async function phaseAdmin() {
     await t("PUT /users/updaterole user không tồn tại → 404", "PUT", "/api/users/updaterole", { token: A(), body: { uid: "khong-ton-tai", role: "user" } }, 404);
     await t("PUT /users/updaterole admin tự hạ quyền → 400/403", "PUT", "/api/users/updaterole", { token: A(), body: { uid: "demo-admin", role: "user" } }, [400, 403]);
 
-    // NOTE: các endpoint chỉ dùng role đọc từ DB (không phân biệt scope) nằm
-  // trong mục "hành vi cần quyết định" của báo cáo, không tính là lỗi ở đây.
-
-  // R5 (REGRESSION): admin tự khoá chính mình phải bị từ chối VÀ không được khoá thật.
+    // R5 (REGRESSION): admin tự khoá chính mình phải bị từ chối VÀ không được khoá thật.
     const victim = await raw("POST", "/api/auth/login", { body: { email: ctx.email, password: ctx.pw } });
     const victimToken = victim.json?.access_token;
     await t("PATCH /users/:id/status (admin khoá tài khoản khác)", "PATCH", `/api/users/${ctx.uid}/status`, { token: A(), body: { status: "disabled" } }, 200);
