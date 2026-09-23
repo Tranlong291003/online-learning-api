@@ -1,6 +1,31 @@
 const swaggerUi = require("swagger-ui-express");
 const { REQUEST_BODIES, QUERY_PARAMS } = require("./swagger.schemas");
 
+/**
+ * Thư mục chứa tài nguyên giao diện (CSS/JS) của Swagger UI.
+ *
+ * Vì sao phải chỉ định tường minh: `swaggerUi.serve` phục vụ các tệp này bằng
+ * `express.static(path.resolve(__dirname))` trỏ vào `node_modules/swagger-ui-dist`.
+ * Trên Vercel, hàm serverless được đóng gói lại theo phụ thuộc thực sự dùng tới,
+ * nên thư mục đó KHÔNG tồn tại lúc chạy. Khi đó `express.static` không tìm thấy
+ * tệp và nhường cho route khác — route bắt mọi đường dẫn trả về trang HTML. Kết
+ * quả: trình duyệt nhận HTML ở vị trí CSS/JS, và trang tài liệu trắng trơn.
+ * (Chạy ở máy cá nhân thì thư mục có thật nên không thấy lỗi — đúng kiểu lỗi chỉ
+ * xuất hiện khi triển khai.)
+ *
+ * Cách xử lý: trỏ thẳng tới một CDN, ghim đúng phiên bản đang cài trong
+ * package-lock. Nhờ vậy giao diện không phụ thuộc vào việc nền tảng triển khai
+ * có đóng gói kèm `node_modules/swagger-ui-dist` hay không.
+ *
+ * Muốn quay lại phục vụ nội bộ (ví dụ chạy trong mạng kín không ra Internet):
+ * đặt SWAGGER_ASSET_BASE thành chuỗi rỗng để dùng lại đường dẫn tương đối.
+ */
+const SWAGGER_UI_DIST_VERSION = "5.20.6";
+const SWAGGER_ASSET_BASE =
+  process.env.SWAGGER_ASSET_BASE !== undefined
+    ? process.env.SWAGGER_ASSET_BASE
+    : `https://unpkg.com/swagger-ui-dist@${SWAGGER_UI_DIST_VERSION}`;
+
 // Giữ đồng bộ với danh sách mount trong src/app.js
 const mountedRouters = [
   { mountPath: "/api/auth", router: require("../routes/auth.router") },
@@ -266,4 +291,4 @@ function buildSpec() {
   };
 }
 
-module.exports = { buildSpec, swaggerUi };
+module.exports = { buildSpec, swaggerUi, SWAGGER_ASSET_BASE, SWAGGER_UI_DIST_VERSION };

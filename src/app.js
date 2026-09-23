@@ -109,8 +109,42 @@ app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
 // src/config/swagger.ui.js) để không phải tự gọi /api/auth/login rồi chép token
 // sang hộp thoại Authorize, và một lớp hiển thị kết luận thành công/lỗi cho mỗi
 // lần gọi.
-const { buildSpec, swaggerUi } = require("./config/swagger.config");
+const {
+  buildSpec,
+  swaggerUi,
+  SWAGGER_ASSET_BASE,
+} = require("./config/swagger.config");
 const { SWAGGER_UI_SCRIPT } = require("./config/swagger.ui");
+
+// Tài nguyên giao diện mà trang HTML của Swagger UI tự tham chiếu (đường dẫn
+// tương đối, xem template trong swagger-ui-express).
+const SWAGGER_ASSET_FILES = [
+  "swagger-ui.css",
+  "swagger-ui-bundle.js",
+  "swagger-ui-standalone-preset.js",
+  "favicon-16x16.png",
+  "favicon-32x32.png",
+];
+
+// Chuyển hướng các tài nguyên này sang CDN.
+//
+// Phải đặt TRƯỚC `swaggerUi.serve` và `swaggerUi.setup`. Hai middleware đó phục
+// vụ tài nguyên từ node_modules/swagger-ui-dist — thư mục không tồn tại lúc chạy
+// trên Vercel, nên express.static không tìm thấy tệp rồi nhường cho middleware
+// sau, và middleware sau trả về chính trang HTML. Trình duyệt nhận HTML ở vị trí
+// CSS/JS nên trang tài liệu trắng trơn. Chặn ở đây thì yêu cầu không bao giờ đi
+// tới chỗ sai đó.
+//
+// `swagger-ui-init.js` KHÔNG chuyển hướng: tệp đó được sinh tại chỗ cho từng
+// request (chứa mô tả API), nên phải do máy chủ trả.
+if (SWAGGER_ASSET_BASE) {
+  app.get("/api-docs/:asset", (req, res, next) => {
+    if (!SWAGGER_ASSET_FILES.includes(req.params.asset)) return next();
+    // 302 kèm cache dài: tài nguyên ghim theo phiên bản nên nội dung không đổi.
+    res.set("Cache-Control", "public, max-age=86400");
+    return res.redirect(302, `${SWAGGER_ASSET_BASE}/${req.params.asset}`);
+  });
+}
 
 app.use(
   "/api-docs",
