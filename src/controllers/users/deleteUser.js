@@ -17,12 +17,25 @@ const deleteUser = async (req, res) => {
   }
 
   try {
+    // Thu thập đường dẫn file TRƯỚC khi xoá người dùng.
+    //
+    // Thứ tự này quan trọng: upgrade_requests có ON DELETE CASCADE theo user, nên
+    // sau khi xoá user thì không còn truy vấn được image_url nữa và ảnh minh
+    // chứng sẽ thành file mồ côi.
+    const fileRows = await pool.query(
+      `SELECT avatar_url AS url FROM users WHERE uid = $1
+       UNION ALL
+       SELECT image_url FROM upgrade_requests WHERE user_uid = $1`,
+      [id]
+    );
+    const filePaths = fileRows.rows.map((r) => r.url).filter(Boolean);
+
     // Xoá user trong DB. Tài khoản đăng nhập giờ do chính API quản lý
     // (users.password_hash) nên không còn bước đồng bộ sang Firebase, và xoá
-    // dòng này là chấm dứt mọi khả năng đăng nhập. refresh_tokens và
-    // password_resets tự xoá theo nhờ ON DELETE CASCADE.
+    // dòng này là chấm dứt mọi khả năng đăng nhập. refresh_tokens, password_resets
+    // và upgrade_requests tự xoá theo nhờ ON DELETE CASCADE.
     const result = await pool.query(
-      "DELETE FROM users WHERE uid = $1 RETURNING uid, avatar_url",
+      "DELETE FROM users WHERE uid = $1 RETURNING uid",
       [id]
     );
 
@@ -30,16 +43,7 @@ const deleteUser = async (req, res) => {
       return res.status(404).json({ error: "Không tìm thấy người dùng" });
     }
 
-    // Dọn avatar và ảnh minh chứng nâng cấp của người dùng vừa xoá, tránh để
-    // lại file mồ côi trong uploaded_files.
-    const requestRows = await pool.query(
-      "SELECT image_url FROM upgrade_requests WHERE user_uid = $1",
-      [id]
-    );
-    await deleteFiles([
-      result.rows[0].avatar_url,
-      ...requestRows.rows.map((r) => r.image_url),
-    ]);
+    await deleteFiles(filePaths);
 
     res.json({ message: "Đã xóa người dùng thành công" });
   } catch (err) {

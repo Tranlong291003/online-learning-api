@@ -223,6 +223,12 @@ async function readFile(publicPath) {
  * Đặt ngay sau middleware multer trong mỗi route. Vì đây là thao tác bất đồng
  * bộ, lỗi phải được chuyển tiếp qua `next(err)` để rơi vào error handler của
  * app (nơi biến lỗi upload thành 4xx) thay vì treo request.
+ *
+ * ⚠️ File được ghi TRƯỚC khi controller kiểm tra điều kiện nghiệp vụ (danh mục
+ * có tồn tại, người gọi có quyền, đã có yêu cầu treo chưa...). Vì multer chạy
+ * trước controller nên không thể biết trước kết quả. Do đó middleware này tự
+ * dọn: nếu response cuối cùng là lỗi (>= 400), file vừa ghi sẽ bị xoá.
+ * Không có bước này thì mọi lượt gọi bị từ chối đều để lại file mồ côi.
  */
 function persistFiles() {
   return async (req, res, next) => {
@@ -234,7 +240,10 @@ function persistFiles() {
         else for (const group of Object.values(req.files)) files.push(...(group || []));
       }
 
+      if (files.length === 0) return next();
+
       const ownerUid = req.user ? req.user.uid : null;
+      const writtenPaths = [];
 
       for (const file of files) {
         const dir = FIELD_DIRS[file.fieldname] || "misc";
@@ -243,6 +252,8 @@ function persistFiles() {
         // Kiểm tra nội dung khớp với thư mục đích (ảnh phải là ảnh, tài liệu
         // phải là PDF/PPT/PPTX). Đuôi file do client đặt nên không đáng tin.
         if (!contentMatchesTarget(file.buffer, ext, dir)) {
+          // File đã ghi ở vòng lặp trước cũng phải dọn theo.
+          await deleteFiles(writtenPaths);
           throw new UploadRejectedError(rejectMessage(dir));
         }
 
@@ -254,11 +265,21 @@ function persistFiles() {
           originalName: file.originalname,
           ownerUid,
         });
+        writtenPaths.push(publicPath);
 
         // Controller đọc `publicPath`; `filename` giữ lại cho code cũ.
         file.publicPath = publicPath;
         file.filename = path.basename(publicPath);
       }
+
+      // Dọn file nếu controller (chạy sau) từ chối request. Gắn vào sự kiện
+      // "finish" nên bắt được MỌI đường trả lỗi mà không phải sửa từng
+      // controller.
+      res.on("finish", () => {
+        if (res.statusCode >= 400) {
+          deleteFiles(writtenPaths).catch(() => {});
+        }
+      });
 
       next();
     } catch (err) {

@@ -582,7 +582,13 @@ test("PUT /api/users/updaterole returns 403 for non-admin (regression)", async (
 // ---------- DELETE /api/users/delete/:id ----------
 
 test("DELETE /api/users/delete/user-1 deletes user as admin", async () => {
-  const poolMock = createPoolMock([{ rows: [{ uid: "user-1" }] }]);
+  // Controller thu thập đường dẫn file (avatar + ảnh minh chứng) TRƯỚC khi xoá
+  // user — sau khi xoá thì upgrade_requests đã bị CASCADE nên không truy vấn được.
+  const bySql = (sql) =>
+    sql.includes("SELECT avatar_url AS url")
+      ? { rows: [{ url: "/uploads/avatars/a.png" }] }
+      : { rows: [{ uid: "user-1" }] };
+  const poolMock = createPoolMock([bySql, bySql]);
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ request }) => {
@@ -594,7 +600,11 @@ test("DELETE /api/users/delete/user-1 deletes user as admin", async () => {
 
     assert.equal(response.status, 200);
     assert.equal(result.message, "Đã xóa người dùng thành công");
-    assert.match(poolMock.calls[0].sql, /DELETE FROM users/);
+    const del = poolMock.calls.find((c) => c.sql.includes("DELETE FROM users"));
+    assert.ok(del, "phải có DELETE FROM users");
+    // Truy vấn thu thập file phải chạy TRƯỚC câu xoá.
+    const collectIdx = poolMock.calls.findIndex((c) => c.sql.includes("SELECT avatar_url AS url"));
+    assert.ok(collectIdx >= 0 && collectIdx < poolMock.calls.indexOf(del), "phải thu thập file trước khi xoá");
   });
 });
 
