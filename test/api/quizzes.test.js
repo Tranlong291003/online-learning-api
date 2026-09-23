@@ -243,7 +243,8 @@ test("PUT /api/quizzes/update/1 returns 200", async () => {
     assert.match(poolMock.calls[2].sql, /UPDATE quizzes SET/);
     assert.equal(poolMock.calls[2].params[0], "New title");
     assert.equal(poolMock.calls[2].params[1], "trac_nghiem");
-    assert.equal(poolMock.calls[2].params[4], "1");
+    // parsePositiveInt ép quiz_id về SỐ trước khi truyền vào câu SQL.
+    assert.equal(poolMock.calls[2].params[4], 1);
   });
 });
 

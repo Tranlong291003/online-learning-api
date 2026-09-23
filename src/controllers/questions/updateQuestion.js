@@ -1,8 +1,12 @@
 const { pool } = require("../../config/db.config");
+const { parsePositiveInt } = require("../../utils/parseId");
 const { resolveActorUid } = require("../../middleware/actor");
+const { canManageQuestion } = require("../../utils/access");
 
 const updateQuestion = async (req, res) => {
-  const { question_id } = req.params;
+  // Tham số phải là số nguyên dương; chuỗi lạ sẽ khiến PostgreSQL ném lỗi
+  // "invalid input syntax for type bigint" → 500 thay vì 400.
+  const question_id = parsePositiveInt(req.params.question_id);
   const {
     type: submittedType,
     question,
@@ -11,40 +15,41 @@ const updateQuestion = async (req, res) => {
     expected_keywords,
   } = req.body;
 
+  if (!question_id) {
+    return res.status(400).json({ message: "question_id không hợp lệ" });
+  }
+
   // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
   const uid = resolveActorUid(req, res, req.body.uid);
   if (!uid) return;
 
   try {
-    // Kiểm tra quyền
-    const roleResult = await pool.query("SELECT role FROM users WHERE uid = $1", [uid]);
-    const userRole = roleResult.rows[0]?.role;
-
-    if (userRole !== "admin" && userRole !== "mentor") {
+    // Kiểm tra quyền: role phải là admin/mentor VÀ mentor chỉ được sửa câu hỏi
+    // trong quiz do chính mình tạo.
+    //
+    // Bảng quiz_questions không có cột chủ sở hữu nên quyền suy ra từ quiz chứa
+    // nó. Trước đây chỉ kiểm tra role, nên mentor02 sửa được câu hỏi trong quiz
+    // của mentor01 (endpoint xoá có kiểm tra, endpoint sửa thì thiếu).
+    if (req.user.role !== "admin" && req.user.role !== "mentor") {
       return res.status(403).json({ error: "Bạn không có quyền cập nhật câu hỏi" });
     }
 
-    // Lấy thông tin câu hỏi
+    const access = await canManageQuestion(question_id, req.user);
+    if (!access.ok) {
+      return res.status(access.status).json({ error: access.error });
+    }
+
     const questionData = await pool.query(
       `SELECT qq.question_id, qq.quiz_id, qq.question, qq.options, qq.correct_index, qq.expected_keywords
        FROM quiz_questions qq WHERE qq.question_id = $1`,
       [question_id]
     );
 
-    if (questionData.rows.length === 0) {
-      return res.status(404).json({ message: "Câu hỏi không tồn tại hoặc đã bị xóa." });
-    }
-
     const currentQuestion = questionData.rows[0];
     const quiz_id = currentQuestion.quiz_id;
 
-    // Lấy loại quiz
-    const quizResult = await pool.query("SELECT type FROM quizzes WHERE quiz_id = $1", [quiz_id]);
-    if (quizResult.rows.length === 0) {
-      return res.status(404).json({ message: "Quiz tương ứng với câu hỏi không tồn tại." });
-    }
-
-    const quizType = quizResult.rows[0].type;
+    // Loại quiz đã có sẵn từ bước kiểm tra quyền.
+    const quizType = access.quiz.quiz_type;
 
     if (submittedType && submittedType !== quizType) {
       return res.status(400).json({

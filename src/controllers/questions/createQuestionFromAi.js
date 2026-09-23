@@ -2,6 +2,7 @@ const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
 const { OpenAI } = require("openai");
 const { resolveActorUid } = require("../../middleware/actor");
+const { canManageQuiz } = require("../../utils/access");
 
 function getOpenAIClient() {
   if (!process.env.OPENAI_API_KEY) {
@@ -63,13 +64,14 @@ const createQuestionFromAi = async (req, res) => {
       return res.status(403).json({ error: "Bạn không có quyền tạo câu hỏi AI" });
     }
 
-    // Kiểm tra quiz
-    const quizRes = await pool.query("SELECT type FROM quizzes WHERE quiz_id = $1", [quiz_id]);
-    if (quizRes.rows.length === 0) {
-      return res.status(404).json({ error: "Quiz không tồn tại" });
+    // Kiểm tra quiz + quyền sở hữu. Mentor chỉ được sinh câu hỏi cho quiz do
+    // chính mình tạo (xem src/utils/access.js).
+    const access = await canManageQuiz(quiz_id, req.user);
+    if (!access.ok) {
+      return res.status(access.status).json({ error: access.error });
     }
 
-    const quizType = quizRes.rows[0].type;
+    const quizType = access.quiz.type;
     if (quizType !== type) {
       return res.status(400).json({
         error: `Loại quiz không khớp: DB là '${quizType}', bạn gửi '${type}'`,

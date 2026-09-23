@@ -15,3 +15,6 @@ src/public/uploads/
 # Cấu hình local của công cụ soạn code (không phải cấu hình dự án)
 .claude/
 .vercel
+
+# Kết quả chạy bộ kiểm thử trực tiếp (sinh ra mỗi lần chạy)
+test/live/result.json

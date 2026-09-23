@@ -294,3 +294,31 @@ CREATE INDEX IF NOT EXISTS idx_refresh_tokens_uid ON refresh_tokens(uid);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_family ON refresh_tokens(family_id);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires ON refresh_tokens(expires_at);
 CREATE INDEX IF NOT EXISTS idx_password_resets_uid ON password_resets(uid);
+
+-- =======================================
+-- 🎓 BẢNG uploaded_files – File upload lưu trong CSDL
+-- =======================================
+-- Trước đây file upload được ghi ra src/public/uploads/. Cách đó không chạy
+-- được trên nền tảng serverless (mã nguồn ở thư mục chỉ đọc) và cả khi chạy
+-- được thì đĩa cũng là tạm thời — file mất sau mỗi lần function tái khởi động.
+--
+-- Ở đây nội dung file nằm trong CSDL nên tồn tại lâu dài và không cần thêm
+-- dịch vụ ngoài. `public_path` là đường dẫn công khai mà client nhận được
+-- (/uploads/courses/<tên-ngẫu-nhiên>.png) — giữ nguyên định dạng cũ nên các
+-- URL đã lưu trong bảng khác không phải đổi.
+--
+-- ⚠️ Giới hạn kích thước do nền tảng (Vercel chỉ nhận body ~4.5MB); xem
+-- MAX_UPLOAD_MB trong src/services/fileStorage.js.
+CREATE TABLE IF NOT EXISTS uploaded_files (
+    file_id         BIGSERIAL       PRIMARY KEY,
+    public_path     VARCHAR(255)    NOT NULL UNIQUE,
+    mime_type       VARCHAR(120)    NOT NULL,
+    size_bytes      INTEGER         NOT NULL,
+    content         BYTEA           NOT NULL,
+    original_name   VARCHAR(255)    NULL,
+    owner_uid       VARCHAR(50)     NULL,
+    created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP       NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_uploaded_files_owner ON uploaded_files(owner_uid);

@@ -1,10 +1,14 @@
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
+const { parsePositiveInt } = require("../../utils/parseId");
 
 const getLessonDetail = async (req, res) => {
-  const { lessonId } = req.params;
+  // isNaN() không phải phép kiểm tra SỐ NGUYÊN: "1.5", "1e3", "0x10" đều lọt
+  // qua rồi bị PostgreSQL từ chối với lỗi 22P02 → 500. parsePositiveInt mới
+  // chặn đúng.
+  const lessonId = parsePositiveInt(req.params.lessonId);
 
-  if (!lessonId || isNaN(lessonId)) {
+  if (!lessonId) {
     return res.status(400).json({ error: "lessonId không hợp lệ" });
   }
 

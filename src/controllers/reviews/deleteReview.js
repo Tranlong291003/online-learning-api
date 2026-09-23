@@ -1,10 +1,18 @@
+const { parsePositiveInt } = require("../../utils/parseId");
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const deleteReview = async (req, res) => {
   try {
-    const { reviewId } = req.params;
+    const reviewId = parsePositiveInt(req.params.reviewId);
+    
+    // Tham số phải là số nguyên dương. Nếu để nguyên chuỗi, PostgreSQL
+    // ném "invalid input syntax for type integer" và API trả 500 — trong khi
+    // lỗi thật là "client gửi sai" nên phải là 400.
+    if (!reviewId) {
+      return res.status(400).json({ error: "reviewId không hợp lệ" });
+    }
 
     // Lấy uid từ token; chỉ admin mới được xoá review thay người khác
     const user_uid = resolveActorUid(req, res, req.body.user_uid);

@@ -1,36 +1,8 @@
-const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
+const { createUploader } = require("../services/fileStorage");
 
-// 📁 Thư mục lưu icon cho category
-const categoryUploadDir = path.join(__dirname, "../public/uploads/categories");
-
-// Tạo thư mục nếu chưa tồn tại
-if (!fs.existsSync(categoryUploadDir)) {
-  fs.mkdirSync(categoryUploadDir, { recursive: true });
-}
-
-const categoryStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, categoryUploadDir),
-  filename: (req, file, cb) => {
-    // dùng categoryId từ params, nếu không có thì đặt tên mặc định 'category'
-    const categoryId = req.params.id || "category";
-    const ext = path.extname(file.originalname);
-    cb(null, `${categoryId}-${Date.now()}${ext}`);
-  },
+// Icon danh mục: chỉ JPEG/PNG, kiểm tra cả nội dung file.
+// Xem src/services/fileStorage.js để biết vì sao không dùng diskStorage nữa.
+module.exports = createUploader({
+  allowedExtensions: /\.(jpe?g|png)$/i,
+  message: "Chỉ hỗ trợ ảnh JPEG hoặc PNG",
 });
-
-const uploadCategoryIcon = multer({
-  storage: categoryStorage,
-  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
-  fileFilter: (req, file, cb) => {
-    const allowed = /\.(jpe?g|png)$/i;
-    if (allowed.test(file.originalname)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Chỉ hỗ trợ ảnh JPEG hoặc PNG"));
-    }
-  },
-});
-
-module.exports = uploadCategoryIcon;

@@ -17,6 +17,52 @@ function sqlMock(fn, calls = 20) {
   return Array.from({ length: calls }, () => fn);
 }
 
+/**
+ * Các stub dùng chung cho controller thao tác câu hỏi.
+ *
+ * Controller giờ gọi `canManageQuestion()` trước tiên, hàm này JOIN
+ * quiz_questions với quizzes để biết chủ sở hữu — nên mock phải trả về cả
+ * `creator_uid` và `quiz_type`, không chỉ `role` như trước.
+ */
+function questionMockBySql(sql, { ownerUid = "mentor-1", quizType = "trac_nghiem", questionRow, updateRows = [{ question_id: 1 }] } = {}) {
+  const q = sql.toLowerCase();
+
+  // canManageQuestion: JOIN quiz_questions + quizzes
+  if (q.includes("join quizzes") || (q.includes("select qq.question_id") && q.includes("creator_uid"))) {
+    return {
+      rows: [
+        {
+          question_id: 1,
+          quiz_id: 5,
+          creator_uid: ownerUid,
+          quiz_type: quizType,
+          ...(questionRow || {}),
+        },
+      ],
+    };
+  }
+  // Truy vấn lấy chi tiết câu hỏi
+  if (q.includes("select qq.question_id")) {
+    return {
+      rows: [
+        {
+          question_id: 1,
+          quiz_id: 5,
+          question: "Old question",
+          options: null,
+          correct_index: null,
+          expected_keywords: null,
+          ...(questionRow || {}),
+        },
+      ],
+    };
+  }
+  if (q.includes("update quiz_questions")) {
+    return { rows: updateRows };
+  }
+  return { rows: [] };
+}
+
 test("GET /api/questions/1 returns questions of a quiz", async () => {
   const poolMock = createPoolMock([
     { rows: [{ quiz_id: 1 }] },
@@ -207,7 +253,7 @@ test("POST /api/questions/createbyuser returns 404 when quiz missing", async () 
     const body = await response.json();
 
     assert.equal(response.status, 404);
-    assert.equal(body.error, "Không tìm thấy quiz này.");
+    assert.match(body.error, /Không tìm thấy bài kiểm tra/);
   });
 });
 
@@ -349,7 +395,7 @@ test("POST /api/questions/createbyai returns 404 when quiz missing", async () =>
     const body = await response.json();
 
     assert.equal(response.status, 404);
-    assert.equal(body.error, "Quiz không tồn tại");
+    assert.match(body.error, /Không tìm thấy bài kiểm tra/);
   });
 });
 
@@ -404,24 +450,14 @@ test("POST /api/questions/createbyai rejects non-integer number values", async (
 });
 
 test("PUT /api/questions/update/1 keeps old expected_keywords for tu_luan", async () => {
-  const poolMock = createPoolMock([
-    { rows: [{ role: "mentor" }] },
-    {
-      rows: [
-        {
-          question_id: 1,
-          quiz_id: 5,
-          question: "Old question",
-          options: null,
-          correct_index: null,
-          expected_keywords: "keyword x",
-        },
-      ],
-    },
-    { rows: [{ type: "tu_luan" }] },
-    { rows: [] },
-    { rows: [{ question_id: 1, question: "New question", expected_keywords: "keyword x" }] },
-  ]);
+  const poolMock = createPoolMock(sqlMock((sql) =>
+    questionMockBySql(sql, {
+      ownerUid: "mentor-1",
+      quizType: "tu_luan",
+      questionRow: { question: "Old question", expected_keywords: "keyword x" },
+      updateRows: [{ question_id: 1, question: "New question", expected_keywords: "keyword x" }],
+    })
+  ));
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
@@ -434,8 +470,8 @@ test("PUT /api/questions/update/1 keeps old expected_keywords for tu_luan", asyn
 
     assert.equal(response.status, 200);
     assert.equal(body.data.question, "New question");
-    const updateCall = poolMock.calls[4];
-    assert.match(updateCall.sql, /UPDATE quiz_questions SET/);
+    const updateCall = poolMock.calls.find((c) => c.sql.includes("UPDATE quiz_questions SET"));
+    assert.ok(updateCall, "phải có câu UPDATE");
     assert.equal(updateCall.params[0], "New question");
     assert.equal(
       updateCall.params[3],
@@ -445,26 +481,37 @@ test("PUT /api/questions/update/1 keeps old expected_keywords for tu_luan", asyn
   });
 });
 
+test("PUT /api/questions/update/1 rejects a question owned by another mentor (regression: IDOR)", async () => {
+  // Trước đây controller chỉ kiểm tra role, nên mentor bất kỳ sửa được câu hỏi
+  // trong quiz của mentor khác — kể cả đáp án đúng.
+  const poolMock = createPoolMock([questionMockBySql]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/questions/update/1", {
+      method: "PUT",
+      headers: authHeaders({ role: "mentor", uid: "mentor-2" }),
+      body: { uid: "mentor-2", question: "New question", options: ["A", "B"], correct_index: 1 },
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 403);
+    assert.match(body.error, /câu hỏi của người khác/);
+    assert.ok(
+      !poolMock.calls.some((c) => c.sql.includes("UPDATE quiz_questions")),
+      "không được chạm tới UPDATE"
+    );
+  });
+});
+
 test("PUT /api/questions/update/1 stores correct_index 0-based for trac_nghiem", async () => {
-  const poolMock = createPoolMock(sqlMock((sql) => {
-    const q = sql.toLowerCase();
-    if (q.includes("select role from users")) {
-      return { rows: [{ role: "mentor" }] };
-    }
-    if (q.includes("select qq.question_id")) {
-      return { rows: [{ question_id: 1, quiz_id: 5, options: '["A"]', correct_index: 0, expected_keywords: null }] };
-    }
-    if (q.includes("select type from quizzes")) {
-      return { rows: [{ type: "trac_nghiem" }] };
-    }
-    if (q.includes("select question_id from quiz_questions")) {
-      return { rows: [] };
-    }
-    if (q.includes("update quiz_questions")) {
-      return { rows: [{ question_id: 1 }] };
-    }
-    return { rows: [] };
-  }));
+  const poolMock = createPoolMock(sqlMock((sql) =>
+    questionMockBySql(sql, {
+      ownerUid: "mentor-1",
+      quizType: "trac_nghiem",
+      questionRow: { options: '["A"]', correct_index: 0, expected_keywords: null },
+    })
+  ));
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
@@ -481,27 +528,21 @@ test("PUT /api/questions/update/1 stores correct_index 0-based for trac_nghiem",
     const body = await response.json();
 
     assert.equal(response.status, 200);
-    const updateCall = poolMock.calls[4];
-    assert.match(updateCall.sql, /UPDATE quiz_questions SET/);
+    const updateCall = poolMock.calls.find((c) => c.sql.includes("UPDATE quiz_questions SET"));
+    assert.ok(updateCall, "phải có câu UPDATE");
     assert.deepEqual(JSON.parse(updateCall.params[1]), ["A", "B", "C", "D"]);
     assert.equal(updateCall.params[2], 1, "correct_index must be stored 0-based");
   });
 });
 
 test("PUT /api/questions/update/1 returns 400 when correct_index out of range", async () => {
-  const poolMock = createPoolMock(sqlMock((sql) => {
-    const q = sql.toLowerCase();
-    if (q.includes("select role from users")) {
-      return { rows: [{ role: "mentor" }] };
-    }
-    if (q.includes("select qq.question_id")) {
-      return { rows: [{ question_id: 1, quiz_id: 5, question: "x", options: '["A"]', correct_index: 0, expected_keywords: null }] };
-    }
-    if (q.includes("select type from quizzes")) {
-      return { rows: [{ type: "trac_nghiem" }] };
-    }
-    return { rows: [] };
-  }));
+  const poolMock = createPoolMock(sqlMock((sql) =>
+    questionMockBySql(sql, {
+      ownerUid: "mentor-1",
+      quizType: "trac_nghiem",
+      questionRow: { question: "x", options: '["A"]', correct_index: 0, expected_keywords: null },
+    })
+  ));
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
@@ -551,7 +592,8 @@ test("PUT /api/questions/update/1 returns 403 for role user", async () => {
 });
 
 test("PUT /api/questions/update/1 returns 404 when question missing", async () => {
-  const poolMock = createPoolMock([{ rows: [{ role: "admin" }] }, { rows: [] }]);
+  // canManageQuestion không tìm thấy câu hỏi → 404
+  const poolMock = createPoolMock([{ rows: [] }]);
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
@@ -563,7 +605,7 @@ test("PUT /api/questions/update/1 returns 404 when question missing", async () =
     const body = await response.json();
 
     assert.equal(response.status, 404);
-    assert.equal(body.message, "Câu hỏi không tồn tại hoặc đã bị xóa.");
+    assert.match(body.error, /Câu hỏi không tồn tại/);
   });
 });
 
@@ -585,7 +627,8 @@ test("DELETE /api/questions/delete/1 returns 200", async () => {
     assert.equal(response.status, 200);
     assert.equal(body.message, "Xóa câu hỏi thành công");
     assert.match(poolMock.calls[1].sql, /DELETE FROM quiz_questions/);
-    assert.equal(poolMock.calls[1].params[0], "1");
+    // parsePositiveInt ép tham số về SỐ trước khi truyền vào câu SQL.
+    assert.equal(poolMock.calls[1].params[0], 1);
   });
 });
 

@@ -1,8 +1,6 @@
 const { pool } = require("../../config/db.config");
 const { parsePositiveInt } = require("../../utils/parseId");
 const { sendServerError } = require("../../utils/errorResponse");
-const fs = require("fs");
-const path = require("path");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const deleteLesson = async (req, res) => {
@@ -47,15 +45,22 @@ const deleteLesson = async (req, res) => {
       return res.status(403).json({ error: "Bạn chỉ được xoá bài học do bạn tạo" });
     }
 
-    // Xoá file
-    const deleteFile = (urlPath) => {
+    // Xoá file đã upload khỏi CSDL.
+    //
+    // Trước đây xoá file trên đĩa. Giờ file nằm trong bảng uploaded_files, và
+    // thao tác xoá phải chịu được việc bản ghi không tồn tại (dữ liệu cũ trỏ
+    // tới file đóng gói kèm mã nguồn) — nếu không, xoá bài học sẽ lỗi 500.
+    const deleteFile = async (urlPath) => {
       if (!urlPath) return;
-      const absolutePath = path.join(__dirname, "../../public", urlPath);
-      if (fs.existsSync(absolutePath)) fs.unlinkSync(absolutePath);
+      try {
+        await pool.query("DELETE FROM uploaded_files WHERE public_path = $1", [urlPath]);
+      } catch (err) {
+        console.warn("Không xoá được file upload:", urlPath, err.message);
+      }
     };
 
-    deleteFile(lesson.pdf_url);
-    deleteFile(lesson.slide_url);
+    await deleteFile(lesson.pdf_url);
+    await deleteFile(lesson.slide_url);
 
     // Xoá tiến độ liên quan trước để không vướng foreign key.
     await pool.query("DELETE FROM lesson_progress WHERE lesson_id = $1", [lesson_id]);

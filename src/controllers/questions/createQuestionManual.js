@@ -1,6 +1,7 @@
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
+const { canManageQuiz } = require("../../utils/access");
 
 const createQuestion = async (req, res) => {
   const {
@@ -31,13 +32,14 @@ const createQuestion = async (req, res) => {
       return res.status(403).json({ error: "Bạn không có quyền tạo câu hỏi" });
     }
 
-    // Lấy loại quiz
-    const quizResult = await pool.query("SELECT type FROM quizzes WHERE quiz_id = $1", [quiz_id]);
-    if (quizResult.rows.length === 0) {
-      return res.status(404).json({ error: "Không tìm thấy quiz này." });
+    // Mentor chỉ được thêm câu hỏi vào quiz do chính mình tạo. Thiếu bước này
+    // thì mentor bất kỳ chèn được câu hỏi vào quiz của mentor khác.
+    const access = await canManageQuiz(quiz_id, req.user);
+    if (!access.ok) {
+      return res.status(access.status).json({ error: access.error });
     }
 
-    const quizType = quizResult.rows[0].type;
+    const quizType = access.quiz.type;
 
     if (submittedType && submittedType !== quizType) {
       return res.status(400).json({

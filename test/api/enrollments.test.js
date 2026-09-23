@@ -65,7 +65,7 @@ test("POST /api/enrollments/register returns 400 when courseId missing", async (
     const body = await response.json();
 
     assert.equal(response.status, 400);
-    assert.equal(body.error, "Thiếu courseId");
+    assert.match(body.error, /courseId/);
   });
 });
 
@@ -294,7 +294,25 @@ test("GET /api/enrollments/progress returns 400 when courseId missing", async ()
     const body = await response.json();
 
     assert.equal(response.status, 400);
-    assert.equal(body.error, "Thiếu courseId");
+    assert.match(body.error, /courseId/);
+  });
+});
+
+test("GET /api/enrollments/progress returns 400 for a malformed courseId (regression)", async () => {
+  // "abc" từng được Number() hoá thành NaN rồi gửi thẳng vào PostgreSQL, khiến
+  // API trả 500 kèm chi tiết lỗi CSDL thay vì 400.
+  const poolMock = createPoolMock();
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ request }) => {
+    const response = await request("/api/enrollments/progress?courseId=abc", {
+      headers: authHeaders(),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.match(body.error, /courseId/);
+    assert.equal(poolMock.calls.length, 0);
   });
 });
 

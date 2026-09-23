@@ -1,5 +1,6 @@
 const { pool } = require("../../config/db.config");
 const { parsePositiveInt } = require("../../utils/parseId");
+const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const deleteCourse = async (req, res) => {
@@ -129,11 +130,9 @@ const deleteCourse = async (req, res) => {
       throw err;
     }
   } catch (err) {
-    console.error("Error in deleteCourse:", err);
-    res.status(500).json({
-      success: false,
-      error: "Lỗi xóa khóa học: " + err.message,
-    });
+    // Dùng sendServerError: nối thẳng err.message vào response sẽ rò chi tiết
+    // CSDL (tên bảng/cột/ràng buộc) ra client, kể cả ở production.
+    sendServerError(res, "Lỗi xóa khóa học", err);
   } finally {
     if (client) client.release();
   }

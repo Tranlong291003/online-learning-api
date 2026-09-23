@@ -1,9 +1,17 @@
+const { parsePositiveInt } = require("../../utils/parseId");
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const updateCourse = async (req, res) => {
-  const { course_id } = req.params;
+  const course_id = parsePositiveInt(req.params.course_id);
+  
+  // Tham số phải là số nguyên dương. Nếu để nguyên chuỗi, PostgreSQL
+  // ném "invalid input syntax for type integer" và API trả 500 — trong khi
+  // lỗi thật là "client gửi sai" nên phải là 400.
+  if (!course_id) {
+    return res.status(400).json({ error: "course_id không hợp lệ" });
+  }
   const {
     title,
     description,
@@ -50,10 +58,8 @@ const updateCourse = async (req, res) => {
       });
     }
 
-    // Merge dữ liệu
-    const newThumbnailUrl = req.file
-      ? `/uploads/courses/${req.file.filename}`
-      : current.thumbnail_url;
+    // Merge dữ liệu (file mới đã được lưu vào CSDL, dùng publicPath)
+    const newThumbnailUrl = req.file ? req.file.publicPath : current.thumbnail_url;
 
     const updatedTitle = title ?? current.title;
     const updatedDescription = description ?? current.description;

@@ -1,11 +1,14 @@
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
+const { parsePositiveInt } = require("../../utils/parseId");
 
 const getAllLessons = async (req, res) => {
-  const { course_id } = req.params;
+  // isNaN() không phải phép kiểm tra SỐ NGUYÊN: "1.5", "1e3" đều lọt qua rồi
+  // bị PostgreSQL từ chối → 500. parsePositiveInt mới chặn đúng.
+  const course_id = parsePositiveInt(req.params.course_id);
 
-  if (!course_id || isNaN(+course_id)) {
+  if (!course_id) {
     return res.status(400).json({ error: "Tham số course_id không hợp lệ" });
   }
 

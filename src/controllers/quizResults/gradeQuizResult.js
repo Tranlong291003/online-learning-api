@@ -1,13 +1,27 @@
 const { pool } = require("../../config/db.config");
+const { parsePositiveInt } = require("../../utils/parseId");
 const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const gradeQuizResult = async (req, res) => {
-  const { result_id } = req.params;
+  // Tham số phải là số nguyên dương; chuỗi lạ sẽ khiến PostgreSQL ném lỗi
+  // "invalid input syntax for type bigint" → 500 thay vì 400.
+  const result_id = parsePositiveInt(req.params.result_id);
   const { explanation, score } = req.body;
+
+  if (!result_id) {
+    return res.status(400).json({ error: "result_id không hợp lệ" });
+  }
 
   if (!explanation || score === undefined) {
     return res.status(400).json({ error: "Thiếu thông tin chấm điểm hoặc giải thích" });
+  }
+
+  // score là cột số thực trong CSDL. Chuỗi không phải số ("abc") sẽ khiến
+  // PostgreSQL ném lỗi cú pháp → 500, trong khi lỗi thật là client gửi sai.
+  const scoreValue = Number(score);
+  if (!Number.isFinite(scoreValue)) {
+    return res.status(400).json({ error: "score phải là một số" });
   }
 
   // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
@@ -31,14 +45,45 @@ const gradeQuizResult = async (req, res) => {
       return res.status(403).json({ error: "Bạn không có quyền chấm điểm bài kiểm tra" });
     }
 
-    // Update
+    // Mentor chỉ được chấm bài thuộc khoá học do chính mình dạy.
+    //
+    // Trước đây câu UPDATE không có điều kiện sở hữu nào, nên bất kỳ mentor nào
+    // cũng ghi đè được điểm và nhận xét của mọi bài nộp trong hệ thống.
+    // Điều kiện được đặt ngay trong câu UPDATE (thay vì SELECT rồi UPDATE) để
+    // không có khe hở giữa hai bước.
+    const ownershipJoin = userRole === "admin"
+      ? ""
+      : `AND EXISTS (
+           SELECT 1 FROM quizzes q
+           JOIN courses c ON c.course_id = q.course_id
+           WHERE q.quiz_id = quiz_results.quiz_id
+             AND c.instructor_uid = $5
+         )`;
+
+    const params = [explanation, scoreValue, graded_by, result_id];
+    if (userRole !== "admin") params.push(uid);
+
     const result = await pool.query(
       `UPDATE quiz_results
        SET explanation = $1, score = $2, status = 'da_cham', graded_by = $3, graded_at = NOW()
-       WHERE result_id = $4
+       WHERE result_id = $4 ${ownershipJoin}
        RETURNING result_id`,
-      [explanation, score, graded_by, result_id]
+      params
     );
+
+    if (result.rows.length === 0 && userRole !== "admin") {
+      // Phân biệt "không có bài" với "bài của khoá học người khác" để thông báo
+      // rõ ràng, nhưng vẫn không xác nhận sự tồn tại của bài nộp.
+      const exists = await pool.query(
+        "SELECT 1 FROM quiz_results WHERE result_id = $1",
+        [result_id]
+      );
+      if (exists.rows.length > 0) {
+        return res.status(403).json({
+          error: "Bạn không có quyền chấm điểm bài kiểm tra của khoá học người khác",
+        });
+      }
+    }
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Kết quả không tồn tại" });

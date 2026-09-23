@@ -19,6 +19,18 @@ const createReview = async (req, res) => {
     const user_uid = resolveActorUid(req, res, req.body.user_uid);
     if (!user_uid) return;
 
+    // Kiểm tra khoá học tồn tại TRƯỚC khi insert. Nếu bỏ bước này, course_id
+    // không tồn tại sẽ vi phạm khoá ngoại và trả 500 kèm tên constraint nội bộ,
+    // trong khi lỗi thật là "dữ liệu client gửi sai" (404).
+    // (bookmarks và enrollments đã làm đúng bước này; reviews thì thiếu.)
+    const courseResult = await pool.query(
+      "SELECT course_id FROM courses WHERE course_id = $1",
+      [course_id]
+    );
+    if (courseResult.rows.length === 0) {
+      return res.status(404).json({ error: "Không tìm thấy khóa học" });
+    }
+
     // Kiểm tra đã review chưa
     const check = await pool.query(
       "SELECT 1 FROM course_reviews WHERE course_id = $1 AND user_uid = $2",

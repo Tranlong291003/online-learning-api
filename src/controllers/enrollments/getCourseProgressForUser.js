@@ -1,4 +1,6 @@
 const { pool } = require("../../config/db.config");
+const { sendServerError } = require("../../utils/errorResponse");
+const { parsePositiveInt } = require("../../utils/parseId");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const getCourseProgressForUser = async (req, res) => {
@@ -6,10 +8,12 @@ const getCourseProgressForUser = async (req, res) => {
     ...(req.query || {}),
     ...(req.body || {}),
   };
-  const courseId = payload.courseId || payload.course_id;
+  // parsePositiveInt chặn cả trường hợp thiếu và trường hợp sai định dạng
+  // ("abc", "1.5"), vốn làm PostgreSQL ném lỗi và trả 500.
+  const courseId = parsePositiveInt(payload.courseId ?? payload.course_id);
 
   if (!courseId) {
-    return res.status(400).json({ error: "Thiếu courseId" });
+    return res.status(400).json({ error: "Thiếu courseId hoặc courseId không hợp lệ" });
   }
 
   // Lấy uid từ token; chỉ admin mới được xem tiến độ của người khác
@@ -51,9 +55,9 @@ const getCourseProgressForUser = async (req, res) => {
       },
     });
   } catch (err) {
-    return res
-      .status(500)
-      .json({ error: "Lỗi lấy tiến độ học tập: " + err.message });
+    // Dùng sendServerError: nối thẳng err.message vào response sẽ rò chi tiết
+    // CSDL (tên bảng/cột/ràng buộc) ra client, kể cả ở production.
+    return sendServerError(res, "Lỗi lấy tiến độ học tập", err);
   }
 };
 

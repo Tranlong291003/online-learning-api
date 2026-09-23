@@ -18,6 +18,16 @@ const updateUserStatus = async (req, res) => {
 
   const isActive = status === "active";
 
+  // Tự khoá tài khoản của chính mình sẽ chấm dứt luôn phiên đang thực hiện
+  // thao tác. Chỉ chặn chiều "khoá"; tự mở khoá là vô hại.
+  //
+  // Kiểm tra này PHẢI nằm trước UPDATE. Trước đây nó nằm sau, nên tài khoản đã
+  // bị khoá thật trong CSDL (và mọi phiên bị thu hồi) rồi mới trả 400 — client
+  // tưởng thao tác thất bại nhưng thực tế đã tự khoá mình.
+  if (!isActive && String(uid) === String(req.user.uid)) {
+    return res.status(400).json({ error: "Không thể tự khoá tài khoản của chính mình" });
+  }
+
   try {
     const result = await pool.query(
       `UPDATE users
@@ -29,12 +39,6 @@ const updateUserStatus = async (req, res) => {
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy người dùng" });
-    }
-
-    // Tự khoá tài khoản của chính mình sẽ chấm dứt luôn phiên đang thực hiện
-    // thao tác. Chỉ chặn chiều "khoá"; tự mở khoá là vô hại.
-    if (!isActive && String(uid) === String(req.user.uid)) {
-      return res.status(400).json({ error: "Không thể tự khoá tài khoản của chính mình" });
     }
 
     // Khoá tài khoản phải chấm dứt các phiên đang mở, nếu không người bị khoá

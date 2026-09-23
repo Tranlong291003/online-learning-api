@@ -1,3 +1,4 @@
+const { parsePositiveInt } = require("../utils/parseId");
 const { pool } = require("../config/db.config");
 const { sendServerError } = require("../utils/errorResponse");
 const notificationService = require("../services/notificationService");
@@ -25,7 +26,7 @@ exports.createRequest = async (req, res) => {
       });
     }
 
-    const image_url = `/uploads/mentor_requests/${req.file.filename}`;
+    const image_url = req.file.publicPath;
     const insertResult = await pool.query(
       `INSERT INTO upgrade_requests (user_uid, status, reason, image_url, created_at, updated_at)
        VALUES ($1, 'pending', NULL, $2, NOW(), NOW())
@@ -56,7 +57,14 @@ exports.updateStatusRequest = async (req, res) => {
       return res.status(403).json({ error: "Bạn không có quyền thực hiện thao tác này" });
     }
 
-    const { id } = req.params;
+    const id = parsePositiveInt(req.params.id);
+    
+    // Tham số phải là số nguyên dương. Nếu để nguyên chuỗi, PostgreSQL
+    // ném "invalid input syntax for type integer" và API trả 500 — trong khi
+    // lỗi thật là "client gửi sai" nên phải là 400.
+    if (!id) {
+      return res.status(400).json({ error: "id không hợp lệ" });
+    }
     const { status, reason } = req.body;
 
     if (status !== "approved" && status !== "rejected") {

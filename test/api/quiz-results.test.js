@@ -269,7 +269,32 @@ test("PATCH /api/quiz-results/quiz-results/1/grade returns 200 and sets graded_b
       "graded_by_uid không tồn tại trong DB thật"
     );
     assert.equal(poolMock.calls[1].params[2], 7, "phải lưu users.id, không phải uid chuỗi");
-    assert.equal(poolMock.calls[1].params[3], "1");
+    // parsePositiveInt ép result_id về SỐ trước khi truyền vào câu SQL.
+    assert.equal(poolMock.calls[1].params[3], 1);
+  });
+});
+
+test("PATCH /api/quiz-results/:id/grade scopes mentor to their own courses (regression: IDOR)", async () => {
+  // Trước đây câu UPDATE không có điều kiện sở hữu, nên mentor bất kỳ ghi đè
+  // được điểm của mọi bài nộp. Giờ điều kiện nằm ngay trong câu UPDATE.
+  const poolMock = createPoolMock([
+    { rows: [{ id: 7, role: "mentor" }] },
+    { rows: [{ result_id: 1 }] },
+  ]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/quiz-results/quiz-results/1/grade", {
+      method: "PATCH",
+      headers: authHeaders({ role: "mentor", uid: "mentor-1" }),
+      body: { uid: "mentor-1", explanation: "Good work", score: 9 },
+    });
+
+    assert.equal(response.status, 200);
+    const updateSql = poolMock.calls[1].sql;
+    assert.match(updateSql, /EXISTS/, "UPDATE phải có điều kiện sở hữu");
+    assert.match(updateSql, /instructor_uid/, "điều kiện sở hữu dựa trên instructor_uid");
+    assert.equal(poolMock.calls[1].params[4], "mentor-1", "uid người chấm là tham số cuối");
   });
 });
 

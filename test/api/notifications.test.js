@@ -162,21 +162,43 @@ test("POST /api/notifications/create returns 400 when title/content missing", as
 });
 
 test("POST /api/notifications/mark-read returns 200", async () => {
-  const poolMock = createPoolMock([{ rows: [{ noti_id: 1 }] }]);
+  // noti_id là UUID trong CSDL, controller validate định dạng trước khi truy vấn.
+  const NOTI_ID = "11111111-2222-3333-4444-555555555555";
+  const poolMock = createPoolMock([{ rows: [{ noti_id: NOTI_ID }] }]);
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
     const response = await json("/api/notifications/mark-read", {
       method: "POST",
       headers: authHeaders(),
-      body: { uid: "user-1", noti_id: 1 },
+      body: { uid: "user-1", noti_id: NOTI_ID },
     });
     const body = await response.json();
 
     assert.equal(response.status, 200);
     assert.match(body.message, /đã đọc/);
-    assert.deepEqual(poolMock.calls[0].params, [1, "user-1"]);
+    assert.deepEqual(poolMock.calls[0].params, [NOTI_ID, "user-1"]);
     assert.ok(poolMock.calls[0].sql.includes("UPDATE notifications"));
+  });
+});
+
+test("POST /api/notifications/mark-read returns 400 for malformed noti_id (regression)", async () => {
+  // Trước đây giá trị không phải UUID đi thẳng vào câu SQL, PostgreSQL ném
+  // "invalid input syntax for type uuid" và API trả 500.
+  const poolMock = createPoolMock();
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/notifications/mark-read", {
+      method: "POST",
+      headers: authHeaders(),
+      body: { uid: "user-1", noti_id: "1" },
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.match(body.error, /noti_id không hợp lệ/);
+    assert.equal(poolMock.calls.length, 0);
   });
 });
 
@@ -206,7 +228,7 @@ test("POST /api/notifications/mark-read returns 404 when notification not found"
     const response = await json("/api/notifications/mark-read", {
       method: "POST",
       headers: authHeaders(),
-      body: { uid: "user-1", noti_id: 999 },
+      body: { uid: "user-1", noti_id: "99999999-8888-7777-6666-555555555555" },
     });
     const body = await response.json();
 

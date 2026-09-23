@@ -1,4 +1,3 @@
-const path = require("path");
 const { sendServerError } = require("../../utils/errorResponse");
 const { pool } = require("../../config/db.config");
 const { sendNotification } = require("../../services/notificationService");
@@ -26,7 +25,7 @@ const createCategory = async (req, res) => {
     }
 
     // Insert category
-    const iconPath = iconFile ? `/uploads/categories/${iconFile.filename}` : null;
+    const iconPath = iconFile ? iconFile.publicPath : null;
     const insertResult = await pool.query(
       `INSERT INTO course_categories (name, description, icon, created_at)
        VALUES ($1, $2, $3, NOW())

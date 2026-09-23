@@ -1,9 +1,17 @@
+const { parsePositiveInt } = require("../../utils/parseId");
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const updateQuiz = async (req, res) => {
-  const { quiz_id } = req.params;
+  const quiz_id = parsePositiveInt(req.params.quiz_id);
+  
+  // Tham số phải là số nguyên dương. Nếu để nguyên chuỗi, PostgreSQL
+  // ném "invalid input syntax for type integer" và API trả 500 — trong khi
+  // lỗi thật là "client gửi sai" nên phải là 400.
+  if (!quiz_id) {
+    return res.status(400).json({ error: "quiz_id không hợp lệ" });
+  }
   const { title, type, time_limit, attempt_limit } = req.body;
 
   // Lấy uid từ token; chỉ admin mới được thao tác thay người khác

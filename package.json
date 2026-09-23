@@ -22,12 +22,17 @@
     "db:init:pg": "node scripts/init-postgres.js",
     "db:seed:pg": "node scripts/seed-postgres.js",
     "db:verify:pg": "node scripts/verify-postgres.js",
+    "db:research-videos": "node scripts/research-demo-videos.js",
+    "db:verify:demo": "node scripts/verify-demo-data.js",
+    "db:verify:demo:fast": "node scripts/verify-demo-data.js --skip-urls",
     "db:migrate:sqlserver-to-pg": "node scripts/migrate-sqlserver-to-postgres.js",
     "api:authz": "node scripts/live-authz-probe.cjs",
     "api:coverage": "node scripts/live-full-coverage.cjs",
     "api:leftover": "node scripts/live-leftover-check.cjs",
     "db:migrate:auth": "node scripts/migrate-auth.js",
-    "api:e2e": "node scripts/live-full-e2e.cjs"
+    "db:migrate:uploads": "node scripts/migrate-uploads.js",
+    "api:e2e": "node scripts/live-full-e2e.cjs",
+    "api:live": "node test/live/api-live-regression.mjs"
   },
   "keywords": [],
   "author": "",

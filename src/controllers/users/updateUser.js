@@ -13,9 +13,13 @@ const updateUser = async (req, res) => {
     return res.status(403).json({ error: "Bạn không có quyền cập nhật người dùng này" });
   }
 
+  // Ảnh đã được tầng lưu trữ ghi vào CSDL và gắn sẵn `publicPath`.
+  // (Trước đây là `path.basename(req.file.path)` — thuộc tính `path` không còn
+  // tồn tại khi dùng memoryStorage, và đọc từ đĩa cũng không chạy được khi
+  // triển khai.)
   let avatarUrl = null;
   if (req.file) {
-    avatarUrl = `/uploads/avatars/${path.basename(req.file.path)}`;
+    avatarUrl = req.file.publicPath;
   }
 
   // Xây mảng SET động cho PostgreSQL
@@ -40,8 +44,15 @@ const updateUser = async (req, res) => {
     values.push(gender);
   }
   if (birthdate != null) {
+    // new Date("khong-phai-ngay") là Invalid Date; pg chuyển nó thành chuỗi
+    // "0NaN-NaN-NaN..." và PostgreSQL trả lỗi 22007 → 500. Kiểm tra trước để
+    // trả 400 đúng nghĩa "client gửi sai".
+    const parsedBirthdate = new Date(birthdate);
+    if (Number.isNaN(parsedBirthdate.getTime())) {
+      return res.status(400).json({ error: "birthdate không phải ngày hợp lệ" });
+    }
     setClauses.push(`birthdate = $${paramIndex++}`);
-    values.push(new Date(birthdate));
+    values.push(parsedBirthdate);
   }
   if (avatarUrl) {
     setClauses.push(`avatar_url = $${paramIndex++}`);

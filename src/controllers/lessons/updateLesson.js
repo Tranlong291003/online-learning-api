@@ -1,12 +1,33 @@
+const { parsePositiveInt } = require("../../utils/parseId");
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
-const path = require("path");
-const fs = require("fs");
 const { resolveActorUid } = require("../../middleware/actor");
+const {
+  extractVideoId,
+  resolveVideoMetadata,
+} = require("../../services/youtube");
 
 const updateLesson = async (req, res) => {
-  const { lesson_id } = req.params;
+  const lesson_id = parsePositiveInt(req.params.lesson_id);
+  
+  // Tham số phải là số nguyên dương. Nếu để nguyên chuỗi, PostgreSQL
+  // ném "invalid input syntax for type integer" và API trả 500 — trong khi
+  // lỗi thật là "client gửi sai" nên phải là 400.
+  if (!lesson_id) {
+    return res.status(400).json({ error: "lesson_id không hợp lệ" });
+  }
   const { title, video_url, content, order } = req.body;
+
+  // "order" là cột integer trong CSDL; chuỗi không phải số sẽ khiến PostgreSQL
+  // ném lỗi cú pháp → 500 thay vì 400.
+  let orderValue;
+  if (order !== undefined) {
+    try {
+      orderValue = parseOptionalInt(order);
+    } catch {
+      return res.status(400).json({ error: "order phải là số nguyên không âm" });
+    }
+  }
 
   // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
   const uid = resolveActorUid(req, res, req.body.uid);
@@ -42,45 +63,74 @@ const updateLesson = async (req, res) => {
       return res.status(403).json({ error: "Bạn chỉ được cập nhật bài học do bạn tạo" });
     }
 
-    // Xử lý file
+    // Xử lý file. File cũ không bị xoá: bản ghi mới nằm ở đường dẫn ngẫu nhiên
+    // khác nên không ghi đè, và giữ lại tránh làm hỏng dữ liệu đang trỏ tới nó.
     let newPdfUrl = current.pdf_url;
     let newSlideUrl = current.slide_url;
 
     if (req.files?.pdf?.[0]) {
-      if (current.pdf_url) {
-        const oldPdfPath = path.join(__dirname, "../../public", current.pdf_url);
-        if (fs.existsSync(oldPdfPath)) fs.unlinkSync(oldPdfPath);
-      }
-      newPdfUrl = `/uploads/lessons/pdf/${req.files.pdf[0].filename}`;
+      newPdfUrl = req.files.pdf[0].publicPath;
     }
 
     if (req.files?.slide?.[0]) {
-      if (current.slide_url) {
-        const oldSlidePath = path.join(__dirname, "../../public", current.slide_url);
-        if (fs.existsSync(oldSlidePath)) fs.unlinkSync(oldSlidePath);
-      }
-      newSlideUrl = `/uploads/lessons/slides/${req.files.slide[0].filename}`;
+      newSlideUrl = req.files.slide[0].publicPath;
     }
 
     // Merge dữ liệu
     const updatedTitle = title ?? current.title;
-    const updatedVideoUrl = video_url ?? current.video_url;
     const updatedContent = content ?? current.content;
-    const updatedOrder = order ?? current.order;
+    const updatedOrder = orderValue !== undefined ? orderValue : current.order;
+
+    // Đổi video thì phải tính lại video_id/video_duration.
+    // Trước đây hai cột này giữ nguyên giá trị cũ sau khi sửa video_url, nên
+    // bài học trỏ tới video mới nhưng vẫn mang id và thời lượng của video cũ.
+    // Không truyền video_url (undefined) thì giữ nguyên video hiện tại.
+    let updatedVideoUrl = current.video_url;
+    let updatedVideoId = current.video_id;
+    let updatedVideoDuration = current.video_duration;
+
+    if (video_url !== undefined) {
+      if (video_url === null || String(video_url).trim() === "") {
+        // Cho phép gỡ video khỏi bài học (bài học chỉ còn nội dung chữ).
+        updatedVideoUrl = null;
+        updatedVideoId = null;
+        updatedVideoDuration = null;
+      } else {
+        if (!extractVideoId(video_url)) {
+          return res.status(400).json({ error: "URL YouTube không hợp lệ" });
+        }
+        const videoMeta = await resolveVideoMetadata(video_url);
+        updatedVideoUrl = videoMeta.videoUrl;
+        updatedVideoId = videoMeta.videoId;
+        updatedVideoDuration = videoMeta.videoDuration;
+      }
+    }
 
     // Update
     const updateResult = await pool.query(
       `UPDATE lessons SET
         title = $1,
         video_url = $2,
-        pdf_url = $3,
-        slide_url = $4,
-        content = $5,
-        "order" = $6,
+        video_id = $3,
+        video_duration = $4,
+        pdf_url = $5,
+        slide_url = $6,
+        content = $7,
+        "order" = $8,
         updated_at = NOW()
-      WHERE lesson_id = $7
+      WHERE lesson_id = $9
       RETURNING *`,
-      [updatedTitle, updatedVideoUrl, newPdfUrl, newSlideUrl, updatedContent, updatedOrder, lesson_id]
+      [
+        updatedTitle,
+        updatedVideoUrl,
+        updatedVideoId,
+        updatedVideoDuration,
+        newPdfUrl,
+        newSlideUrl,
+        updatedContent,
+        updatedOrder,
+        lesson_id,
+      ]
     );
 
     res.status(200).json({

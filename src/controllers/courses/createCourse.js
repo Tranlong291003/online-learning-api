@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { parseOptionalInt } = require("../../utils/parseId");
 const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 
@@ -25,6 +26,18 @@ const createCourse = async (req, res) => {
     return res.status(400).json({
       error: `Cấp độ không hợp lệ. Chỉ chấp nhận: ${VALID_LEVELS.join(", ")}`,
     });
+  }
+
+  // price/discount_price là cột integer trong CSDL. Nếu client gửi chuỗi
+  // ("abc"), PostgreSQL ném lỗi cú pháp và API trả 500 — lỗi thật là dữ liệu
+  // client gửi sai nên phải là 400.
+  let priceValue;
+  let discountPriceValue;
+  try {
+    priceValue = parseOptionalInt(price);
+    discountPriceValue = parseOptionalInt(discount_price);
+  } catch (err) {
+    return res.status(400).json({ error: "price/discount_price phải là số nguyên không âm" });
   }
 
   // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
@@ -59,10 +72,10 @@ const createCourse = async (req, res) => {
       return res.status(404).json({ error: "Không tìm thấy danh mục" });
     }
 
-    // Xử lý thumbnail
+    // Xử lý thumbnail (đã được tầng lưu trữ ghi vào CSDL và gắn publicPath)
     let thumbnail_url = null;
     if (req.file) {
-      thumbnail_url = `/uploads/courses/${req.file.filename}`;
+      thumbnail_url = req.file.publicPath;
     }
 
     // Insert course
@@ -80,8 +93,8 @@ const createCourse = async (req, res) => {
         uid,
         category_id,
         level || null,
-        price ?? null,
-        discount_price ?? null,
+        priceValue,
+        discountPriceValue,
         "pending",
         null,
         language || null,

@@ -98,8 +98,9 @@ test("POST /api/lessons/create returns 201 without video_url", async () => {
       if (q.includes("select role from users")) {
         return { rows: [{ role: "admin" }] };
       }
-      if (q.includes("select course_id from courses")) {
-        return { rows: [{ course_id: 1 }] };
+      if (q.includes("from courses")) {
+        // canManageCourse cần instructor_uid để đối chiếu chủ sở hữu.
+        return { rows: [{ course_id: 1, instructor_uid: "admin-1", title: "Course 1", status: "approved" }] };
       }
       if (q.includes("insert into lessons")) {
         return { rows: [{ lesson_id: 9, title: "Lesson 9", course_id: 1 }] };

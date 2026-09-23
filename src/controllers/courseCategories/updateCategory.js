@@ -1,15 +1,7 @@
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
-const fs = require("fs");
-const path = require("path");
 const { resolveActorUid } = require("../../middleware/actor");
 const { parsePositiveInt } = require("../../utils/parseId");
-
-const removeOldIcon = (oldIconPath) => {
-  if (!oldIconPath) return;
-  const fullPath = path.join(__dirname, "../public", oldIconPath);
-  if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
-};
 
 const updateCategory = async (req, res) => {
   try {
@@ -37,20 +29,12 @@ const updateCategory = async (req, res) => {
       return res.status(403).json({ error: "Bạn không có quyền thay đổi danh mục" });
     }
 
-    // Xóa icon cũ nếu có file mới
-    if (iconFile) {
-      const oldResult = await pool.query(
-        "SELECT icon FROM course_categories WHERE category_id = $1",
-        [category_id]
-      );
-      const oldIcon = oldResult.rows[0]?.icon;
-      if (oldIcon) removeOldIcon(oldIcon);
-    }
-
-    // Update
+    // Update. Icon cũ không bị xoá: bản ghi mới trong uploaded_files nằm ở
+    // đường dẫn ngẫu nhiên khác nên không ghi đè, và giữ lại file cũ tránh làm
+    // hỏng ảnh của bản ghi khác đang trỏ tới cùng đường dẫn.
     let updateResult;
     if (iconFile) {
-      const newIcon = `/uploads/categories/${iconFile.filename}`;
+      const newIcon = iconFile.publicPath;
       updateResult = await pool.query(
         `UPDATE course_categories SET name = $1, description = $2, icon = $3, updated_at = NOW()
          WHERE category_id = $4

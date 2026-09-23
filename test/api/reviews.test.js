@@ -14,11 +14,14 @@ function authHeaders(payload) {
 }
 
 test("POST /api/reviews/create returns 201 with review_id", async () => {
-  const bySql = (sql) =>
-    sql.includes("SELECT 1 FROM course_reviews")
-      ? { rows: [] }
-      : { rows: [{ review_id: 42 }] };
-  const poolMock = createPoolMock([bySql, bySql]);
+  // Controller kiểm tra khoá học tồn tại TRƯỚC khi insert (tránh vi phạm khoá
+  // ngoại → 500). Nên thứ tự truy vấn là: courses → course_reviews → INSERT.
+  const bySql = (sql) => {
+    if (sql.includes("FROM courses")) return { rows: [{ course_id: 1 }] };
+    if (sql.includes("SELECT 1 FROM course_reviews")) return { rows: [] };
+    return { rows: [{ review_id: 42 }] };
+  };
+  const poolMock = createPoolMock([bySql, bySql, bySql]);
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
@@ -31,9 +34,26 @@ test("POST /api/reviews/create returns 201 with review_id", async () => {
 
     assert.equal(response.status, 201);
     assert.equal(body.data.review_id, 42);
-    assert.equal(poolMock.calls.length, 2);
-    assert.deepEqual(poolMock.calls[1].params, [1, "user-1", 5, "Great"]);
-    assert.ok(poolMock.calls[1].sql.includes("INSERT INTO course_reviews"));
+    const insert = poolMock.calls.find((c) => c.sql.includes("INSERT INTO course_reviews"));
+    assert.ok(insert, "phải có INSERT vào course_reviews");
+    assert.deepEqual(insert.params, [1, "user-1", 5, "Great"]);
+  });
+});
+
+test("POST /api/reviews/create returns 404 when course does not exist (regression)", async () => {
+  const poolMock = createPoolMock([{ rows: [] }]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/reviews/create", {
+      method: "POST",
+      headers: authHeaders(),
+      body: { course_id: 999, user_uid: "user-1", rating: 5, comment: "Great" },
+    });
+
+    assert.equal(response.status, 404);
+    // Không được chạm tới INSERT
+    assert.ok(!poolMock.calls.some((c) => c.sql.includes("INSERT INTO course_reviews")));
   });
 });
 
@@ -74,9 +94,14 @@ test("POST /api/reviews/create returns 400 when rating out of range (regression)
 });
 
 test("POST /api/reviews/create returns 400 when user already reviewed", async () => {
-  const poolMock = createPoolMock([
-    (sql) => (sql.includes("SELECT 1 FROM course_reviews") ? { rows: [{ 1: 1 }] } : null),
-  ]);
+  // createPoolMock lấy phần tử theo HÀNG ĐỢI (shift), nên hàm phải được truyền
+  // cho từng vị trí truy vấn: 1) kiểm tra courses, 2) kiểm tra trùng review.
+  const bySql = (sql) => {
+    if (sql.includes("FROM courses")) return { rows: [{ course_id: 1 }] };
+    if (sql.includes("SELECT 1 FROM course_reviews")) return { rows: [{ 1: 1 }] };
+    return { rows: [] };
+  };
+  const poolMock = createPoolMock([bySql, bySql]);
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ json }) => {
@@ -89,7 +114,7 @@ test("POST /api/reviews/create returns 400 when user already reviewed", async ()
 
     assert.equal(response.status, 400);
     assert.match(body.error, /đã review/);
-    assert.equal(poolMock.calls.length, 1);
+    assert.ok(!poolMock.calls.some((c) => c.sql.includes("INSERT INTO course_reviews")));
   });
 });
 
@@ -169,7 +194,8 @@ test("PUT /api/reviews/update/1 returns 200 and updates rating", async () => {
     assert.match(body.message, /Cập nhật thành công/);
     assert.equal(poolMock.calls.length, 2);
     assert.ok(poolMock.calls[1].sql.includes("UPDATE course_reviews SET"));
-    assert.deepEqual(poolMock.calls[1].params, [4, "1"]);
+    // parsePositiveInt ép reviewId về SỐ trước khi truyền vào câu SQL.
+    assert.deepEqual(poolMock.calls[1].params, [4, 1]);
   });
 });
 
@@ -286,7 +312,7 @@ test("DELETE /api/reviews/delete/1 returns 200 when owner deletes", async () => 
     assert.equal(response.status, 200);
     assert.match(body.message, /Xóa thành công/);
     assert.ok(poolMock.calls[1].sql.includes("DELETE FROM course_reviews"));
-    assert.deepEqual(poolMock.calls[1].params, ["1"]);
+    assert.deepEqual(poolMock.calls[1].params, [1]);
   });
 });
 

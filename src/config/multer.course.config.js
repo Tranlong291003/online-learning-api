@@ -1,31 +1,8 @@
-const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
+const { createUploader } = require("../services/fileStorage");
 
-// 📁 Thư mục lưu thumbnail khóa học
-const courseUploadDir = path.join(__dirname, "../public/uploads/courses");
-
-if (!fs.existsSync(courseUploadDir)) {
-  fs.mkdirSync(courseUploadDir, { recursive: true });
-}
-
-const courseStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, courseUploadDir),
-  filename: (req, file, cb) => {
-    const courseId = req.params.id || "course";
-    const ext = path.extname(file.originalname);
-    cb(null, `${courseId}-${Date.now()}${ext}`);
-  },
+// Thumbnail khoá học: chỉ JPEG/PNG, kiểm tra cả nội dung file.
+// Xem src/services/fileStorage.js để biết vì sao không dùng diskStorage nữa.
+module.exports = createUploader({
+  allowedExtensions: /\.(jpe?g|png)$/i,
+  message: "Chỉ hỗ trợ ảnh JPEG hoặc PNG",
 });
-
-const uploadCourseThumbnail = multer({
-  storage: courseStorage,
-  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
-  fileFilter: (req, file, cb) => {
-    const allowed = /\.(jpe?g|png)$/i;
-    if (allowed.test(file.originalname)) cb(null, true);
-    else cb(new Error("Chỉ hỗ trợ ảnh JPEG hoặc PNG"));
-  },
-});
-
-module.exports = uploadCourseThumbnail;

@@ -1,12 +1,26 @@
 const { pool } = require("../../config/db.config");
+const { parsePositiveInt } = require("../../utils/parseId");
 const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
+const { canManageCourse } = require("../../utils/access");
 
 const createQuiz = async (req, res) => {
   const { course_id, title, type, time_limit, attempt_limit } = req.body;
 
   if (!course_id || !title) {
     return res.status(400).json({ error: "Thiếu thông tin khóa học hoặc tiêu đề" });
+  }
+
+  // Các cột này là integer trong CSDL. Nếu client gửi chuỗi ("abc"), PostgreSQL
+  // ném "invalid input syntax for type integer" → 500, trong khi lỗi thật là
+  // dữ liệu client gửi sai nên phải là 400.
+  const timeLimit = parsePositiveInt(time_limit);
+  const attemptLimit = parsePositiveInt(attempt_limit);
+  if (time_limit != null && time_limit !== "" && timeLimit === null) {
+    return res.status(400).json({ error: "time_limit phải là số nguyên dương" });
+  }
+  if (attempt_limit != null && attempt_limit !== "" && attemptLimit === null) {
+    return res.status(400).json({ error: "attempt_limit phải là số nguyên dương" });
   }
 
   // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
@@ -22,15 +36,13 @@ const createQuiz = async (req, res) => {
       return res.status(403).json({ error: "Bạn không có quyền tạo bài kiểm tra" });
     }
 
-    // Kiểm tra khóa học tồn tại trước khi insert. Nếu bỏ bước này, course_id
-    // không tồn tại sẽ vi phạm khoá ngoại và trả 500 kèm tên constraint nội bộ,
-    // trong khi lỗi thật là "dữ liệu client gửi sai" (404/400).
-    const courseResult = await pool.query(
-      "SELECT course_id FROM courses WHERE course_id = $1",
-      [course_id]
-    );
-    if (courseResult.rows.length === 0) {
-      return res.status(404).json({ error: "Không tìm thấy khóa học" });
+    // Kiểm tra khóa học tồn tại VÀ thuộc quyền người gọi. Nếu bỏ bước kiểm tra
+    // tồn tại, course_id lạ sẽ vi phạm khoá ngoại và trả 500 kèm tên constraint
+    // nội bộ; nếu bỏ bước kiểm tra sở hữu, mentor bất kỳ tạo được quiz trong
+    // khoá học của mentor khác.
+    const access = await canManageCourse(course_id, req.user);
+    if (!access.ok) {
+      return res.status(access.status).json({ error: access.error });
     }
 
     // Tạo quiz
@@ -38,7 +50,7 @@ const createQuiz = async (req, res) => {
       `INSERT INTO quizzes (course_id, title, type, time_limit, attempt_limit, creator_uid, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW())
        RETURNING *`,
-      [course_id, title, type || "trac_nghiem", time_limit || null, attempt_limit || null, uid]
+      [course_id, title, type || "trac_nghiem", timeLimit, attemptLimit, uid]
     );
 
     const quiz = result.rows[0];
