@@ -104,15 +104,30 @@ app.get(/^\/uploads\/(.+)$/, async (req, res, next) => {
 app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
 
 // Swagger UI - http://localhost:3000/api-docs
-// Test nhanh: bấm Authorize, nhập dev key (x-api-key) từ .env
+//
+// Ngoài giao diện mặc định, có thêm một bảng "Đăng nhập nhanh" (xem
+// src/config/swagger.ui.js) để không phải tự gọi /api/auth/login rồi chép token
+// sang hộp thoại Authorize, và một lớp hiển thị kết luận thành công/lỗi cho mỗi
+// lần gọi.
 const { buildSpec, swaggerUi } = require("./config/swagger.config");
+const { SWAGGER_UI_SCRIPT } = require("./config/swagger.ui");
+
 app.use(
   "/api-docs",
   swaggerUi.serve,
   swaggerUi.setup(buildSpec(), {
+    // persistAuthorization: giữ token đã nhập qua các lần tải lại trang — cũng
+    // là cơ chế mà bảng đăng nhập nhanh dựa vào để gắn token.
     swaggerOptions: { persistAuthorization: true },
+    customJsStr: SWAGGER_UI_SCRIPT,
+    customSiteTitle: "Online Learning API — Tài liệu",
   })
 );
+
+// Cho phép tải JSON mô tả OpenAPI để dùng với công cụ ngoài (Postman, codegen).
+app.get("/api-docs.json", (req, res) => {
+  res.json(buildSpec());
+});
 
 // Global error handler
 //

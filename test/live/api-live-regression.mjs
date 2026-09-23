@@ -105,6 +105,50 @@ async function phaseInfra() {
   await t("GET route không tồn tại", "GET", "/api/khong-ton-tai", {}, 404);
   await t("GET /", "GET", "/", {}, 404);
   await t("OPTIONS preflight", "OPTIONS", "/api/courses", { headers: { Origin: "https://example.com", "Access-Control-Request-Method": "GET" } }, [200, 204]);
+
+  // --- Swagger: tài liệu phải mở được và phục vụ đủ mô tả ---
+  const docs = await t("GET /api-docs/ (giao diện Swagger)", "GET", "/api-docs/", {}, 200);
+  if (docs) {
+    rec("trang Swagger có bảng đăng nhập nhanh", "có", docs.text.includes("dev-tools") ? "có" : "không",
+      docs.text.includes("dev-tools"), docs.text.includes("dev-tools") ? "" : "thiếu script giao diện");
+  }
+
+  const specRes = await t("GET /api-docs.json (mô tả OpenAPI)", "GET", "/api-docs.json", {}, 200, (r) => {
+    if (r.json?.openapi !== "3.0.3") return "sai phiên bản openapi";
+    if (!r.json?.paths || Object.keys(r.json.paths).length < 50) return "thiếu đường dẫn";
+    return true;
+  });
+  if (specRes?.json) {
+    const spec = specRes.json;
+    let missingBody = 0, missingExample = 0, missingTag = 0, withBody = 0;
+    for (const [path, ops] of Object.entries(spec.paths)) {
+      for (const [method, op] of Object.entries(ops)) {
+        if (!op.tags || op.tags.length === 0) missingTag++;
+        if (!["post", "put", "patch"].includes(method)) continue;
+        if (!op.requestBody) { missingBody++; continue; }
+        withBody++;
+        for (const media of Object.values(op.requestBody.content)) {
+          if (!media.example) missingExample++;
+        }
+      }
+    }
+    rec("mọi endpoint ghi đều có ô nhập (requestBody)", "0 thiếu", `${missingBody} thiếu`, missingBody === 0);
+    rec("mọi ô nhập đều có ví dụ điền sẵn", "0 thiếu", `${missingExample} thiếu`, missingExample === 0);
+    rec("mọi endpoint đều có nhóm (tag)", "0 thiếu", `${missingTag} thiếu`, missingTag === 0);
+
+    // Không được để lộ bí mật trong tài liệu công khai: giá trị của dev key,
+    // khoá ký JWT, hay một token thật.
+    const leaked = /JWT_SECRET|DEV_API_KEY|eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9/.test(specRes.text);
+    rec("tài liệu công khai không lộ khoá bí mật", "không lộ", leaked ? "LỘ" : "không lộ", !leaked);
+
+    // Đăng nhập được ngay bằng tài khoản demo điền sẵn trong ví dụ.
+    const loginExample = spec.paths["/api/auth/login"]?.post?.requestBody?.content?.["application/json"]?.example;
+    if (loginExample) {
+      const r = await raw("POST", "/api/auth/login", { body: loginExample });
+      rec("ví dụ đăng nhập trong tài liệu dùng được ngay", 200, r.status, r.status === 200,
+        r.status === 200 ? "" : "ví dụ sai: " + r.text.slice(0, 80));
+    }
+  }
 }
 
 // =====================================================================
