@@ -806,6 +806,22 @@ async function phaseCleanup() {
 
   // Mọi thay đổi (avatar, yêu cầu nâng cấp) đều nhắm vào tài khoản tạm của bộ
   // test, nên tài khoản demo không bị đụng tới — chạy lặp không tích lũy thay đổi.
+  //
+  // Ngoại lệ duy nhất: thông báo trong ứng dụng. Chúng là bản ghi nghiệp vụ sinh
+  // ra khi thao tác API (đăng ký khoá học, tạo danh mục...) và không bị xoá kèm
+  // tài nguyên, nên mỗi lượt chạy để lại vài dòng trong hộp thư của tài khoản
+  // demo. Đặt RESET_DEMO=1 để dọn chúng — chỉ dùng khi chạy trên môi trường
+  // demo/test, KHÔNG dùng trên dữ liệu thật.
+  if (process.env.RESET_DEMO === "1") {
+    const r = await raw("GET", "/api/notifications?uid=demo-student-01", { token: S() });
+    const list = r.json?.notifications || [];
+    for (const n of list) {
+      if (new RegExp(TAG).test(n.title || "") || new RegExp(TAG).test(n.content || "")) {
+        await raw("DELETE", `/api/notifications/delete/${n.noti_id}`, { token: S() });
+      }
+    }
+    rec("dọn thông báo của bộ test (RESET_DEMO=1)", "đã chạy", "đã chạy", true);
+  }
   // Avatar của demo-student-01 do bộ test thay đổi; việc khôi phục cần ghi
   // thẳng vào CSDL nên được làm ở bước dọn dẹp ngoài (xem cleanup-avatars).
 }
