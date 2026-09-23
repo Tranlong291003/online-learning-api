@@ -113,6 +113,27 @@ async function phaseInfra() {
       docs.text.includes("dev-tools"), docs.text.includes("dev-tools") ? "" : "thiếu script giao diện");
   }
 
+  // Tài nguyên CSS/JS phải là CSS/JS thật, KHÔNG phải trang HTML.
+  //
+  // Đã từng hỏng đúng ở đây trên production: swagger-ui-express phục vụ tài
+  // nguyên từ node_modules/swagger-ui-dist, thư mục không tồn tại lúc chạy trên
+  // Vercel, nên express.static không thấy tệp rồi nhường cho route bắt mọi đường
+  // dẫn — route đó trả về trang HTML. Trình duyệt nhận HTML ở vị trí stylesheet
+  // và trang tài liệu trắng trơn. Kiểm tra này bắt được lỗi đó.
+  const assetExpectations = [
+    ["swagger-ui.css", /^text\/css/, "text/css"],
+    ["swagger-ui-bundle.js", /javascript/, "javascript"],
+    ["swagger-ui-standalone-preset.js", /javascript/, "javascript"],
+  ];
+  for (const [file, pattern, label] of assetExpectations) {
+    const r = await raw("GET", `/api-docs/${file}`, {});
+    const type = r.headers.get("content-type") || "";
+    const isHtml = /text\/html/.test(type);
+    rec(`tài nguyên ${file} trả về ${label} (không phải HTML)`, label, type || "(không có)",
+      pattern.test(type) && !isHtml,
+      isHtml ? "LỖ HỔNG: trả HTML → trang tài liệu sẽ trắng" : "");
+  }
+
   const specRes = await t("GET /api-docs.json (mô tả OpenAPI)", "GET", "/api-docs.json", {}, 200, (r) => {
     if (r.json?.openapi !== "3.0.3") return "sai phiên bản openapi";
     if (!r.json?.paths || Object.keys(r.json.paths).length < 50) return "thiếu đường dẫn";
