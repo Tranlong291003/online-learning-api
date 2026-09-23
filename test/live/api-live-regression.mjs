@@ -297,6 +297,12 @@ async function phaseRead() {
     return all.length === 0 ? true : "trả về khoá của người khác";
   });
 
+  // Xem bài học là quyền của người dùng đã xác thực (tài liệu API ghi rõ vậy; màn
+  // "Danh sách bài học" nằm trong nhóm "màn dùng chung giữa các role", và trang
+  // chi tiết khoá học vốn cần danh sách bài học để trưng ra trước khi mời đăng
+  // ký). Vì vậy ở đây chỉ khẳng định endpoint hoạt động và trả đúng dữ liệu;
+  // KHÔNG khẳng định phải chặn theo đăng ký — hành vi đó (nếu muốn) cần có quyết
+  // định sản phẩm riêng, kèm cơ chế "học thử" mà schema hiện chưa có.
   await t("GET /lessons/courses/:id/:uid", "GET", `/api/lessons/courses/${ctx.approvedCourse}/demo-student-01`, { token: S() }, 200, (r) => {
     ctx.lessonId = r.json?.data?.[0]?.lesson_id;
     return r.json?.data?.length ? true : "không có bài học";
@@ -304,6 +310,7 @@ async function phaseRead() {
   if (ctx.lessonId) await t("GET /lessons/detail/:id", "GET", `/api/lessons/detail/${ctx.lessonId}`, { token: S() }, 200);
   await t("GET /lessons/detail/99999999", "GET", "/api/lessons/detail/99999999", { token: S() }, 404);
   await t("GET /lessons/detail/abc → 4xx", "GET", "/api/lessons/detail/abc", { token: S() }, [400, 404], (r) => (r.status === 500 ? "LỖ HỔNG: 500" : true));
+
 
   await t("GET /quizzes/getquizbycourse/:id", "GET", `/api/quizzes/getquizbycourse/${ctx.approvedCourse}`, { token: S() }, 200, (r) => {
     ctx.quizId = r.json?.data?.[0]?.quiz_id;
@@ -524,10 +531,21 @@ async function phaseWrite() {
   await t("POST /enrollments/register thiếu courseId", "POST", "/api/enrollments/register", { token: S(), body: {} }, 400);
   await t("GET /enrollments/check xác nhận đã đăng ký", "GET", `/api/enrollments/check/demo-student-01/${ctx.enrolledCourseId}`, { token: S() }, 200, (r) => (r.json?.enrolled === true ? true : "không xác nhận"));
 
-  // chưa đăng ký thì KHÔNG được đánh dấu hoàn thành (kiểm tra bằng khoá khác)
-  const otherCourse = [227, 228, 229, 230, 237, 250].find((c) => String(c) !== String(ctx.enrolledCourseId));
-  await t("POST /lessons/complete khoá CHƯA đăng ký → 403", "POST", "/api/lessons/complete",
-    { token: S(), body: { courseId: otherCourse, lessonId: 99999999 } }, [403, 404], (r) => (r.status === 200 ? "LỖ HỔNG: hoàn thành được bài của khoá chưa đăng ký" : true));
+  // Chưa đăng ký thì KHÔNG được đánh dấu hoàn thành.
+  //
+  // Phải dùng một bài học CÓ THẬT của khoá chưa đăng ký: nếu dùng lessonId bịa
+  // thì endpoint trả 404 vì "bài học không thuộc khoá" và bài kiểm tra sẽ đạt
+  // nhờ nhầm lý do, không chứng minh được gì về quyền.
+  const notEnrolledCourse = [227, 228, 229, 230, 237, 250].find((c) => String(c) !== String(ctx.enrolledCourseId));
+  const realLesson = await raw("GET", `/api/lessons/courses/${notEnrolledCourse}/demo-student-01`, { token: S() });
+  const realLessonId = realLesson.json?.data?.[0]?.lesson_id;
+  if (realLessonId) {
+    await t("POST /lessons/complete khoá CHƯA đăng ký → 403", "POST", "/api/lessons/complete",
+      { token: ctx.cleanToken, body: { courseId: Number(notEnrolledCourse), lessonId: Number(realLessonId) } }, 403,
+      (r) => (r.status === 200 ? "LỖ HỔNG: hoàn thành được bài của khoá chưa đăng ký" : r.status === 404 ? "404 che mất kiểm tra quyền" : true));
+  } else {
+    rec("POST /lessons/complete khoá CHƯA đăng ký → 403", "403", "không lấy được bài học thật", false, "bỏ qua kiểm tra");
+  }
 
   if (ctx.newLessonId) {
     await t("POST /lessons/complete bài trong khoá đã đăng ký", "POST", "/api/lessons/complete",
