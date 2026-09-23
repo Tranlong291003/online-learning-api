@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { deleteFiles } = require("../../services/fileStorage");
 const { parsePositiveInt } = require("../../utils/parseId");
 const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
@@ -8,10 +9,6 @@ const deleteCourse = async (req, res) => {
 
   if (!course_id) {
     return res.status(400).json({ error: "course_id không hợp lệ" });
-  }
-
-  if (!course_id) {
-    return res.status(400).json({ error: "Thiếu course_id" });
   }
 
   // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
@@ -82,37 +79,50 @@ const deleteCourse = async (req, res) => {
         [course_id]
       );
 
-      // 4. Xóa lesson_progress
+      // 4. Thu thập đường dẫn file để xoá sau khi commit: thumbnail của khoá và
+      //    pdf/slide của mọi bài học trong khoá. Nếu không dọn, mỗi lần xoá khoá
+      //    sẽ để lại file mồ côi trong uploaded_files.
+      const fileRows = await client.query(
+        `SELECT thumbnail_url AS url FROM courses WHERE course_id = $1
+         UNION ALL
+         SELECT pdf_url FROM lessons WHERE course_id = $1
+         UNION ALL
+         SELECT slide_url FROM lessons WHERE course_id = $1`,
+        [course_id]
+      );
+      const filePaths = fileRows.rows.map((r) => r.url).filter(Boolean);
+
+      // 5. Xóa lesson_progress
       await client.query(
         "DELETE FROM lesson_progress WHERE course_id = $1",
         [course_id]
       );
 
-      // 5. Xóa lessons
+      // 6. Xóa lessons
       await client.query(
         "DELETE FROM lessons WHERE course_id = $1",
         [course_id]
       );
 
-      // 6. Xóa bookmarks
+      // 7. Xóa bookmarks
       await client.query(
         "DELETE FROM bookmarks WHERE course_id = $1",
         [course_id]
       );
 
-      // 7. Xóa course_reviews
+      // 8. Xóa course_reviews
       await client.query(
         "DELETE FROM course_reviews WHERE course_id = $1",
         [course_id]
       );
 
-      // 8. Xóa enrollments
+      // 9. Xóa enrollments
       await client.query(
         "DELETE FROM enrollments WHERE course_id = $1",
         [course_id]
       );
 
-      // 9. Xóa course
+      // 10. Xóa course
       await client.query(
         "DELETE FROM courses WHERE course_id = $1",
         [course_id]
@@ -120,6 +130,10 @@ const deleteCourse = async (req, res) => {
 
       // Commit transaction
       await client.query("COMMIT");
+
+      // Sau khi commit mới xoá file: nếu transaction rollback thì file vẫn cần
+      // để bản ghi còn nguyên vẹn trỏ tới.
+      await deleteFiles(filePaths);
 
       res.status(200).json({
         success: true,

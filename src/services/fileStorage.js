@@ -180,6 +180,34 @@ async function putFile({ publicPath, buffer, mimeType, originalName, ownerUid })
   return publicPath;
 }
 
+/**
+ * Xoá các file upload theo danh sách đường dẫn công khai.
+ *
+ * Gọi khi xoá tài nguyên sở hữu file (danh mục, khoá học, bài học, người dùng).
+ * Nếu bỏ bước này, mỗi lần xoá tài nguyên sẽ để lại file mồ côi trong
+ * uploaded_files — CSDL phình dần mà không ai dọn.
+ *
+ * Bỏ qua giá trị rỗng và nuốt lỗi có chủ đích: đây là bước dọn dẹp, không được
+ * làm hỏng thao tác xoá chính (bản ghi đã bị xoá trước đó rồi).
+ *
+ * @param {(string|null|undefined)[]} publicPaths
+ */
+async function deleteFiles(publicPaths) {
+  const paths = [...new Set(publicPaths.filter(Boolean))];
+  if (paths.length === 0) return 0;
+
+  try {
+    const result = await pool.query(
+      "DELETE FROM uploaded_files WHERE public_path = ANY($1::text[])",
+      [paths]
+    );
+    return result.rowCount;
+  } catch (err) {
+    console.warn("Không xoá được file upload:", paths.join(", "), err.message);
+    return 0;
+  }
+}
+
 /** Đọc file theo đường dẫn công khai. Trả về null nếu không có. */
 async function readFile(publicPath) {
   const result = await pool.query(
@@ -289,6 +317,7 @@ module.exports = {
   createUploader,
   persistFiles,
   putFile,
+  deleteFiles,
   readFile,
   safeMimeType,
   looksLikeImage,

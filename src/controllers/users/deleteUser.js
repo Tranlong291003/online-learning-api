@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { deleteFiles } = require("../../services/fileStorage");
 const { sendServerError } = require("../../utils/errorResponse");
 
 const deleteUser = async (req, res) => {
@@ -21,13 +22,24 @@ const deleteUser = async (req, res) => {
     // dòng này là chấm dứt mọi khả năng đăng nhập. refresh_tokens và
     // password_resets tự xoá theo nhờ ON DELETE CASCADE.
     const result = await pool.query(
-      "DELETE FROM users WHERE uid = $1 RETURNING uid",
+      "DELETE FROM users WHERE uid = $1 RETURNING uid, avatar_url",
       [id]
     );
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy người dùng" });
     }
+
+    // Dọn avatar và ảnh minh chứng nâng cấp của người dùng vừa xoá, tránh để
+    // lại file mồ côi trong uploaded_files.
+    const requestRows = await pool.query(
+      "SELECT image_url FROM upgrade_requests WHERE user_uid = $1",
+      [id]
+    );
+    await deleteFiles([
+      result.rows[0].avatar_url,
+      ...requestRows.rows.map((r) => r.image_url),
+    ]);
 
     res.json({ message: "Đã xóa người dùng thành công" });
   } catch (err) {

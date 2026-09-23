@@ -115,7 +115,6 @@ async function phaseAuth() {
     ["mentor", "mentor01@demo.onlinelearning.vn"],
     ["mentor2", "mentor02@demo.onlinelearning.vn"],
     ["student", "student01@demo.onlinelearning.vn"],
-    ["student2", "student02@demo.onlinelearning.vn"],
   ]) {
     try { tokens[key] = await login(email); rec(`login ${key}`, 200, 200, true); }
     catch (e) { rec(`login ${key}`, 200, "FAIL", false, e.message); }
@@ -134,7 +133,14 @@ async function phaseAuth() {
   await t("GET /me chữ ký sai", "GET", "/api/auth/me", { token: A().slice(0, -4) + "AAAA" }, 401);
   await t("GET /me Bearer rỗng", "GET", "/api/auth/me", { headers: { Authorization: "Bearer " } }, 401);
   await t("GET /me thiếu tiền tố Bearer", "GET", "/api/auth/me", { headers: { Authorization: A() } }, 401);
-  await t("alg=none bị từ chối", "GET", "/api/courses", { headers: { Authorization: "Bearer eyJhbGciOiJub25lIn0.eyJ1aWQiOiJkZW1vLWFkbWluIiwicm9sZSI6ImFkbWluIn0." } }, [401], (r) => (r.status === 403 ? "bị chặn ở tầng khác (403) — vẫn an toàn" : true));
+  // Token ký bằng alg=none phải bị từ chối. Chấp nhận cả 401 (API từ chối) và
+  // 403 (bị tường lửa của nền tảng chặn trước khi tới API) — điều cần khẳng
+  // định là token KHÔNG được chấp nhận, chứ không phải mã lỗi cụ thể.
+  await t("alg=none bị từ chối", "GET", "/api/courses",
+    { headers: { Authorization: "Bearer eyJhbGciOiJub25lIn0.eyJ1aWQiOiJkZW1vLWFkbWluIiwicm9sZSI6ImFkbWluIn0." } },
+    [401, 403], (r) =>
+      // Nếu là 200 kèm dữ liệu thì mới là lỗ hổng thật.
+      r.status === 200 ? "LỖ HỔNG: token alg=none được chấp nhận" : true);
   await t("GET /me không lộ hash mật khẩu", "GET", "/api/auth/me", { token: S() }, 200, (r) => (/\$2[aby]\$|password_hash/.test(r.text) ? "LỖ HỔNG: lộ hash" : true));
 
   await t("POST /refresh hợp lệ", "POST", "/api/auth/refresh", { body: { refresh_token: tokens.student.refresh } }, 200, (r) => (r.json?.access_token ? true : "thiếu access_token"));
@@ -171,7 +177,11 @@ async function phaseAccount() {
   ctx.pw = "Moi@12345678";
 
   const rLogin = await t("login bằng mật khẩu mới", "POST", "/api/auth/login", { body: { email, password: ctx.pw } }, 200);
-  if (rLogin?.json?.access_token) ctx.token = rLogin.json.access_token;
+  if (rLogin?.json?.access_token) {
+    ctx.token = rLogin.json.access_token;
+    // Token sạch để dùng ở các phase sau (ctx.token bị logout thu hồi ở phase này).
+    ctx.cleanToken = rLogin.json.access_token;
+  }
   await t("login mật khẩu cũ thất bại", "POST", "/api/auth/login", { body: { email, password: "MatKhauBanDau@123" } }, [400, 401]);
 
   await t("logout", "POST", "/api/auth/logout", { token: ctx.token, body: { refresh_token: rLogin?.json?.refresh_token } }, 200);
@@ -457,9 +467,9 @@ async function phaseUploads() {
     }
   }
 
-  // --- Avatar ---
-  await t("PUT /users/update/:id + avatar", "PUT", "/api/users/update/demo-student-01",
-    { token: S(), form: (() => { const f = new FormData(); f.append("avatar", blob(fixture("sample.png"), "image/png", "av.png")); return f; })() },
+  // --- Avatar (dùng tài khoản TẠM, không đụng tài khoản demo) ---
+  await t("PUT /users/update/:id + avatar", "PUT", `/api/users/update/${ctx.uid}`,
+    { token: ctx.token, form: (() => { const f = new FormData(); f.append("avatar", blob(fixture("sample.png"), "image/png", "av.png")); return f; })() },
     200, (r) => {
       const url = r.json?.user?.avatar_url;
       if (!String(url || "").startsWith("/uploads/avatars/")) return "avatar_url sai: " + url;
@@ -468,10 +478,10 @@ async function phaseUploads() {
     });
   if (ctx.avatarUrl) await t("GET avatar mới", "GET", ctx.avatarUrl, {}, 200);
 
-  // --- Ảnh minh chứng mentor ---
-  await t("POST /mentor-requests thiếu ảnh → 400", "POST", "/api/mentor-requests", { token: tokens.student2.access, form: new FormData() }, 400);
+  // --- Ảnh minh chứng mentor (cũng dùng tài khoản TẠM) ---
+  await t("POST /mentor-requests thiếu ảnh → 400", "POST", "/api/mentor-requests", { token: ctx.token, form: new FormData() }, 400);
   await t("POST /mentor-requests + ảnh", "POST", "/api/mentor-requests",
-    { token: tokens.student2.access, form: (() => { const f = new FormData(); f.append("image", blob(fixture("sample.png"), "image/png", "mc.png")); return f; })() },
+    { token: ctx.token, form: (() => { const f = new FormData(); f.append("image", blob(fixture("sample.png"), "image/png", "mc.png")); return f; })() },
     [200, 201, 400], (r) => {
       if (r.status === 400 && /đang chờ duyệt/i.test(r.text)) return true; // đã có yêu cầu treo
       ctx.mentorRequestId = r.json?.id || r.json?.data?.id;
@@ -521,10 +531,11 @@ async function phaseWrite() {
     { token: S(), body: { course_id: ctx.enrolledCourseId, rating: 99, comment: "x" } }, 400, (r) => (r.status === 500 ? "LỖ HỔNG: 500" : true));
   await t("POST /reviews/create khoá không tồn tại → 404", "POST", "/api/reviews/create",
     { token: S(), body: { course_id: 99999999, rating: 4, comment: "x" } }, [400, 404], (r) => (r.status === 500 ? "LỖ HỔNG: 500 thay vì 404" : true));
-  // IDOR đánh giá: dùng tài khoản KHÁC để chắc chắn review không thuộc về họ.
+  // IDOR đánh giá: dùng tài khoản TẠM (khác student01) để chắc chắn đánh giá
+  // không thuộc về người đang cố sửa — không đụng tới tài khoản demo.
   {
-    const other = tokens.student2.access;
-    const r = await raw("POST", "/api/reviews/create", { token: other, body: { course_id: ctx.enrolledCourseId, rating: 5, comment: `${TAG} của student02` } });
+    const other = ctx.cleanToken;
+    const r = await raw("POST", "/api/reviews/create", { token: other, body: { course_id: ctx.enrolledCourseId, rating: 5, comment: `${TAG} của tài khoản tạm` } });
     const otherReviewId = r.json?.data?.review_id || r.json?.review_id;
     if (otherReviewId) {
       await t("PUT /reviews/update review của người khác → 403", "PUT", `/api/reviews/update/${otherReviewId}`,
@@ -780,17 +791,21 @@ async function phaseCleanup() {
   };
   if (ctx.notiId) await del("xoá thông báo", "DELETE", `/api/notifications/delete/${ctx.notiId}`, { token: S() });
   if (ctx.reviewId) await del("xoá đánh giá", "DELETE", `/api/reviews/delete/${ctx.reviewId}`, { token: S() });
-  if (ctx.otherReviewId) await del("xoá đánh giá của student02", "DELETE", `/api/reviews/delete/${ctx.otherReviewId}`, { token: tokens.student2.access });
+  if (ctx.otherReviewId) await del("xoá đánh giá của tài khoản tạm", "DELETE", `/api/reviews/delete/${ctx.otherReviewId}`, { token: ctx.cleanToken });
   if (ctx.bookmarkId) await del("xoá bookmark", "DELETE", "/api/bookmarks/delete", { token: S(), body: { bookmarkId: ctx.bookmarkId } });
   if (ctx.newQuizId) await del("xoá quiz", "DELETE", `/api/quizzes/delete/${ctx.newQuizId}`, { token: M() });
   if (ctx.newLessonId) await del("xoá bài học", "DELETE", `/api/lessons/delete/${ctx.newLessonId}`, { token: M() });
   if (ctx.courseId) await del("xoá khoá học", "DELETE", `/api/courses/delete/${ctx.courseId}`, { token: A() });
   if (ctx.newCategoryId) await del("xoá danh mục", "DELETE", `/api/course-categories/delete/${ctx.newCategoryId}`, { token: A() });
+  if (ctx.mentorRequestId) await del("xoá yêu cầu nâng cấp", "DELETE", `/api/mentor-requests/${ctx.mentorRequestId}`, { token: A() });
   if (ctx.uid) await del("xoá tài khoản", "DELETE", `/api/users/delete/${ctx.uid}`, { token: A() });
   if (ctx.uid) {
     const r = await raw("GET", `/api/users/${ctx.uid}`, { token: A() });
     rec("xác nhận tài khoản đã xoá", 404, r.status, r.status === 404);
   }
+
+  // Mọi thay đổi (avatar, yêu cầu nâng cấp) đều nhắm vào tài khoản tạm của bộ
+  // test, nên tài khoản demo không bị đụng tới — chạy lặp không tích lũy thay đổi.
   // Avatar của demo-student-01 do bộ test thay đổi; việc khôi phục cần ghi
   // thẳng vào CSDL nên được làm ở bước dọn dẹp ngoài (xem cleanup-avatars).
 }

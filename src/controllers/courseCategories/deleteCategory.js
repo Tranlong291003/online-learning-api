@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { deleteFiles } = require("../../services/fileStorage");
 const { parsePositiveInt } = require("../../utils/parseId");
 const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
@@ -30,15 +31,18 @@ const deleteCategory = async (req, res) => {
       return res.status(403).json({ error: "Bạn không có quyền xóa danh mục" });
     }
 
-    // Xóa
+    // Xóa. Trả về luôn `icon` để dọn file sau khi xoá xong — nếu không, mỗi lần
+    // xoá danh mục sẽ để lại file mồ côi trong uploaded_files.
     const result = await pool.query(
-      "DELETE FROM course_categories WHERE category_id = $1 RETURNING category_id",
+      "DELETE FROM course_categories WHERE category_id = $1 RETURNING category_id, icon",
       [category_id]
     );
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "❌ Không tìm thấy danh mục để xoá" });
     }
+
+    await deleteFiles([result.rows[0].icon]);
 
     res.status(200).json({ message: "🗑️ Xóa danh mục thành công" });
   } catch (err) {
