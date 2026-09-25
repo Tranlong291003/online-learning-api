@@ -1,15 +1,12 @@
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
-const { OpenAI } = require("openai");
 const { resolveActorUid } = require("../../middleware/actor");
 const { canManageQuiz } = require("../../utils/access");
-
-function getOpenAIClient() {
-  if (!process.env.OPENAI_API_KEY) {
-    return null;
-  }
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-}
+const {
+  askAi,
+  isAiConfigured,
+  notConfiguredMessage,
+} = require("../../config/ai.config");
 
 const createQuestionFromAi = async (req, res) => {
   const {
@@ -50,11 +47,10 @@ const createQuestionFromAi = async (req, res) => {
   const difficultyText = difficultyMap[difficulty];
 
   try {
-    const openai = getOpenAIClient();
-    if (!openai) {
-      return res.status(503).json({
-        error: "OPENAI_API_KEY chưa được cấu hình. Endpoint tạo câu hỏi bằng AI tạm thời không khả dụng.",
-      });
+    // Thiếu cấu hình AI là chuyện của môi trường, không phải lỗi người gọi.
+    // Trả 503 kèm tên biến còn thiếu để người vận hành biết cần điền gì.
+    if (!isAiConfigured()) {
+      return res.status(503).json({ error: notConfiguredMessage() });
     }
 
     // Kiểm tra role
@@ -78,7 +74,13 @@ const createQuestionFromAi = async (req, res) => {
       });
     }
 
-    // Tạo prompt cho 1 câu hỏi
+    // Tạo prompt cho 1 câu hỏi.
+    //
+    // `correct_index_base` được yêu cầu kèm để mô hình TỰ KHAI thứ tự đáp án
+    // đúng đếm từ 0 hay từ 1. Đây là cách duy nhất chắc chắn: nhìn vào dữ liệu
+    // trả về không phân biệt được (đáp án ở vị trí thứ hai có thể là 1 theo
+    // cách đếm từ 0, hoặc 2 theo cách đếm từ 1). Mô hình tự nói ra thì không
+    // phải đoán.
     const singlePrompt = (topic, difficulty) => `
 Bạn là một chuyên gia giáo dục. Hãy tạo **một câu hỏi trắc nghiệm độc đáo** liên quan đến chủ đề "${topic}".
 
@@ -87,30 +89,30 @@ Yêu cầu:
 - **Ngôn ngữ**: Tiếng Việt
 - **Hình thức**: 4 lựa chọn, 1 đáp án đúng
 
-Định dạng trả về (chỉ JSON):
+Định dạng trả về (chỉ JSON, không kèm giải thích, không bọc trong markdown):
 {
   "question": "...",
   "options": ["...", "...", "...", "..."],
-  "correct_index": 1
+  "correct_index": 0,
+  "correct_index_base": "0"
 }
+
+Quan trọng: ghi vào "correct_index_base" xem bạn đang đếm vị trí đáp án đúng
+từ 0 hay từ 1 ("0" = lựa chọn đầu tiên là 0, "1" = lựa chọn đầu tiên là 1),
+sao cho khớp với giá trị "correct_index" bạn trả về.
 `;
 
     // Gửi nhiều request song song
-    const aiResponses = await Promise.all(
+    const aiTexts = await Promise.all(
       Array.from({ length: count }).map(() =>
-        openai.chat.completions.create({
-          model: "gpt-3.5-turbo",
-          messages: [{ role: "user", content: singlePrompt(topic, difficultyText) }],
-          temperature: 0.7,
-          max_tokens: 700,
-        })
+        askAi({ prompt: singlePrompt(topic, difficultyText), temperature: 0.7, maxTokens: 700 })
       )
     );
 
     // Parse kết quả
     let questions = [];
-    for (const resp of aiResponses) {
-      let raw = resp.choices[0].message.content.trim();
+    for (const text of aiTexts) {
+      let raw = String(text ?? "").trim();
       if (raw.startsWith("```")) {
         raw = raw.replace(/```json|```/g, "").trim();
       }
@@ -127,7 +129,23 @@ Yêu cầu:
       return res.status(400).json({ error: "AI trả về không phải mảng câu hỏi hoặc mảng rỗng" });
     }
 
-    // Validate và fix correct_index
+    // Validate và quy đổi correct_index về 0-based để lưu.
+    //
+    // ⚠️ Mỗi mô hình AI có thể đánh số đáp án theo cách khác nhau — có mô hình
+    // đếm từ 0, có mô hình đếm từ 1. Trước đây mã LUÔN trừ đi 1, giả định mọi
+    // mô hình đều 1-based. Với mô hình trả 0-based thì đáp án đúng bị lưu lệch
+    // một bậc, và cả câu hỏi lẫn bài chấm đều sai trong khi API vẫn báo thành
+    // công (không có gì báo lỗi).
+    //
+    // Cách xử lý ở đây không phụ thuộc mô hình: prompt yêu cầu 4 lựa chọn nên
+    // giá trị 0..3 chỉ có một cách hiểu (0-based), còn 1..4 chỉ có một cách hiểu
+    // (1-based). Chỉ khi giá trị nằm trong khoảng chồng lấn 1..3 mới phải xét:
+    //  - mô hình tự khai quy ước (trường correct_index_base) thì theo lời khai;
+    //  - nếu không khai, mặc định hiểu là 1-based như hành vi cũ, nhưng trả kèm
+    //    trường `canh_bao` để người tạo biết cần soát lại đáp án.
+    //
+    // Cách này không đọc được ý định của mô hình thay người dùng; nó chỉ bảo đảm
+    // giá trị lưu xuống luôn nằm trong khoảng hợp lệ, và nói rõ khi không chắc.
     if (type === "trac_nghiem") {
       for (const q of questions) {
         if (!q.question || typeof q.question !== "string") {
@@ -136,12 +154,49 @@ Yêu cầu:
         if (!Array.isArray(q.options) || q.options.length !== 4) {
           return res.status(400).json({ error: "Options phải là mảng có đúng 4 phần tử", question: q });
         }
-        if (typeof q.correct_index !== "number" || !Number.isInteger(q.correct_index)) {
-          return res.status(400).json({ error: "correct_index phải là số nguyên", question: q });
+        if (
+          typeof q.correct_index !== "number" ||
+          !Number.isInteger(q.correct_index) ||
+          q.correct_index < 0 ||
+          q.correct_index > 4
+        ) {
+          return res.status(400).json({
+            error: "correct_index phải là số nguyên trong khoảng 0..4",
+            question: q,
+          });
         }
-        if (q.correct_index < 1 || q.correct_index > 4) {
-          return res.status(400).json({ error: "correct_index phải là số từ 1 đến 4", question: q });
+
+        const declared0Based = q.correct_index_base === "0";
+        const declared1Based = q.correct_index_base === "1";
+
+        let zeroBased;
+        let uncertain = false;
+
+        if (declared0Based) {
+          zeroBased = q.correct_index;
+        } else if (declared1Based) {
+          zeroBased = q.correct_index - 1;
+        } else if (q.correct_index === 0) {
+          // Chỉ 0-based mới sinh ra giá trị 0.
+          zeroBased = 0;
+        } else if (q.correct_index === 4) {
+          // Chỉ 1-based mới sinh ra giá trị 4 (với 4 lựa chọn).
+          zeroBased = 3;
+        } else {
+          // Khoảng chồng lấn 1..3: không phân biệt được từ dữ liệu trả về.
+          zeroBased = q.correct_index - 1;
+          uncertain = true;
         }
+
+        if (zeroBased < 0 || zeroBased > 3) {
+          return res.status(400).json({
+            error: "correct_index nằm ngoài khoảng hợp lệ sau khi quy đổi",
+            question: q,
+          });
+        }
+
+        q._zeroBasedIndex = zeroBased;
+        q._indexUncertain = uncertain;
       }
     }
 
@@ -154,14 +209,29 @@ Yêu cầu:
         questions.map(async (q) => {
           const question = q.question;
           const options = type === "trac_nghiem" ? JSON.stringify(q.options) : null;
-          const correct_index = type === "trac_nghiem" ? q.correct_index - 1 : null;
+          const correct_index = type === "trac_nghiem" ? q._zeroBasedIndex : null;
           const inserted = await client.query(
             `INSERT INTO quiz_questions (quiz_id, question, options, correct_index, created_at)
              VALUES ($1, $2, $3, $4, NOW())
              RETURNING question_id`,
             [quiz_id, question, options, correct_index]
           );
-          return { ...q, question_id: inserted.rows[0].question_id };
+
+          // Bỏ các trường nội bộ trước khi trả về, và nói rõ câu nào chưa chắc
+          // chắn về vị trí đáp án để người tạo soát lại.
+          const { _zeroBasedIndex, _indexUncertain, ...publicQuestion } = q;
+          return {
+            ...publicQuestion,
+            correct_index_stored: correct_index,
+            ...(type === "trac_nghiem" && _indexUncertain
+              ? {
+                  canh_bao:
+                    "Không xác định chắc chắn cách đánh số đáp án của mô hình; " +
+                    "đã hiểu theo quy ước 1-based. Vui lòng kiểm tra lại đáp án đúng.",
+                }
+              : {}),
+            question_id: inserted.rows[0].question_id,
+          };
         })
       );
       await client.query("COMMIT");
@@ -193,7 +263,7 @@ Yêu cầu:
     if (upstreamStatus === 401 || upstreamStatus === 403) {
       return res.status(503).json({
         error:
-          "Dịch vụ AI tạm thời không khả dụng (API key không hợp lệ). Vui lòng kiểm tra cấu hình OPENAI_API_KEY.",
+          "Dịch vụ AI tạm thời không khả dụng (API key không hợp lệ). Kiểm tra lại AI_API_KEY trong cấu hình.",
       });
     }
     if (upstreamStatus >= 500 || err?.code === "ETIMEDOUT" || err?.code === "ECONNREFUSED") {

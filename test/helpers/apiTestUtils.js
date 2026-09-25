@@ -96,7 +96,12 @@ const testUserRegistry = new Map();
 function loadApp(options = {}) {
   process.env.JWT_SECRET = options.jwtSecret || "test-secret-key-with-at-least-32-chars";
   process.env.NODE_ENV = "test";
-  process.env.OPENAI_API_KEY = "test-openai-key";
+  // Cấu hình dịch vụ AI. Ba biến này phải có giá trị để `isAiConfigured()` trả
+  // true, nếu không endpoint AI trả 503 và test không chạy tới phần logic cần
+  // kiểm. Giá trị cụ thể không quan trọng vì client `openai` đã bị mock bên dưới.
+  process.env.AI_BASE_URL = options.aiBaseUrl || "http://ai-test.invalid/v1";
+  process.env.AI_API_KEY = options.aiApiKey || "test-ai-key";
+  process.env.AI_MODEL = options.aiModel || "test/model";
   // bcrypt cost 12 (mặc định production) khiến mỗi lần hash mất hàng trăm ms —
   // đủ để cả bộ test chậm hẳn. Cost 4 vẫn giữ nguyên ngữ nghĩa, chỉ nhanh hơn.
   process.env.BCRYPT_ROUNDS = options.bcryptRounds || "4";

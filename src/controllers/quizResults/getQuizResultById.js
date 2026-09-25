@@ -1,19 +1,8 @@
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
-const { OpenAI } = require("openai");
 const { Worker, isMainThread, parentPort, workerData } = require("worker_threads");
 const { parsePositiveInt } = require("../../utils/parseId");
-
-function getOpenAIClient() {
-  if (!process.env.OPENAI_API_KEY) {
-    return null;
-  }
-  return new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-    maxRetries: 1,
-    timeout: 3000,
-  });
-}
+const { askAi, isAiConfigured } = require("../../config/ai.config");
 
 const BATCH_SIZE = 5;
 const REQUEST_TIMEOUT = 3000;
@@ -31,25 +20,32 @@ if (!isMainThread) {
 Các lựa chọn: ${options.join(" | ")}
 Đáp án đúng: ${correctIndex + 1}`;
 
-    try {
-      const openai = getOpenAIClient();
-      if (!openai) {
-        return "Đáp án đúng vì tuân thủ nội dung bài học.";
-      }
+    // Chưa cấu hình AI thì dùng lời giải mặc định — đây là tiện ích phụ, không
+    // được làm hỏng việc trả kết quả bài làm.
+    if (!isAiConfigured()) {
+      return "Đáp án đúng vì tuân thủ nội dung bài học.";
+    }
 
+    try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
-      const aiRes = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages: [{ role: "user", content: prompt }],
+
+      const explanation = await askAi({
+        prompt,
         temperature: 0.4,
-        max_tokens: 200,
-      }, { signal: controller.signal });
+        maxTokens: 200,
+        // Ngân sách thời gian ở đây rất ngắn vì việc sinh lời giải chạy song
+        // song cho nhiều câu; câu nào quá hạn thì dùng lời giải mặc định.
+        timeout: REQUEST_TIMEOUT,
+        signal: controller.signal,
+      });
 
       clearTimeout(timeoutId);
-      const explanation = aiRes.choices[0].message.content;
-      explanationCache.set(cacheKey, explanation);
-      return explanation;
+      const text = String(explanation ?? "").trim();
+      if (!text) return "Đáp án đúng vì tuân thủ các nguyên tắc và best practice.";
+
+      explanationCache.set(cacheKey, text);
+      return text;
     } catch (error) {
       return "Đáp án đúng vì tuân thủ các nguyên tắc và best practice.";
     }

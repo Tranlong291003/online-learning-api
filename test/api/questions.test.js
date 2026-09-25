@@ -257,21 +257,9 @@ test("POST /api/questions/createbyuser returns 404 when quiz missing", async () 
   });
 });
 
-test("POST /api/questions/createbyai returns 201 with OpenAI-generated questions", async () => {
-  const aiQuestion = {
-    question: "1+1?",
-    options: ["1", "2", "3", "4"],
-    correct_index: 1,
-  };
-  const poolMock = createPoolMock([
-    { rows: [{ role: "admin" }] },
-    { rows: [{ type: "trac_nghiem" }] },
-    { rows: [] }, // BEGIN
-    { rows: [{ question_id: 11 }] },
-    { rows: [{ question_id: 12 }] },
-    { rows: [] }, // COMMIT
-  ]);
-  const { app } = loadApp({
+/** Dựng app với câu trả lời AI cho trước. */
+function appWithAiAnswer(aiQuestion, poolMock) {
+  return loadApp({
     poolMock,
     openai: {
       OpenAI: class {
@@ -287,7 +275,21 @@ test("POST /api/questions/createbyai returns 201 with OpenAI-generated questions
       },
     },
   });
+}
 
+const AI_POOL = () =>
+  createPoolMock([
+    { rows: [{ role: "admin" }] },
+    { rows: [{ type: "trac_nghiem" }] },
+    { rows: [] }, // BEGIN
+    { rows: [{ question_id: 11 }] },
+    { rows: [{ question_id: 12 }] },
+    { rows: [] }, // COMMIT
+  ]);
+
+/** Gọi createbyai và trả về các tham số INSERT đã dùng. */
+async function runCreateByAi(app, poolMock, number = 2) {
+  let body;
   await withServer(app, async ({ json }) => {
     const response = await json("/api/questions/createbyai", {
       method: "POST",
@@ -296,25 +298,130 @@ test("POST /api/questions/createbyai returns 201 with OpenAI-generated questions
         uid: "admin-1",
         quiz_id: 1,
         topic: "Toán học",
-        number: 2,
+        number,
         difficulty: "easy",
         type: "trac_nghiem",
       },
     });
-    const body = await response.json();
+    body = await response.json();
+    assert.equal(response.status, 201, JSON.stringify(body));
+  });
+  const inserts = poolMock.calls.filter((c) => c.sql.includes("INSERT INTO quiz_questions"));
+  return { body, inserts };
+}
 
-    assert.equal(response.status, 201);
-    assert.equal(body.questions.length, 2);
-    assert.match(body.message, /2 câu hỏi/);
-    const inserts = poolMock.calls.filter((c) =>
-      c.sql.includes("INSERT INTO quiz_questions")
-    );
-    assert.equal(inserts.length, 2);
-    for (const insert of inserts) {
-      assert.equal(insert.params[1], "1+1?");
-      assert.equal(insert.params[2], JSON.stringify(aiQuestion.options));
-      assert.equal(insert.params[3], 0, "AI correct_index stored 0-based (1-based input)");
-    }
+test("POST /api/questions/createbyai stores 0-based index when model declares base 1", async () => {
+  // Mô hình khai đếm từ 1, đáp án đúng là lựa chọn thứ hai (giá trị 2)
+  // → lưu 1 (0-based).
+  const poolMock = AI_POOL();
+  const { app } = appWithAiAnswer(
+    {
+      question: "1+1?",
+      options: ["1", "2", "3", "4"],
+      correct_index: 2,
+      correct_index_base: "1",
+    },
+    poolMock
+  );
+
+  const { body, inserts } = await runCreateByAi(app, poolMock);
+  assert.equal(body.questions.length, 2);
+  for (const insert of inserts) {
+    assert.equal(insert.params[1], "1+1?");
+    assert.equal(insert.params[2], JSON.stringify(["1", "2", "3", "4"]));
+    assert.equal(insert.params[3], 1, "khai 1-based → lưu 0-based");
+  }
+});
+
+test("POST /api/questions/createbyai stores index as-is when model declares base 0", async () => {
+  // Mô hình khai đếm từ 0, đáp án đúng là lựa chọn thứ ba (giá trị 2)
+  // → lưu nguyên 2. Trước đây mã luôn trừ 1 nên lưu nhầm thành 1.
+  const poolMock = AI_POOL();
+  const { app } = appWithAiAnswer(
+    {
+      question: "1+1?",
+      options: ["1", "2", "3", "4"],
+      correct_index: 2,
+      correct_index_base: "0",
+    },
+    poolMock
+  );
+
+  const { inserts } = await runCreateByAi(app, poolMock);
+  for (const insert of inserts) {
+    assert.equal(insert.params[3], 2, "khai 0-based → lưu nguyên giá trị");
+  }
+});
+
+test("POST /api/questions/createbyai infers 0-based when index is 0", async () => {
+  // Giá trị 0 chỉ có nghĩa theo cách đếm từ 0 (với 1-based thì lựa chọn đầu là 1).
+  const poolMock = AI_POOL();
+  const { app } = appWithAiAnswer(
+    { question: "1+1?", options: ["1", "2", "3", "4"], correct_index: 0 },
+    poolMock
+  );
+
+  const { inserts } = await runCreateByAi(app, poolMock);
+  for (const insert of inserts) assert.equal(insert.params[3], 0);
+});
+
+test("POST /api/questions/createbyai infers 1-based when index is 4", async () => {
+  // Giá trị 4 chỉ có nghĩa theo cách đếm từ 1 (0-based tối đa là 3).
+  const poolMock = AI_POOL();
+  const { app } = appWithAiAnswer(
+    { question: "1+1?", options: ["1", "2", "3", "4"], correct_index: 4 },
+    poolMock
+  );
+
+  const { inserts } = await runCreateByAi(app, poolMock);
+  for (const insert of inserts) assert.equal(insert.params[3], 3, "4 theo 1-based → 3");
+});
+
+test("POST /api/questions/createbyai warns when the numbering base is ambiguous", async () => {
+  // Không khai quy ước, giá trị nằm trong khoảng chồng lấn (1..3) → phải nói rõ
+  // là chưa chắc chắn, để người tạo soát lại đáp án thay vì tin tuyệt đối.
+  const poolMock = AI_POOL();
+  const { app } = appWithAiAnswer(
+    { question: "1+1?", options: ["1", "2", "3", "4"], correct_index: 2 },
+    poolMock
+  );
+
+  const { body, inserts } = await runCreateByAi(app, poolMock);
+  for (const insert of inserts) {
+    assert.equal(insert.params[3], 1, "mặc định hiểu 1-based như hành vi cũ");
+  }
+  const warned = body.questions.filter((q) => q.canh_bao);
+  assert.equal(warned.length, 2, "mọi câu chưa chắc chắn đều phải kèm cảnh báo");
+});
+
+test("POST /api/questions/createbyai does not warn when the base is unambiguous", async () => {
+  const poolMock = AI_POOL();
+  const { app } = appWithAiAnswer(
+    { question: "1+1?", options: ["1", "2", "3", "4"], correct_index: 0, correct_index_base: "0" },
+    poolMock
+  );
+
+  const { body } = await runCreateByAi(app, poolMock);
+  for (const q of body.questions) assert.equal(q.canh_bao, undefined);
+});
+
+test("POST /api/questions/createbyai rejects correct_index outside 0..4", async () => {
+  const poolMock = createPoolMock([
+    { rows: [{ role: "admin" }] },
+    { rows: [{ type: "trac_nghiem" }] },
+  ]);
+  const { app } = appWithAiAnswer(
+    { question: "1+1?", options: ["1", "2", "3", "4"], correct_index: 9 },
+    poolMock
+  );
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/questions/createbyai", {
+      method: "POST",
+      headers: authHeaders({ role: "admin", uid: "admin-1" }),
+      body: { uid: "admin-1", quiz_id: 1, topic: "Toán", number: 1, difficulty: "easy", type: "trac_nghiem" },
+    });
+    assert.equal(response.status, 400);
   });
 });
 
