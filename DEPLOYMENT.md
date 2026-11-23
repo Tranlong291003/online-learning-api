@@ -1,103 +1,49 @@
-# Deployment Guide
+# Triển khai Cloudflare Workers + D1
 
-## 1. Create PostgreSQL database
+## Cấu hình dự án
 
-Recommended quick setup: Supabase, Render PostgreSQL, Railway PostgreSQL, or Neon.
+[`wrangler.jsonc`](wrangler.jsonc) khai báo Worker `lms`, D1 binding `DB` và giới hạn upload 1.5 MiB. Schema nằm trong [`cloudflare/d1-schema.sql`](cloudflare/d1-schema.sql). Worker production: [`https://lms.tranlong291003.workers.dev`](https://lms.tranlong291003.workers.dev). Đặt URL này làm `BASE_URL` trong FE.
 
-Set one of these env styles:
+## Đăng nhập và triển khai
 
-```bash
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE
-DB_SSL=true
-```
-
-Or:
+Máy triển khai cần Node.js 22 trở lên và Wrangler 4:
 
 ```bash
-DB_HOST=...
-DB_PORT=5432
-DB_DATABASE=...
-DB_USER=...
-DB_PASSWORD=...
-DB_SSL=true
+npm ci
+npm run cf:dev
+npm run cf:deploy
 ```
 
-Initialize tables:
+Chạy `npx wrangler login` để liên kết CLI với tài khoản Cloudflare. D1 production `lms` đã có schema và dữ liệu; không chạy lại schema trên production. `cf:dev` chạy local Worker và D1 local; `cf:deploy` triển khai Worker.
+
+## Secrets
+
+Không đặt secrets trong `wrangler.jsonc`, `.env.example` hay Git. Đặt secret bằng Wrangler:
 
 ```bash
-npm run db:init:pg
-npm run db:verify:pg
+npm exec wrangler secret put JWT_SECRET
+npm exec wrangler secret put AI_API_KEY
+npm exec wrangler secret put YOUTUBE_API_KEY
+npm exec wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON
 ```
 
-## 2. Required production env
+`JWT_SECRET` phải giữ cùng giá trị với môi trường đang phát hành token. Nếu thay secret, access token hiện tại sẽ hết hiệu lực và người dùng cần đăng nhập lại. `AI_API_KEY`, `YOUTUBE_API_KEY`, Firebase và `CORS_ORIGIN` chỉ cần cấu hình nếu dùng các tính năng tương ứng.
+
+## Kiểm tra sau deploy
 
 ```bash
-NODE_ENV=production
-HOST=0.0.0.0
-PORT=3000
-JWT_SECRET=replace-with-a-long-random-secret
-DATABASE_URL=postgresql://...
-DB_SSL=true
-AI_BASE_URL=http://localhost:20128/v1
-AI_API_KEY=...
-AI_MODEL=ag/gemini-3.8-flash
-YOUTUBE_API_KEY=...
+npm test
+npm exec wrangler deploy -- --dry-run
 ```
 
-Firebase also needs `src/firebaseServiceAccountKey.json` or a production-safe Firebase credential loading flow before deploy.
+Production API: `https://lms.tranlong291003.workers.dev`. Các endpoint auth là `/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/me` và `/api/auth/logout`. Không chạy các script `api:write`, `api:coverage` hoặc `api:sweep` trên production nếu chưa chuẩn bị dữ liệu kiểm thử và quy trình dọn dẹp.
 
-## 3. Render deploy
+Tài khoản được chuyển từ hệ thống cũ nhưng không có `password_hash` cần đặt mật khẩu mới qua luồng xác minh email trước khi dùng đăng nhập mật khẩu. Hiện luồng quên mật khẩu chưa có dịch vụ gửi email; không trả token đặt lại trong production.
 
-1. Push repo to GitHub.
-2. Create a new Render Web Service.
-3. Build command: `npm ci`
-4. Start command: `npm start`
-5. Add env vars from section 2.
-6. Open `/health` after deploy.
+## Upload file
 
-This repo includes `render.yaml` for Render Blueprint deploy.
+Worker lưu file trong bảng `uploaded_files` của D1 để giữ URL hiện hữu. Mỗi file bị giới hạn 1.5 MiB nhằm chừa khoảng trống dưới giới hạn hàng D1 2 MiB. R2 chưa được bật cho account nên chưa dùng làm nơi lưu file.
 
-## 4. Railway deploy
+## Auth và lưu trữ
 
-1. Create a Railway project.
-2. Add PostgreSQL plugin.
-3. Deploy from GitHub.
-4. Set `DATABASE_URL`, `DB_SSL=true`, `JWT_SECRET`, API keys, and Firebase credential.
-5. Run once in Railway shell:
-
-```bash
-npm run db:init:pg
-npm run db:verify:pg
-```
-
-## 5. Docker deploy
-
-```bash
-docker build -t online-learning-api .
-docker run -p 3000:3000 --env-file .env online-learning-api
-```
-
-## 6. Docker Compose local full stack
-
-This starts PostgreSQL and the API together. The API initializes the schema before booting.
-
-```bash
-docker compose up --build
-```
-
-Open:
-
-```text
-http://localhost:3000/health
-```
-
-Stop:
-
-```bash
-docker compose down
-```
-
-## Notes
-
-- Uploaded files under `src/public/uploads` are local disk files. On Render/Railway free web services, disk can be ephemeral. For production, move uploads to S3, Cloudinary, Supabase Storage, or Firebase Storage.
-- Rotate any API keys that were ever committed or shared.
+Mật khẩu được hash bằng bcrypt. Access token là JWT HS256 sống 15 phút; refresh token ngẫu nhiên được lưu dưới dạng SHA-256 và đổi mới một lần mỗi lần refresh. `JWT_SECRET` đã được đặt trực tiếp trong Cloudflare Worker dưới dạng secret, không nằm trong repo.

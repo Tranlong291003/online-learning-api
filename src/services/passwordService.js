@@ -2,7 +2,7 @@
  * Hash và kiểm tra mật khẩu bằng bcrypt.
  *
  * Dùng bcryptjs (thuần JavaScript) thay vì `bcrypt`: bản native cần biên dịch
- * khi cài, dễ hỏng trên môi trường serverless/build sạch của Vercel và Render.
+ * khi cài, dễ hỏng trên môi trường serverless/build sạch.
  */
 const bcrypt = require("bcryptjs");
 const {

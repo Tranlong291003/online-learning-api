@@ -15,6 +15,58 @@ const deleteCourse = async (req, res) => {
   const uid = resolveActorUid(req, res, req.body.uid);
   if (!uid) return;
 
+  if (typeof pool.batch === "function") {
+    try {
+      const userResult = await pool.query("SELECT role FROM users WHERE uid = $1", [uid]);
+      if (userResult.rows.length === 0) {
+        return res.status(404).json({ error: "Không tìm thấy người dùng" });
+      }
+      const role = userResult.rows[0].role;
+      if (role !== "admin" && role !== "mentor") {
+        return res.status(403).json({ error: "Bạn không có quyền xóa khóa học" });
+      }
+
+      const courseResult = await pool.query(
+        "SELECT instructor_uid FROM courses WHERE course_id = $1",
+        [course_id]
+      );
+      if (courseResult.rows.length === 0) {
+        return res.status(404).json({ error: "Không tìm thấy khóa học để xóa" });
+      }
+      if (role === "mentor" && courseResult.rows[0].instructor_uid !== uid) {
+        return res.status(403).json({ error: "Bạn chỉ được phép xóa khóa học do bạn tạo" });
+      }
+
+      const fileRows = await pool.query(
+        `SELECT thumbnail_url AS url FROM courses WHERE course_id = $1
+         UNION ALL
+         SELECT pdf_url FROM lessons WHERE course_id = $1
+         UNION ALL
+         SELECT slide_url FROM lessons WHERE course_id = $1`,
+        [course_id]
+      );
+      const filePaths = fileRows.rows.map((row) => row.url).filter(Boolean);
+      await pool.batch([
+        { text: "DELETE FROM quiz_results WHERE quiz_id IN (SELECT quiz_id FROM quizzes WHERE course_id = $1)", values: [course_id] },
+        { text: "DELETE FROM quiz_questions WHERE quiz_id IN (SELECT quiz_id FROM quizzes WHERE course_id = $1)", values: [course_id] },
+        { text: "DELETE FROM quizzes WHERE course_id = $1", values: [course_id] },
+        { text: "DELETE FROM lesson_progress WHERE course_id = $1", values: [course_id] },
+        { text: "DELETE FROM lessons WHERE course_id = $1", values: [course_id] },
+        { text: "DELETE FROM bookmarks WHERE course_id = $1", values: [course_id] },
+        { text: "DELETE FROM course_reviews WHERE course_id = $1", values: [course_id] },
+        { text: "DELETE FROM enrollments WHERE course_id = $1", values: [course_id] },
+        { text: "DELETE FROM courses WHERE course_id = $1", values: [course_id] },
+      ]);
+      await deleteFiles(filePaths);
+      return res.status(200).json({
+        success: true,
+        message: "Xóa khóa học và các dữ liệu liên quan thành công",
+      });
+    } catch (err) {
+      return sendServerError(res, "Lỗi xóa khóa học", err);
+    }
+  }
+
   let client;
 
   try {

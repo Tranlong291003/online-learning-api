@@ -1,5 +1,5 @@
 /**
- * ⚠️ CẢNH BÁO: script này XOÁ DỮ LIỆU trong DB thật (DB Supabase, không phải mock).
+ * ⚠️ CẢNH BÁO: script này XOÁ DỮ LIỆU trong PostgreSQL được cấu hình cục bộ.
  *
  * Nó dọn dữ liệu do live-write-e2e.cjs / live-write-sweep.cjs tạo ra, nhưng hiện
  * đang xoá TOÀN BỘ bảng notifications / lesson_progress / enrollments / bookmarks /
@@ -24,10 +24,9 @@ if (dbUser !== DB_TEN_DU_KIEN) {
   process.exit(1);
 }
 
-const pw=decodeURIComponent(new URL(fs.readFileSync(".env","utf8").match(/^DATABASE_URL=(.*)$/m)[1].trim()).password);
+const databaseUrl = process.env.DATABASE_URL || new URL(fs.readFileSync(".env", "utf8").match(/^DATABASE_URL=(.*)$/m)[1].trim());
 (async()=>{
-const c=new Client({host:"aws-0-ap-northeast-1.pooler.supabase.com",port:5432,database:"postgres",
- user:"postgres.hgugynckgityoacmqpcj",password:pw,ssl:{rejectUnauthorized:false},connectionTimeoutMillis:10000});
+const c=new Client({connectionString:databaseUrl,ssl:{rejectUnauthorized:false},connectionTimeoutMillis:10000});
 await c.connect();
 await c.query("BEGIN");
 const del=async(l,s,p)=>{const r=await c.query(s,p);console.log("  "+l+": "+r.rowCount+" rows");};

@@ -49,21 +49,15 @@ const getCourseById = async (req, res) => {
         (SELECT COUNT(*) FROM enrollments e WHERE e.course_id = c.course_id) AS enrollment_count,
 
         -- Total video duration
-        COALESCE(
-          TO_CHAR(
-            INTERVAL '1 second' * SUM(
-              CASE
-                WHEN l.video_duration ~ '^[0-9]{2}:[0-9]{2}:[0-9]{2}$' THEN
-                  CAST(SUBSTRING(l.video_duration, 1, 2) AS INT) * 3600 +
-                  CAST(SUBSTRING(l.video_duration, 4, 2) AS INT) * 60 +
-                  CAST(SUBSTRING(l.video_duration, 7, 2) AS INT)
-                ELSE 0
-              END
-            ),
-            'HH24:MI:SS'
-          ),
-          '00:00:00'
-        ) AS total_video_duration,
+        SUM(
+          CASE
+            WHEN l.video_duration ~ '^[0-9]{2}:[0-9]{2}:[0-9]{2}$' THEN
+              CAST(SUBSTRING(l.video_duration, 1, 2) AS INT) * 3600 +
+              CAST(SUBSTRING(l.video_duration, 4, 2) AS INT) * 60 +
+              CAST(SUBSTRING(l.video_duration, 7, 2) AS INT)
+            ELSE 0
+          END
+        ) AS total_video_seconds,
 
         -- Lesson info
         (SELECT updated_at FROM lessons WHERE course_id = c.course_id ORDER BY updated_at DESC LIMIT 1) AS last_lesson_update,
@@ -104,8 +98,11 @@ const getCourseById = async (req, res) => {
     }
 
     const course = result.rows[0];
+    const { total_video_seconds, ...courseData } = course;
+    const seconds = Number(total_video_seconds || 0);
     const response = {
-      ...course,
+      ...courseData,
+      total_video_duration: `${String(Math.floor(seconds / 3600)).padStart(2, "0")}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`,
       discount_percent:
         course.discount_price && course.price
           ? Math.round(

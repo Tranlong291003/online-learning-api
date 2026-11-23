@@ -5,6 +5,8 @@ node_modules/
 .env*
 !.env.example
 !.env.docker.example
+.dev.vars*
+!.dev.vars.example
 src/firebaseServiceAccountKey.json
 server.*.log
 src/public/uploads/
@@ -14,7 +16,6 @@ src/public/uploads/
 
 # Cấu hình local của công cụ soạn code (không phải cấu hình dự án)
 .claude/
-.vercel
 
 # Kết quả chạy bộ kiểm thử trực tiếp (sinh ra mỗi lần chạy)
 test/live/result.json

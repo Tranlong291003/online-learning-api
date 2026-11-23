@@ -1,0 +1,3 @@
+JWT_SECRET=replace-with-a-random-secret-at-least-32-characters
+JWT_ISSUER=online-learning-api
+JWT_AUDIENCE=online-learning-client

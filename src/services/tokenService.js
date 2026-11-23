@@ -80,11 +80,12 @@ async function issueRefreshToken({ uid, familyId, remember, userAgent }) {
     ? REFRESH_TOKEN_TTL_DAYS_REMEMBER
     : REFRESH_TOKEN_TTL_DAYS;
   const expiresAt = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
+  const resolvedFamilyId = familyId || crypto.randomUUID();
 
   await pool.query(
     `INSERT INTO refresh_tokens (uid, token_hash, family_id, expires_at, user_agent)
-     VALUES ($1, $2, COALESCE($3, gen_random_uuid()), $4, $5)`,
-    [uid, hashToken(rawToken), familyId || null, expiresAt, userAgent || null]
+     VALUES ($1, $2, $3, $4, $5)`,
+    [uid, hashToken(rawToken), resolvedFamilyId, expiresAt, userAgent || null]
   );
 
   return rawToken;

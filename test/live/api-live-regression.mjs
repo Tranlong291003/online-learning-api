@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
 const fixture = (name) => path.join(FIXTURES, name);
 
-const BASE = (process.env.API_BASE || "https://online-learning-api.vercel.app").replace(/\/$/, "");
+const BASE = (process.env.API_BASE || "http://localhost:3000").replace(/\/$/, "");
 const PW = "Demo@123456";
 const TAG = `E2E-${Date.now()}`;
 

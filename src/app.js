@@ -2,6 +2,11 @@ const express = require("express");
 const cors = require("cors");
 const app = express();
 const path = require("path");
+const localUploadsPath = path.join(
+  typeof __dirname === "undefined" ? "." : __dirname,
+  "public",
+  "uploads"
+);
 
 // CORS: cho phép mọi origin ở dev; production nên set CORS_ORIGIN env.
 const allowedOrigin = process.env.CORS_ORIGIN;
@@ -60,7 +65,7 @@ app.use("/api/app-stats", appStatsRouter);
 // File upload được phục vụ TỪ CSDL, không phải từ đĩa.
 //
 // Trước đây là `express.static(path.join(__dirname, "public", "uploads"))`.
-// Cách đó không chạy được khi triển khai: trên Vercel mã nguồn ở thư mục chỉ
+// Cách đó không chạy được khi triển khai serverless: thư mục mã nguồn chỉ
 // đọc, nên không ghi được file mới, và đĩa cũng là tạm thời. Xem
 // src/services/fileStorage.js.
 //
@@ -101,7 +106,7 @@ app.get(/^\/uploads\/(.+)$/, async (req, res, next) => {
   return res.end(record.content);
 });
 
-app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
+app.use("/uploads", express.static(localUploadsPath));
 
 // Swagger UI - http://localhost:3000/api-docs
 //
@@ -130,7 +135,7 @@ const SWAGGER_ASSET_FILES = [
 //
 // Phải đặt TRƯỚC `swaggerUi.serve` và `swaggerUi.setup`. Hai middleware đó phục
 // vụ tài nguyên từ node_modules/swagger-ui-dist — thư mục không tồn tại lúc chạy
-// trên Vercel, nên express.static không tìm thấy tệp rồi nhường cho middleware
+// trên môi trường serverless, nên express.static không tìm thấy tệp rồi nhường cho middleware
 // sau, và middleware sau trả về chính trang HTML. Trình duyệt nhận HTML ở vị trí
 // CSS/JS nên trang tài liệu trắng trơn. Chặn ở đây thì yêu cầu không bao giờ đi
 // tới chỗ sai đó.
@@ -146,17 +151,46 @@ if (SWAGGER_ASSET_BASE) {
   });
 }
 
-app.use(
-  "/api-docs",
-  swaggerUi.serve,
-  swaggerUi.setup(buildSpec(), {
-    // persistAuthorization: giữ token đã nhập qua các lần tải lại trang — cũng
-    // là cơ chế mà bảng đăng nhập nhanh dựa vào để gắn token.
-    swaggerOptions: { persistAuthorization: true },
-    customJsStr: SWAGGER_UI_SCRIPT,
-    customSiteTitle: "Online Learning API — Tài liệu",
-  })
-);
+if (process.env.CF_WORKER === "true") {
+  app.get("/api-docs/ui.js", (_req, res) => {
+    res.type("application/javascript").send(SWAGGER_UI_SCRIPT);
+  });
+
+  app.get("/api-docs", (_req, res) => {
+    res.type("html").send(`<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f4f7fb"><title>LMS API — Tài liệu & kiểm thử</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="${SWAGGER_ASSET_BASE}/swagger-ui.css">
+<style>
+:root{color-scheme:light;--ink:#172a46;--muted:#60718a;--blue:#2563eb;--line:#dce5f0;--paper:#fff;--bg:#f3f6fb}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:'DM Sans',system-ui,sans-serif}
+.page-shell{max-width:1180px;margin:0 auto;padding:28px 24px 72px}.hero{position:relative;overflow:hidden;padding:34px 38px;border:1px solid #243e64;border-radius:24px;background:linear-gradient(118deg,#10243f 0%,#17375f 58%,#2458a6 100%);color:#fff;box-shadow:0 18px 45px #18375e21}
+.hero:after{content:'';position:absolute;width:320px;height:320px;right:-85px;top:-175px;border:1px solid #ffffff24;border-radius:50%;box-shadow:0 0 0 36px #ffffff0b,0 0 0 72px #ffffff08}.eyebrow{display:inline-flex;align-items:center;gap:8px;margin-bottom:14px;color:#b9d4ff;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}.live-dot{width:8px;height:8px;border-radius:50%;background:#5be0a4;box-shadow:0 0 0 4px #5be0a426}
+.hero h1{position:relative;z-index:1;margin:0;font:800 clamp(28px,4vw,40px)/1.15 Manrope,sans-serif;letter-spacing:-.04em}.hero p{position:relative;z-index:1;max-width:650px;margin:12px 0 0;color:#d4e2f5;font-size:15px;line-height:1.7}.hero-links{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}.hero-links a{padding:9px 13px;border:1px solid #ffffff35;border-radius:10px;color:#fff;text-decoration:none;font-size:13px;font-weight:600}.hero-links a:hover{background:#ffffff14}
+#swagger-ui{margin-top:22px}.swagger-ui{font-family:'DM Sans',system-ui,sans-serif}.swagger-ui .information-container{display:none}.swagger-ui .wrapper{max-width:none;padding:0}.swagger-ui .opblock-tag{border-bottom:1px solid var(--line);font:700 18px Manrope,sans-serif;color:var(--ink)}.swagger-ui .opblock{border-radius:14px;box-shadow:0 4px 16px #17375e0b}.swagger-ui .opblock .opblock-summary{padding:9px 14px}.swagger-ui .opblock .opblock-summary-description{font-family:'DM Sans',sans-serif}.swagger-ui .btn{border-radius:8px}.swagger-ui select,.swagger-ui input[type=text],.swagger-ui textarea{border-radius:8px}.swagger-ui section.models{border-radius:14px}
+#dev-tools{margin:0 0 22px!important;padding:22px 24px!important;border:1px solid var(--line)!important;border-radius:18px!important;background:var(--paper)!important;box-shadow:0 8px 28px #17375e0b;font-family:'DM Sans',sans-serif!important}
+#dev-tools>div:first-child{font:700 19px Manrope,sans-serif!important;color:var(--ink)}#dev-tools>div:nth-child(2){font-size:14px!important;line-height:1.65!important;color:var(--muted)!important}#dev-tools code{padding:2px 6px;border-radius:5px;background:#edf3fc;color:#1f57a6}
+#dev-tools button{min-height:40px;padding:8px 14px!important;border-radius:9px!important;font:600 13px 'DM Sans',sans-serif!important;transition:transform .15s,box-shadow .15s}#dev-tools button:hover{transform:translateY(-1px);box-shadow:0 5px 12px #17375e18}#dev-tools input{min-height:42px;padding:9px 11px!important;border-radius:9px!important;font:14px 'DM Sans',sans-serif!important}#dev-tools-status{font-size:13px!important}
+.swagger-ui .scheme-container{position:sticky;top:0;z-index:5;border:1px solid var(--line);border-radius:14px;background:#ffffffed;box-shadow:0 8px 20px #17375e0c;backdrop-filter:blur(10px)}
+@media(max-width:640px){.page-shell{padding:14px 12px 44px}.hero{padding:26px 22px;border-radius:18px}.hero p{font-size:14px}#dev-tools{padding:18px!important}.swagger-ui .opblock .opblock-summary-description{display:none}}
+</style></head>
+<body><main class="page-shell"><header class="hero"><div class="eyebrow"><span class="live-dot"></span> Cloudflare Workers · D1</div><h1>Online Learning API</h1><p>Tài liệu API và khu vực thử nghiệm trực tiếp. Đăng nhập demo một lần để tự gắn token, chọn endpoint, nhập dữ liệu mẫu và xem kết quả ngay bên dưới.</p><nav class="hero-links"><a href="#dev-tools">Đăng nhập demo</a><a href="#swagger-ui">Danh sách API</a><a href="/api-docs.json" target="_blank" rel="noreferrer">OpenAPI JSON ↗</a></nav></header><div id="swagger-ui"></div></main>
+<script src="${SWAGGER_ASSET_BASE}/swagger-ui-bundle.js"></script>
+<script>SwaggerUIBundle({url:"/api-docs.json",dom_id:"#swagger-ui",persistAuthorization:true})</script>
+<script src="/api-docs/ui.js"></script>
+</body></html>`);
+  });
+} else {
+  app.use(
+    "/api-docs",
+    swaggerUi.serve,
+    swaggerUi.setup(buildSpec(), {
+      swaggerOptions: { persistAuthorization: true },
+      customJsStr: SWAGGER_UI_SCRIPT,
+      customSiteTitle: "Online Learning API — Tài liệu",
+    })
+  );
+}
 
 // Cho phép tải JSON mô tả OpenAPI để dùng với công cụ ngoài (Postman, codegen).
 app.get("/api-docs.json", (req, res) => {

@@ -28,9 +28,7 @@ const SWAGGER_UI_SCRIPT = `
   // Mật khẩu chung của mọi tài khoản demo (xem scripts/data/demo-users.js).
   var DEMO_PASSWORD = "Demo@123456";
   var DEMO_ACCOUNTS = [
-    { label: "Quản trị viên", email: "admin@demo.onlinelearning.vn" },
-    { label: "Giảng viên", email: "mentor01@demo.onlinelearning.vn" },
-    { label: "Học viên", email: "student01@demo.onlinelearning.vn" },
+    { label: "Dùng thử · Học viên", email: "demo-viewer@demo.onlinelearning.vn" },
   ];
 
   // ---------- Tiện ích ----------
@@ -170,7 +168,7 @@ const SWAGGER_UI_SCRIPT = `
 
     var emailInput = el("input", {
       id: "dev-tools-email",
-      type: "text",
+      type: "email",
       placeholder: "Email",
       value: DEMO_ACCOUNTS[0].email,
       style: "flex:1 1 220px;min-width:180px;padding:6px 8px;border:1px solid #d0d7de;border-radius:6px;font-size:13px;",
@@ -178,7 +176,7 @@ const SWAGGER_UI_SCRIPT = `
 
     var passInput = el("input", {
       id: "dev-tools-password",
-      type: "text",
+      type: "password",
       placeholder: "Mật khẩu",
       value: DEMO_PASSWORD,
       style: "flex:1 1 160px;min-width:140px;padding:6px 8px;border:1px solid #d0d7de;border-radius:6px;font-size:13px;",
@@ -296,17 +294,14 @@ const SWAGGER_UI_SCRIPT = `
   // ---------- Khởi động ----------
   function mount() {
     if (document.getElementById("dev-tools")) return; // đã gắn rồi
-    var anchor = document.querySelector(".information-container .info")
-      || document.querySelector(".information-container")
-      || document.querySelector(".swagger-ui");
-    if (!anchor) return;
+    var anchor = document.getElementById("swagger-ui");
+    if (!anchor || !anchor.parentNode) {
+      window.setTimeout(mount, 100);
+      return;
+    }
 
     var panel = buildPanel();
-    if (anchor.classList && anchor.classList.contains("info")) {
-      anchor.parentNode.insertBefore(panel, anchor.nextSibling);
-    } else {
-      anchor.parentNode.insertBefore(panel, anchor);
-    }
+    anchor.parentNode.insertBefore(panel, anchor);
 
     // Cho biết nếu đã có token lưu sẵn, để người dùng không phải đoán.
     var hasToken = false;

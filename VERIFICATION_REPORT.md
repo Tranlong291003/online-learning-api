@@ -14,9 +14,9 @@
 | Thành phần | Giá trị |
 |---|---|
 | Server | `node src/index.js`, `PORT=4001`, khởi động bằng `npm start` |
-| Cơ sở dữ liệu | PostgreSQL **thật** — Supabase project `hgugynckgityoacmqpcj` |
-| Kết nối | qua pooler `aws-0-ap-northeast-1.pooler.supabase.com:5432`, `DB_SSL=true` |
-| Endpoint kiểm tra | `http://localhost:4001` |
+| Cơ sở dữ liệu | PostgreSQL nguồn (báo cáo lịch sử trước khi chuyển D1) |
+| Kết nối | Cấu hình local trong `.env`; không lưu endpoint production trong repo |
+| Endpoint kiểm tra | Môi trường local |
 | Node.js | v24.18.0 |
 | Express | 5.1.0 |
 

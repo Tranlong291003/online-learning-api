@@ -8,6 +8,9 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
+    "cf:dev": "wrangler dev",
+    "cf:deploy": "wrangler deploy",
+    "cf:d1:init:local": "wrangler d1 execute lms --local --file=cloudflare/d1-schema.sql",
     "test": "node --test test/api/*.test.js",
     "api:smoke": "powershell -ExecutionPolicy Bypass -File scripts/smoke-api.ps1",
     "api:test:live": "powershell -ExecutionPolicy Bypass -File scripts/live-api-full-test.ps1",
@@ -55,6 +58,7 @@
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
-    "nodemon": "^3.0.0"
+    "nodemon": "^3.0.0",
+    "wrangler": "^4.166.0"
   }
 }

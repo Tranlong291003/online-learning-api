@@ -1,11 +1,11 @@
 # Online Learning API
 
-> RESTful API cho nền tảng học trực tuyến — Node.js, Express 5, PostgreSQL (Supabase).
+> RESTful API cho nền tảng học trực tuyến — Express 5 chạy trên Cloudflare Workers, dữ liệu lưu ở Cloudflare D1.
 
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![Express](https://img.shields.io/badge/Express-5-000000?logo=express&logoColor=white)](https://expressjs.com)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-4169E1?logo=postgresql&logoColor=white)](https://supabase.com)
-[![Tests](https://img.shields.io/badge/tests-228%20passing-brightgreen)](#kiểm-thử)
+[![Cloudflare](https://img.shields.io/badge/Cloudflare-Workers%20%2B%20D1-F38020?logo=cloudflare&logoColor=white)](https://www.cloudflare.com/developer-platform/)
+[![Tests](https://img.shields.io/badge/tests-295%20passing-brightgreen)](#kiểm-thử)
 
 ---
 
@@ -47,31 +47,30 @@ Backend cho hệ thống học trực tuyến, cung cấp REST API phục vụ:
    Mobile app / Swagger UI
               │
               ▼
-   ┌────────────────────────┐
-   │  VERCEL (serverless)   │   Chạy code Node/Express:
-   │  src/app.js            │   xử lý request, JWT, phân quyền
-   └────────────────────────┘
-              │
-              │  DATABASE_URL (Postgres)
-              ▼
-   ┌────────────────────────┐
-   │  SUPABASE (database)   │   Chỉ lưu dữ liệu
-   │  public.courses, ...   │
-   └────────────────────────┘
+   ┌─────────────────────────────┐
+   │ Cloudflare Workers          │   Express 5, JWT, API routes
+   │ src/worker.mjs → src/app.js │
+   └──────────────┬──────────────┘
+                  │ binding DB
+                  ▼
+   ┌─────────────────────────────┐
+   │ Cloudflare D1 (SQLite)       │   users, courses, lessons, ...
+   └─────────────────────────────┘
 ```
 
-Luồng request: `routes → middleware (auth) → controllers → PostgreSQL`.
+Luồng request: `routes → middleware (auth) → controllers → D1`.
 
-Kết nối database dùng **`pg` Pool** qua `DATABASE_URL` (không dùng Supabase SDK). Vì vậy
-phân quyền do **tầng middleware + controller** đảm nhiệm, không dựa vào Row Level Security.
+Worker dùng binding `DB` và chuyển placeholder PostgreSQL sang SQLite tại
+[`src/config/db.config.js`](src/config/db.config.js). Chạy API ngoài Cloudflare vẫn có thể dùng
+PostgreSQL cục bộ qua `DATABASE_URL`.
 
 ## 🧰 Tech stack
 
 | Thành phần | Công nghệ |
 | --- | --- |
-| Runtime | Node.js ≥ 22 |
+| Runtime | Cloudflare Workers (`nodejs_compat`) |
 | Web framework | Express 5 |
-| Database | PostgreSQL (Supabase) qua `pg` |
+| Database | Cloudflare D1 (SQLite) |
 | Xác thực | API tự quản lý (email/password + bcrypt) → JWT ngắn hạn + refresh token |
 | Upload file | Multer (avatar, thumbnail, PDF, slide) |
 | Push notification | Firebase Admin SDK (FCM) — chỉ dùng để gửi thông báo, không dùng cho đăng nhập |
@@ -84,9 +83,10 @@ phân quyền do **tầng middleware + controller** đảm nhiệm, không dựa
 ```
 src/
 ├── app.js                 # Khai báo Express app, mount routes, middleware chung
-├── index.js               # Điểm khởi động (có guard cho Vercel serverless)
+├── index.js               # Điểm khởi động local/PostgreSQL
+├── worker.mjs             # Điểm khởi động Cloudflare Workers
 ├── config/
-│   ├── db.config.js       # Pool kết nối PostgreSQL
+│   ├── db.config.js       # D1 binding trên Worker, PostgreSQL khi chạy local
 │   ├── firebase.config.js # Firebase Admin (đọc key từ env hoặc file)
 │   ├── multer.*.config.js # Cấu hình upload theo từng loại
 │   └── swagger.config.js  # Sinh OpenAPI spec từ JSDoc
@@ -109,15 +109,17 @@ scripts/                   # Script kiểm thử live, seed, migrate
 # 1. Cài dependencies
 npm install
 
-# 2. Tạo file .env (xem mục Biến môi trường)
-cp .env.example .env
-# → điền DATABASE_URL, JWT_SECRET, ...
+# 2. Sao chép .dev.vars.example thành .dev.vars và đặt JWT_SECRET cục bộ
+# 3. Khởi động Worker + D1 local
+npm run cf:dev
 
-# 3. Chạy dev server
+# Nếu cần chạy Express trực tiếp với PostgreSQL:
 npm run dev
 ```
 
 Server chạy tại `http://localhost:3000`.
+
+**Production API:** [`https://lms.tranlong291003.workers.dev`](https://lms.tranlong291003.workers.dev). FE đặt URL này làm base URL.
 
 | URL | Mô tả |
 | --- | --- |
@@ -130,15 +132,14 @@ Server chạy tại `http://localhost:3000`.
 
 | Biến | Mô tả |
 | --- | --- |
-| `DATABASE_URL` | Chuỗi kết nối PostgreSQL. Supabase dùng pooler: `postgresql://<user>:<pass>@aws-0-<region>.pooler.supabase.com:5432/postgres` |
-| `JWT_SECRET` | Khóa ký JWT, **tối thiểu 32 ký tự** |
-| `DB_SSL` | `true` khi kết nối Supabase/cloud |
+| `JWT_SECRET` | Secret ký JWT, tối thiểu 32 ký tự; dùng `wrangler secret put JWT_SECRET` khi deploy |
 
 ### Tùy chọn
 
 | Biến | Mô tả |
 | --- | --- |
-| `PORT` / `HOST` | Cổng và địa chỉ lắng nghe (mặc định `3000` / `0.0.0.0`) |
+| `DATABASE_URL` | Chỉ cần khi chạy trực tiếp bằng PostgreSQL; Worker dùng binding D1 |
+| `PORT` / `HOST` | Cổng và địa chỉ lắng nghe khi chạy Express trực tiếp |
 | `CORS_ORIGIN` | Giới hạn origin được phép. Bỏ trống = cho phép tất cả |
 | `FIREBASE_SERVICE_ACCOUNT_BASE64` | Nội dung file service account mã hoá base64. **Chỉ cần nếu dùng push notification** (FCM). Không liên quan tới đăng nhập |
 | `OPENAI_API_KEY` | Sinh câu hỏi quiz bằng AI |
@@ -146,7 +147,7 @@ Server chạy tại `http://localhost:3000`.
 | `DEV_API_KEY` + `DEV_API_KEY_UID` / `_ROLE` | Bypass JWT cho môi trường dev. **Tự động tắt khi `NODE_ENV=production`** |
 | `AUTH_SKIP_DB_CHECK` | `true` để bỏ đối chiếu DB khi xác thực (chỉ dùng cho test) |
 
-> ⚠️ **Không commit `.env`** — đã có trong `.gitignore`. File `src/firebaseServiceAccountKey.json`
+Worker giới hạn file upload ở **1.5 MiB** để phù hợp giới hạn kích thước một hàng D1. Không commit `.env` hoặc `.dev.vars` — đã có trong `.gitignore`. File `src/firebaseServiceAccountKey.json`
 > cũng bị gitignore; trên server phải nạp qua `FIREBASE_SERVICE_ACCOUNT_BASE64`.
 
 Tạo giá trị base64 cho Firebase:
@@ -200,7 +201,7 @@ Các request sau dùng `Authorization: Bearer <access_token>`; khi hết hạn t
 
 **Cơ chế bảo vệ:**
 
-- **Đối chiếu DB mỗi request** — role lấy từ PostgreSQL, không tin role trong token.
+- **Đối chiếu DB mỗi request** — role lấy từ D1, không tin role trong token.
   Tài khoản bị khoá/xoá sẽ bị từ chối ngay, dù token còn hạn.
 - **`resolveActorUid`** — uid lấy từ token. Chỉ admin được thao tác thay người khác,
   nên không thể giả mạo uid qua body.
@@ -210,7 +211,7 @@ Các request sau dùng `Authorization: Bearer <access_token>`; khi hết hạn t
 ## 🧪 Kiểm thử
 
 ```bash
-npm test            # 228 test đơn vị (mock DB), chạy bằng node --test
+npm test            # 295 test đơn vị (mock DB), chạy bằng node --test
 ```
 
 Kiểm thử trên **server thật** (cần server đang chạy + `PROBE_BASE`):
@@ -228,19 +229,18 @@ npm run api:leftover  # Kiểm tra dữ liệu rác còn sót
 
 ## ☁️ Triển khai
 
-### Vercel (đang dùng)
-
-Production: **https://online-learning-api.vercel.app**
+Worker và binding D1 được khai báo trong [`wrangler.jsonc`](wrangler.jsonc). Sau khi đăng nhập Wrangler:
 
 ```bash
-vercel deploy --prod --scope <team>
+npm run cf:d1:apply
+npm run cf:deploy
+npm exec wrangler secret put JWT_SECRET
 ```
 
-Cấu hình trong `vercel.json`: build `src/app.js` bằng `@vercel/node`.
-`src/index.js` tự bỏ qua `app.listen()` khi phát hiện biến `VERCEL`.
-
-Biến môi trường cần set trên Vercel: `DATABASE_URL`, `JWT_SECRET`
-(+ `FIREBASE_SERVICE_ACCOUNT_BASE64`, `OPENAI_API_KEY`, `YOUTUBE_API_KEY` nếu dùng tính năng tương ứng).
+Đặt các secret tùy tính năng qua `wrangler secret put AI_API_KEY`,
+`wrangler secret put YOUTUBE_API_KEY` và `wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON`.
+Giữ nguyên `JWT_SECRET` hiện tại để token đang cấp còn hiệu lực; nếu phải tạo secret mới,
+người dùng cần đăng nhập lại. Xem [`DEPLOYMENT.md`](DEPLOYMENT.md) để biết các cấu hình còn lại.
 
 ### Docker
 
@@ -250,16 +250,12 @@ npm run docker:down
 npm run docker:logs
 ```
 
-### Render
-
-Có sẵn `render.yaml`. Nhớ nạp `FIREBASE_SERVICE_ACCOUNT_BASE64`.
-
 ## 🌿 Quy ước Git
 
 | Nhánh | Mục đích |
 | --- | --- |
 | `develop` | Phát triển chính — nơi sửa và kiểm thử |
-| `production` | Bản deploy lên Vercel |
+| `production` | Cloudflare Worker `lms` |
 | `main` | Bản phát hành (đồng bộ với `production`) |
 
 **Luồng làm việc:** sửa trên `develop` → kiểm thử → merge `develop` → `production` → deploy.

@@ -201,45 +201,77 @@ sao cho khớp với giá trị "correct_index" bạn trả về.
     }
 
     // Lưu vào DB trong 1 transaction: nếu 1 câu lỗi thì không để lại dữ liệu rác
-    const client = await pool.connect();
     let savedQuestions;
-    try {
-      await client.query("BEGIN");
-      savedQuestions = await Promise.all(
-        questions.map(async (q) => {
-          const question = q.question;
-          const options = type === "trac_nghiem" ? JSON.stringify(q.options) : null;
-          const correct_index = type === "trac_nghiem" ? q._zeroBasedIndex : null;
-          const inserted = await client.query(
-            `INSERT INTO quiz_questions (quiz_id, question, options, correct_index, created_at)
-             VALUES ($1, $2, $3, $4, NOW())
-             RETURNING question_id`,
-            [quiz_id, question, options, correct_index]
-          );
+    if (typeof pool.batch === "function") {
+      const inserts = questions.map((q) => ({
+        text: `INSERT INTO quiz_questions (quiz_id, question, options, correct_index, created_at)
+              VALUES ($1, $2, $3, $4, NOW())
+              RETURNING question_id`,
+        values: [
+          quiz_id,
+          q.question,
+          type === "trac_nghiem" ? JSON.stringify(q.options) : null,
+          type === "trac_nghiem" ? q._zeroBasedIndex : null,
+        ],
+      }));
+      const insertedRows = await pool.batch(inserts);
+      savedQuestions = questions.map((q, index) => {
+        const { _zeroBasedIndex, _indexUncertain, ...publicQuestion } = q;
+        const result = insertedRows[index];
+        const rows = result?.rows || result?.results || [];
+        return {
+          ...publicQuestion,
+          correct_index_stored: type === "trac_nghiem" ? _zeroBasedIndex : null,
+          ...(type === "trac_nghiem" && _indexUncertain
+            ? {
+                canh_bao:
+                  "Không xác định chắc chắn cách đánh số đáp án của mô hình; " +
+                  "đã hiểu theo quy ước 1-based. Vui lòng kiểm tra lại đáp án đúng.",
+              }
+            : {}),
+          question_id: rows[0]?.question_id,
+        };
+      });
+    } else {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        savedQuestions = await Promise.all(
+          questions.map(async (q) => {
+            const question = q.question;
+            const options = type === "trac_nghiem" ? JSON.stringify(q.options) : null;
+            const correct_index = type === "trac_nghiem" ? q._zeroBasedIndex : null;
+            const inserted = await client.query(
+              `INSERT INTO quiz_questions (quiz_id, question, options, correct_index, created_at)
+               VALUES ($1, $2, $3, $4, NOW())
+               RETURNING question_id`,
+              [quiz_id, question, options, correct_index]
+            );
 
-          // Bỏ các trường nội bộ trước khi trả về, và nói rõ câu nào chưa chắc
-          // chắn về vị trí đáp án để người tạo soát lại.
-          const { _zeroBasedIndex, _indexUncertain, ...publicQuestion } = q;
-          return {
-            ...publicQuestion,
-            correct_index_stored: correct_index,
-            ...(type === "trac_nghiem" && _indexUncertain
-              ? {
-                  canh_bao:
-                    "Không xác định chắc chắn cách đánh số đáp án của mô hình; " +
-                    "đã hiểu theo quy ước 1-based. Vui lòng kiểm tra lại đáp án đúng.",
-                }
-              : {}),
-            question_id: inserted.rows[0].question_id,
-          };
-        })
-      );
-      await client.query("COMMIT");
-    } catch (txErr) {
-      await client.query("ROLLBACK");
-      throw txErr;
-    } finally {
-      client.release();
+            // Bỏ các trường nội bộ trước khi trả về, và nói rõ câu nào chưa chắc
+            // chắn về vị trí đáp án để người tạo soát lại.
+            const { _zeroBasedIndex, _indexUncertain, ...publicQuestion } = q;
+            return {
+              ...publicQuestion,
+              correct_index_stored: correct_index,
+              ...(type === "trac_nghiem" && _indexUncertain
+                ? {
+                    canh_bao:
+                      "Không xác định chắc chắn cách đánh số đáp án của mô hình; " +
+                      "đã hiểu theo quy ước 1-based. Vui lòng kiểm tra lại đáp án đúng.",
+                  }
+                : {}),
+              question_id: inserted.rows[0].question_id,
+            };
+          })
+        );
+        await client.query("COMMIT");
+      } catch (txErr) {
+        await client.query("ROLLBACK");
+        throw txErr;
+      } finally {
+        client.release();
+      }
     }
 
     res.status(201).json({

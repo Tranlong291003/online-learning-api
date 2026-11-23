@@ -1,8 +1,7 @@
 const fs=require("fs");const {Client}=require("pg");
-const pw=decodeURIComponent(new URL(fs.readFileSync(".env","utf8").match(/^DATABASE_URL=(.*)$/m)[1].trim()).password);
+const databaseUrl = process.env.DATABASE_URL || new URL(fs.readFileSync(".env", "utf8").match(/^DATABASE_URL=(.*)$/m)[1].trim());
 (async()=>{
-const c=new Client({host:"aws-0-ap-northeast-1.pooler.supabase.com",port:5432,database:"postgres",
- user:"postgres.hgugynckgityoacmqpcj",password:pw,ssl:{rejectUnauthorized:false},connectionTimeoutMillis:10000});
+const c=new Client({connectionString:databaseUrl,ssl:{rejectUnauthorized:false},connectionTimeoutMillis:10000});
 await c.connect();
 const r=await c.query(`
 select tc.table_name, kcu.column_name, ccu.table_name ref_table, ccu.column_name ref_col, rc.delete_rule

@@ -10,7 +10,7 @@
 | Mục | Giá trị |
 |---|---|
 | Base URL (dev) | `http://localhost:3000` |
-| Base URL (production) | theo môi trường deploy (Render/Docker) |
+| Base URL (production) | `https://lms.tranlong291003.workers.dev` |
 | Định dạng | `JSON`, upload file dùng `multipart/form-data` |
 | Swagger UI | `GET {BASE_URL}/api-docs` |
 | Health check | `GET {BASE_URL}/health` → `{ status: "ok", timestamp }` |

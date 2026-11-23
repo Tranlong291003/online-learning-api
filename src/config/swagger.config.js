@@ -1,4 +1,4 @@
-const swaggerUi = require("swagger-ui-express");
+const swaggerUi = process.env.CF_WORKER === "true" ? null : require("swagger-ui-express");
 const { REQUEST_BODIES, QUERY_PARAMS } = require("./swagger.schemas");
 
 /**
@@ -6,7 +6,7 @@ const { REQUEST_BODIES, QUERY_PARAMS } = require("./swagger.schemas");
  *
  * Vì sao phải chỉ định tường minh: `swaggerUi.serve` phục vụ các tệp này bằng
  * `express.static(path.resolve(__dirname))` trỏ vào `node_modules/swagger-ui-dist`.
- * Trên Vercel, hàm serverless được đóng gói lại theo phụ thuộc thực sự dùng tới,
+ * Trên môi trường serverless, hàm được đóng gói lại theo phụ thuộc thực sự dùng tới,
  * nên thư mục đó KHÔNG tồn tại lúc chạy. Khi đó `express.static` không tìm thấy
  * tệp và nhường cho route khác — route bắt mọi đường dẫn trả về trang HTML. Kết
  * quả: trình duyệt nhận HTML ở vị trí CSS/JS, và trang tài liệu trắng trơn.
@@ -237,23 +237,24 @@ function buildSpec() {
         "3. Bấm nút **Authorize** ở đầu trang, dán token vào ô **bearerAuth**, rồi **Authorize**.",
         "4. Từ đó mọi endpoint khác đã sẵn token; mỗi endpoint đều có ô nhập điền ví dụ sẵn, chỉ cần sửa giá trị và bấm **Execute**.",
         "",
-        "### Tài khoản demo (mật khẩu chung `Demo@123456`)",
+        "### Tài khoản demo",
         "| Vai trò | Email |",
         "| --- | --- |",
-        "| Quản trị viên | `admin@demo.onlinelearning.vn` |",
-        "| Giảng viên | `mentor01@demo.onlinelearning.vn` … `mentor10@…` |",
-        "| Học viên | `student01@demo.onlinelearning.vn` … `student20@…` |",
+        "| Học viên (quyền giới hạn) | `demo-viewer@demo.onlinelearning.vn` |",
+        "| Mật khẩu | `Demo@123456` |",
+        "",
+        "Tài khoản dùng chung chỉ có quyền học viên. Không dùng tài khoản này để lưu dữ liệu cá nhân; bạn cũng có thể đăng ký tài khoản riêng ngay trên API.",
         "",
         "### Lưu ý",
         "- Endpoint công khai (đăng ký, đăng nhập, quên/đặt lại mật khẩu) không cần token.",
-        "- Với endpoint có gửi tệp, chọn tệp ở ô có kiểu `string($binary)`; giới hạn 4MB.",
+        `- Với endpoint có gửi tệp, chọn tệp ở ô có kiểu \`string($binary)\`; giới hạn ${process.env.CF_WORKER === "true" ? "1.5MB" : "4MB"}.`,
         "- Thông báo lỗi được trả về dạng `{ \"error\": \"...\" }` hoặc `{ \"message\": \"...\" }` tuỳ endpoint.",
       ].join("\n"),
     },
-    servers: [
-      { url: "https://online-learning-api.vercel.app", description: "Production (Vercel)" },
-      { url: "http://localhost:3000", description: "Local dev" },
-    ],
+    servers:
+      process.env.CF_WORKER === "true"
+        ? [{ url: "/", description: "Cloudflare Workers" }]
+        : [{ url: "http://localhost:3000", description: "Local dev" }],
     tags: Object.entries(TAG_LABELS).map(([path, name]) => ({
       name,
       description:

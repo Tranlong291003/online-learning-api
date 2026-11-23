@@ -1,16 +1,10 @@
 /**
- * Lưu file upload trong PostgreSQL thay vì ghi ra đĩa.
+ * Lưu file upload trong cơ sở dữ liệu thay vì ghi ra đĩa.
  *
- * Vấn đề: code cũ dùng `multer.diskStorage` để ghi vào `src/public/uploads/`.
- * Trên Vercel (và mọi nền tảng serverless) mã nguồn được triển khai ở thư mục
- * CHỈ ĐỌC, nên mọi lần upload đều thất bại. Triệu chứng đã quan sát trên
- * production: `POST /api/courses/create` kèm thumbnail trả 500
- * "Internal server error", trong khi cùng request đó chạy local trả 201.
+ * Cloudflare Workers không có filesystem bền vững để lưu file upload.
  *
- * Ngay cả khi ghi được ra đĩa thì cũng vô nghĩa: filesystem của serverless là
- * tạm thời, file sẽ mất khi function tái khởi động.
- *
- * Cách làm ở đây: giữ nội dung file trong bảng `uploaded_files` (bytea) và
+ * Cách làm ở đây: giữ nội dung file trong bảng `uploaded_files` (BLOB trên D1,
+ * bytea trên PostgreSQL local) và
  * phục vụ lại qua `GET /uploads/*`. Không cần thêm dịch vụ ngoài, không cần
  * thêm credential, và file tồn tại lâu dài vì CSDL là nguồn chân lý duy nhất.
  *
@@ -29,10 +23,8 @@ const PUBLIC_PREFIX = "/uploads/";
 /**
  * Giới hạn kích thước file.
  *
- * Vercel serverless chỉ nhận request body tối đa ~4.5MB, nên để mặc định 4MB
- * thì người dùng nhận 413 rõ ràng từ API thay vì lỗi khó hiểu từ nền tảng.
- * Đặt MAX_UPLOAD_MB cao hơn khi triển khai trên nền tảng không giới hạn
- * (Docker, Render, VPS).
+ * D1 giới hạn kích thước một hàng; cấu hình Worker đặt giới hạn upload thấp
+ * hơn để file và metadata luôn ghi được trong cùng một hàng.
  */
 const MAX_UPLOAD_MB = Math.max(1, Number(process.env.MAX_UPLOAD_MB) || 4);
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;

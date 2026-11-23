@@ -71,7 +71,7 @@ const form = (properties, required = [], example = null) => ({
 });
 
 // ---------- Ví dụ dùng lại nhiều nơi ----------
-const DEMO_EMAIL = "student01@demo.onlinelearning.vn";
+const DEMO_EMAIL = "demo-viewer@demo.onlinelearning.vn";
 const DEMO_PASSWORD = "Demo@123456";
 
 /**
