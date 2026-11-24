@@ -161,6 +161,64 @@ test("POST /api/notifications/create returns 400 when title/content missing", as
   });
 });
 
+test("POST /api/notifications/create accepts a body without icon/color (regression)", async () => {
+  // Trên D1, bind giá trị `undefined` ném "D1_TYPE_ERROR: Type 'undefined' not
+  // supported" → endpoint trả 500 dù request hoàn toàn hợp lệ (icon/color là
+  // tuỳ chọn). Trước đây controller chuyển thẳng `icon`, `color` từ body.
+  const poolMock = createPoolMock([{ rows: [{ noti_id: "n-1" }] }]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/notifications/create", {
+      method: "POST",
+      headers: authHeaders(),
+      body: { uid: "user-1", title: "T", content: "C" },
+    });
+
+    assert.equal(response.status, 201);
+    const call = poolMock.calls.find((c) => /INSERT INTO notifications/i.test(c.sql));
+    assert.ok(call);
+    // Không được có `undefined` trong tham số bind.
+    assert.ok(
+      call.params.every((p) => p !== undefined),
+      "không được bind undefined"
+    );
+    assert.equal(call.params[3], null, "icon phải là null");
+    assert.equal(call.params[4], null, "color phải là null");
+  });
+});
+
+test("readFile trả nội dung dạng byte cho cả Blob (D1) và Buffer (PostgreSQL)", async () => {
+  // Trên D1, cột BLOB được trả về dưới dạng `Blob` — có `.size` nhưng KHÔNG có
+  // `.length`. Trước đây `readFile` trả nguyên giá trị này, nên `app.js` đặt
+  // Content-Length = undefined và `res.end(blob)` ném lỗi: mọi file upload trả
+  // 500 trên production dù đã lưu đúng trong CSDL.
+  const payload = Buffer.from("noi-dung-file", "utf8");
+  const blobMock = {
+    size: payload.length,
+    arrayBuffer: async () =>
+      payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength),
+  };
+
+  const poolMock = createPoolMock([
+    { rows: [{ mime_type: "image/png", size_bytes: payload.length, content: blobMock }] },
+    { rows: [{ mime_type: "image/png", size_bytes: payload.length, content: payload }] },
+  ]);
+  // loadApp mock db.config, nên require fileStorage SAU đó sẽ dùng pool giả.
+  loadApp({ poolMock });
+  const { readFile } = require("../../src/services/fileStorage");
+
+  const fromBlob = await readFile("/uploads/avatars/a.png");
+  assert.ok(fromBlob, "phải trả bản ghi");
+  assert.equal(fromBlob.content.length, payload.length, "Blob phải được đổi thành byte");
+  assert.equal(Buffer.from(fromBlob.content).toString("utf8"), "noi-dung-file");
+
+  // PostgreSQL trả Buffer — đường này cũng phải cho cùng kết quả.
+  const fromBuffer = await readFile("/uploads/avatars/a.png");
+  assert.equal(fromBuffer.content.length, payload.length);
+  assert.equal(Buffer.from(fromBuffer.content).toString("utf8"), "noi-dung-file");
+});
+
 test("POST /api/notifications/mark-read returns 200", async () => {
   // noti_id là UUID trong CSDL, controller validate định dạng trước khi truy vấn.
   const NOTI_ID = "11111111-2222-3333-4444-555555555555";

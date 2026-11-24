@@ -206,7 +206,41 @@ async function readFile(publicPath) {
     "SELECT mime_type, content, size_bytes FROM uploaded_files WHERE public_path = $1",
     [publicPath]
   );
-  return result.rows[0] || null;
+  const row = result.rows[0];
+  if (!row) return null;
+
+  // ⚠️ D1/SQLite trả cột BLOB về dưới dạng `Blob`, còn PostgreSQL (pg) trả
+  // `Buffer`. `Blob` không có `.length` (chỉ có `.size`) và `res.end(blob)` ném
+  // lỗi — đó là lý do mọi file upload trả 500 trên production dù đã lưu đúng.
+  // Chuẩn hoá về Buffer/Uint8Array ngay ở đây để lớp gọi chỉ phải xử lý một kiểu.
+  const content = await toByteBuffer(row.content);
+  return {
+    mime_type: row.mime_type,
+    size_bytes: row.size_bytes,
+    content,
+  };
+}
+
+/**
+ * Chuẩn hoá nội dung file về Buffer (Node) hoặc Uint8Array (Worker).
+ *
+ * Nhận: Buffer, Uint8Array, ArrayBuffer, hoặc Blob (D1). Trả về `Uint8Array`
+ * để `Buffer.from(...)` / `res.end(...)` đều dùng được ở cả hai môi trường.
+ */
+async function toByteBuffer(value) {
+  if (value == null) return new Uint8Array(0);
+
+  // Blob (D1) — phải await arrayBuffer().
+  if (typeof value.arrayBuffer === "function" && typeof value.size === "number") {
+    return new Uint8Array(await value.arrayBuffer());
+  }
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  }
+  // Một số driver trả mảng số cho BLOB.
+  if (Array.isArray(value)) return new Uint8Array(value);
+  return new Uint8Array(0);
 }
 
 /**

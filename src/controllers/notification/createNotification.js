@@ -13,11 +13,14 @@ const createNotification = async (req, res) => {
   if (!uid) return;
 
   try {
+    // D1 từ chối giá trị `undefined` ("D1_TYPE_ERROR: Type 'undefined' not
+    // supported"), trong khi PostgreSQL lại nhận. Client không gửi `icon`/`color`
+    // là trường hợp bình thường, nên phải quy về null trước khi bind.
     const result = await pool.query(
       `INSERT INTO notifications (uid, title, content, icon, color, is_read, created_at)
        VALUES ($1, $2, $3, $4, $5, false, NOW())
        RETURNING noti_id, uid, title, content, icon, color, is_read, created_at`,
-      [uid, title, content, icon, color]
+      [uid, title, content, icon ?? null, color ?? null]
     );
 
     res.status(201).json(result.rows[0]);

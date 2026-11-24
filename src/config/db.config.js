@@ -6,6 +6,11 @@ let cloudflareBindings = null;
 const booleanColumns = new Set(["is_active", "is_read", "is_completed"]);
 
 function normalizeD1Binding(value) {
+  // D1 ném "D1_TYPE_ERROR: Type 'undefined' not supported" khi gặp `undefined`,
+  // còn PostgreSQL coi `undefined` như NULL. Trường tuỳ chọn không được gửi lên
+  // (icon, color, avatar_url, description...) là chuyện bình thường, nên chuẩn
+  // hoá về null ngay tại đây để mọi controller không phải tự xử lý.
+  if (value === undefined) return null;
   if (value instanceof Date) {
     return value.toISOString().replace("T", " ").replace("Z", "");
   }
@@ -80,16 +85,17 @@ function getD1() {
 }
 
 function translateQuery(text, values = []) {
-  let sql = text
-    .replace(/::(?:FLOAT|NUMERIC|INTEGER|TEXT|UUID|BOOLEAN|TIMESTAMPTZ|TIMESTAMP)/gi, "")
-    .replace(/NOW\(\)/gi, "CURRENT_TIMESTAMP")
-    .replace(/CURRENT_TIMESTAMP\s*\+\s*make_interval\(mins\s*=>\s*\$(\d+)\)/gi, (_match, index) => `datetime('now', '+' || $${index} || ' minutes')`)
-    .replace(/CURRENT_TIMESTAMP\s*-\s*INTERVAL\s*'([0-9]+) days'/gi, (_match, days) => `datetime('now', '-${days} days')`)
-    .replace(/ILIKE/gi, "LIKE")
-    .replace(/([\w.]+)\s*~\s*'\^\[0-9\]\{2\}:\[0-9\]\{2\}:\[0-9\]\{2\}\$'/g, "$1 GLOB '[0-9][0-9]:[0-9][0-9]:[0-9][0-9]'")
-    .replace(/([\w.]+)\s*~\s*'\^\[0-9\]\{2\}:\[0-9\]\{2\}\$'/g, "$1 GLOB '[0-9][0-9]:[0-9][0-9]'")
-    .replace(/\s+NULLS\s+LAST\b/gi, "");
-  sql = sql.replace(
+  // ⚠️ Thứ tự QUAN TRỌNG: dịch `ANY(...)` TRƯỚC khi xoá ép kiểu.
+  //
+  // `DELETE ... WHERE public_path = ANY($1::text[])` là câu SQL thật trong
+  // src/services/fileStorage.js. Nếu xoá `::text` trước, chuỗi thành
+  // `ANY($1[])` — mẫu ANY không còn khớp (vì có `[]` chen giữa), nên placeholder
+  // biến thành `ANY(?[])`: cú pháp SQLite không hợp lệ và cả mảng bị truyền như
+  // MỘT tham số. Hệ quả: xoá file không bao giờ xoá được gì trên D1.
+  //
+  // Mẫu dưới đây đã bao gồm phần ép kiểu tuỳ chọn `(?:::[\w\[\]]+)?` nên xử lý
+  // được cả hai dạng.
+  let sql = text.replace(
     /([\w."()]+)\s*=\s*ANY\(\$(\d+)(?:::[\w\[\]]+)?\)/gi,
     (_match, column, indexText) => {
       const index = Number(indexText) - 1;
@@ -99,13 +105,26 @@ function translateQuery(text, values = []) {
         : "0 = 1";
     }
   );
+
+  sql = sql
+    .replace(/::(?:FLOAT|NUMERIC|INTEGER|TEXT|UUID|BOOLEAN|TIMESTAMPTZ|TIMESTAMP)/gi, "")
+    .replace(/NOW\(\)/gi, "CURRENT_TIMESTAMP")
+    .replace(/CURRENT_TIMESTAMP\s*\+\s*make_interval\(mins\s*=>\s*\$(\d+)\)/gi, (_match, index) => `datetime('now', '+' || $${index} || ' minutes')`)
+    .replace(/CURRENT_TIMESTAMP\s*-\s*INTERVAL\s*'([0-9]+) days'/gi, (_match, days) => `datetime('now', '-${days} days')`)
+    .replace(/ILIKE/gi, "LIKE")
+    .replace(/([\w.]+)\s*~\s*'\^\[0-9\]\{2\}:\[0-9\]\{2\}:\[0-9\]\{2\}\$'/g, "$1 GLOB '[0-9][0-9]:[0-9][0-9]:[0-9][0-9]'")
+    .replace(/([\w.]+)\s*~\s*'\^\[0-9\]\{2\}:\[0-9\]\{2\}\$'/g, "$1 GLOB '[0-9][0-9]:[0-9][0-9]'")
+    .replace(/\s+NULLS\s+LAST\b/gi, "");
   const bindings = [];
   sql = sql.replace(/\$(\d+)|__D1_ARRAY_(\d+)__/g, (_match, scalarIndex, arrayIndex) => {
     if (arrayIndex !== undefined) {
       const items = values[Number(arrayIndex)] || [];
-      if (items.length === 0) return "(NULL)";
+      if (items.length === 0) return "NULL";
       bindings.push(...items);
-      return `(${items.map(() => "?").join(", ")})`;
+      // KHÔNG bọc ngoặc ở đây: chỗ dùng có dạng `col IN (__D1_ARRAY_n__)` nên
+      // thêm ngoặc nữa sẽ thành `IN ((?, ?))` — SQLite báo "row value misused"
+      // và endpoint trả 500 (đã gặp ở GET /api/quizzes/getquizuser/:uid).
+      return items.map(() => "?").join(", ");
     }
     bindings.push(values[Number(scalarIndex) - 1]);
     return "?";
