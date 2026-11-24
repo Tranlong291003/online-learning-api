@@ -1,18 +1,27 @@
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
+const { parsePositiveInt } = require("../../utils/parseId");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const completeLesson = async (req, res) => {
   const body = req.body || {};
   // Nhận cả camelCase lẫn snake_case: các endpoint khác trong API dùng snake_case
   // nên FE rất dễ gửi course_id/lesson_id.
-  const courseId = body.courseId ?? body.course_id;
-  const lessonId = body.lessonId ?? body.lesson_id;
+  //
+  // Dùng parsePositiveInt thay cho Number.isInteger: giá trị đi qua JSON từ
+  // form thường là chuỗi ("8"), và Number.isInteger("8") là false — trước đây
+  // client gửi chuỗi số hợp lệ vẫn bị từ chối 400.
+  const rawCourseId = body.courseId ?? body.course_id;
+  const rawLessonId = body.lessonId ?? body.lesson_id;
 
-  if (!courseId || !lessonId) {
+  if (!rawCourseId || !rawLessonId) {
     return res.status(400).json({ error: "Thiếu courseId hoặc lessonId" });
   }
-  if (!Number.isInteger(courseId) || !Number.isInteger(lessonId)) {
+
+  const courseId = parsePositiveInt(rawCourseId);
+  const lessonId = parsePositiveInt(rawLessonId);
+
+  if (!courseId || !lessonId) {
     return res.status(400).json({ error: "courseId và lessonId phải là số" });
   }
 

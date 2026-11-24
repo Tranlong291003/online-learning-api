@@ -1,9 +1,8 @@
 const { pool } = require("../../config/db.config");
 const { parseOptionalInt } = require("../../utils/parseId");
+const { COURSE_LEVELS } = require("../../utils/constants");
 const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
-
-const VALID_LEVELS = ["beginner", "intermediate", "advanced"];
 
 const createCourse = async (req, res) => {
   const {
@@ -22,9 +21,9 @@ const createCourse = async (req, res) => {
   }
 
   // level không bắt buộc (cột nullable trong DB thật); chỉ validate khi có gửi lên
-  if (level != null && level !== "" && !VALID_LEVELS.includes(level)) {
+  if (level != null && level !== "" && !COURSE_LEVELS.includes(level)) {
     return res.status(400).json({
-      error: `Cấp độ không hợp lệ. Chỉ chấp nhận: ${VALID_LEVELS.join(", ")}`,
+      error: `Cấp độ không hợp lệ. Chỉ chấp nhận: ${COURSE_LEVELS.join(", ")}`,
     });
   }
 
@@ -38,6 +37,18 @@ const createCourse = async (req, res) => {
     discountPriceValue = parseOptionalInt(discount_price);
   } catch (err) {
     return res.status(400).json({ error: "price/discount_price phải là số nguyên không âm" });
+  }
+
+  // Giá giảm không được lớn hơn giá gốc: nếu không, `discount_percent` sẽ ra
+  // số âm và giá hiển thị trên app thành vô nghĩa. Chặn ngay khi ghi.
+  if (
+    priceValue != null &&
+    discountPriceValue != null &&
+    discountPriceValue > priceValue
+  ) {
+    return res.status(400).json({
+      error: "discount_price không được lớn hơn price",
+    });
   }
 
   // Lấy uid từ token; chỉ admin mới được thao tác thay người khác

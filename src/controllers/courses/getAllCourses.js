@@ -115,7 +115,13 @@ const getAllCourses = async (req, res) => {
     });
 
     if (courses.length === 0) {
-      return res.status(200).json({ message: "Không có khóa học" });
+      // Trả cùng hình dạng với nhánh có dữ liệu. Trước đây nhánh này chỉ trả
+      // `{ message }`, nên client đọc `data.pending` sẽ vỡ khi danh sách rỗng —
+      // FE phải viết hai nhánh xử lý cho cùng một endpoint.
+      return res.status(200).json({
+        data: { pending: [], approved: [], rejected: [] },
+        total: 0,
+      });
     }
 
     // Phân loại khóa học theo 3 trạng thái

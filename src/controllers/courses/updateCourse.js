@@ -1,7 +1,9 @@
-const { parsePositiveInt } = require("../../utils/parseId");
+const { parsePositiveInt, parseOptionalInt } = require("../../utils/parseId");
+const { COURSE_LEVELS } = require("../../utils/constants");
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
+const { deleteFiles } = require("../../services/fileStorage");
 
 const updateCourse = async (req, res) => {
   const course_id = parsePositiveInt(req.params.course_id);
@@ -21,6 +23,35 @@ const updateCourse = async (req, res) => {
     language,
     tags,
   } = req.body;
+
+  // level phải nằm trong danh sách cho phép. createCourse đã kiểm tra, nhưng
+  // endpoint sửa thì thiếu — nên client gửi "abc" sẽ ghi thẳng vào cột mà
+  // không có thông báo lỗi, và các bộ lọc theo cấp độ sau đó không khớp.
+  if (level != null && level !== "" && !COURSE_LEVELS.includes(level)) {
+    return res.status(400).json({
+      error: `Cấp độ không hợp lệ. Chỉ chấp nhận: ${COURSE_LEVELS.join(", ")}`,
+    });
+  }
+
+  // price/discount_price là cột integer. Chuỗi không phải số ("abc") khiến
+  // PostgreSQL ném lỗi cú pháp → 500, trong khi lỗi thật là client gửi sai.
+  let priceValue;
+  let discountPriceValue;
+  try {
+    priceValue = parseOptionalInt(price);
+    discountPriceValue = parseOptionalInt(discount_price);
+  } catch (err) {
+    return res.status(400).json({ error: "price/discount_price phải là số nguyên không âm" });
+  }
+
+  // Giá giảm không được lớn hơn giá gốc (xem createCourse).
+  if (
+    priceValue != null &&
+    discountPriceValue != null &&
+    discountPriceValue > priceValue
+  ) {
+    return res.status(400).json({ error: "discount_price không được lớn hơn price" });
+  }
 
   // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
   const uid = resolveActorUid(req, res, req.body.uid);
@@ -64,10 +95,23 @@ const updateCourse = async (req, res) => {
     const updatedTitle = title ?? current.title;
     const updatedDescription = description ?? current.description;
     const updatedLevel = level ?? current.level;
-    const updatedPrice = price ?? current.price;
-    const updatedDiscountPrice = discount_price ?? current.discount_price;
+    // Chỉ ghi đè giá khi client thực sự gửi lên. Dùng `priceValue` (đã ép số)
+    // chứ không dùng `price` thô, để giá trị gửi lên luôn được kiểm tra ở trên.
+    const updatedPrice = price !== undefined ? priceValue : current.price;
+    const updatedDiscountPrice =
+      discount_price !== undefined ? discountPriceValue : current.discount_price;
     const updatedLanguage = language ?? current.language;
     const updatedTags = tags ?? current.tags;
+
+    // Kiểm tra trên giá trị SAU merge: client có thể chỉ gửi `discount_price`,
+    // khi đó phải so với `price` hiện có trong DB.
+    if (
+      updatedPrice != null &&
+      updatedDiscountPrice != null &&
+      Number(updatedDiscountPrice) > Number(updatedPrice)
+    ) {
+      return res.status(400).json({ error: "discount_price không được lớn hơn price" });
+    }
 
     // Update
     const updateResult = await pool.query(
@@ -94,6 +138,12 @@ const updateCourse = async (req, res) => {
       message: "Cập nhật khóa học thành công",
       data: updateResult.rows[0],
     });
+
+    // Dọn thumbnail cũ sau khi đã trả response: nếu không, mỗi lần đổi ảnh bìa
+    // lại để lại một bản ghi vĩnh viễn trong uploaded_files.
+    if (req.file && current.thumbnail_url && current.thumbnail_url !== newThumbnailUrl) {
+      deleteFiles([current.thumbnail_url]).catch(() => {});
+    }
   } catch (err) {
     sendServerError(res, "Lỗi cập nhật khóa học", err);
   }

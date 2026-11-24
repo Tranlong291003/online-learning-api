@@ -26,11 +26,16 @@ const getCourseProgressForUser = async (req, res) => {
 
   try {
     // Tổng số bài học
+    //
+    // Dùng `|| 0` chứ không phải `?? 0`: COUNT(*) luôn trả chuỗi, nhưng nếu
+    // driver trả null/undefined thì parseInt cho NaN — và NaN không phải
+    // null/undefined nên `?? 0` để nguyên NaN, khiến progress_percent thành NaN
+    // (JSON serialise thành `null`). `|| 0` nuốt cả NaN.
     const total = await pool.query(
       "SELECT COUNT(*) AS total_lessons FROM lessons WHERE course_id = $1",
       [Number(courseId)]
     );
-    const totalLessons = parseInt(total.rows[0]?.total_lessons) ?? 0;
+    const totalLessons = parseInt(total.rows[0]?.total_lessons, 10) || 0;
 
     // Số bài hoàn thành
     const done = await pool.query(
@@ -39,7 +44,7 @@ const getCourseProgressForUser = async (req, res) => {
        WHERE user_uid = $1 AND course_id = $2 AND is_completed = true`,
       [userUid, Number(courseId)]
     );
-    const completedLessons = parseInt(done.rows[0]?.completed_lessons) ?? 0;
+    const completedLessons = parseInt(done.rows[0]?.completed_lessons, 10) || 0;
 
     const progressPercent =
       totalLessons > 0

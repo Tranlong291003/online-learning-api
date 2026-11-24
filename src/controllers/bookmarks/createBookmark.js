@@ -1,12 +1,19 @@
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
+const { parsePositiveInt } = require("../../utils/parseId");
 
 const createBookmark = async (req, res) => {
   try {
-    const { courseId } = req.body;
-    if (!courseId) {
+    const rawCourseId = req.body.courseId;
+    if (!rawCourseId) {
       return res.status(400).json({ error: "courseId là bắt buộc" });
+    }
+
+    // courseId là cột integer; "abc" sẽ khiến PostgreSQL ném lỗi → 500.
+    const courseId = parsePositiveInt(rawCourseId);
+    if (!courseId) {
+      return res.status(400).json({ error: "courseId phải là số nguyên dương" });
     }
 
     // Lấy uid từ token; chỉ admin mới được bookmark thay người khác

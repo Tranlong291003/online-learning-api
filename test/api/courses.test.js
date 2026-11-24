@@ -59,7 +59,9 @@ test("GET /api/courses/ returns grouped courses with total", async () => {
   });
 });
 
-test("GET /api/courses/ returns message when no courses", async () => {
+test("GET /api/courses/ returns the same shape when the list is empty", async () => {
+  // Trước đây nhánh rỗng chỉ trả { message }, nên client đọc body.data.pending
+  // sẽ vỡ. Nay phải trả đúng cấu trúc như khi có dữ liệu.
   const poolMock = createPoolMock([{ rows: [] }]);
   const { app } = loadApp({ poolMock });
 
@@ -70,7 +72,8 @@ test("GET /api/courses/ returns message when no courses", async () => {
     const body = await response.json();
 
     assert.equal(response.status, 200);
-    assert.equal(body.message, "Không có khóa học");
+    assert.deepEqual(body.data, { pending: [], approved: [], rejected: [] });
+    assert.equal(body.total, 0);
   });
 });
 
@@ -153,6 +156,22 @@ test("GET /api/courses/mentor/mentor-1 returns mentor courses", async () => {
     assert.equal(response.status, 200);
     assert.equal(body.total, 1);
     assert.equal(body.data.approved[0].title, "Mentor course");
+  });
+});
+
+test("GET /api/courses/mentor/:uid returns the same shape when the mentor has no course", async () => {
+  const poolMock = createPoolMock([{ rows: [] }]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ request }) => {
+    const response = await request("/api/courses/mentor/mentor-1", {
+      headers: authHeaders(),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.data, { pending: [], approved: [], rejected: [] });
+    assert.equal(body.total, 0);
   });
 });
 
@@ -417,6 +436,151 @@ test("PUT /api/courses/update/1 returns 403 for user role", async () => {
   });
 });
 
+test("PUT /api/courses/update/1 rejects an unknown level and bad prices (regression)", async () => {
+  // Trước đây endpoint sửa không validate level/price nên "abc" đi thẳng vào
+  // cột integer → PostgreSQL ném lỗi → 500 thay vì 400.
+  for (const badBody of [
+    { level: "abc" },
+    { price: "abc" },
+    { discount_price: "-5" },
+    { price: "-1" },
+  ]) {
+    const poolMock = createPoolMock(sqlMock((sql) => {
+      const q = sql.toLowerCase();
+      if (q.includes("select role from users")) return { rows: [{ role: "admin" }] };
+      return { rows: [] };
+    }));
+    const { app } = loadApp({ poolMock });
+
+    await withServer(app, async ({ json }) => {
+      const response = await json("/api/courses/update/1", {
+        method: "PUT",
+        headers: authHeaders(),
+        body: { uid: "admin-1", ...badBody },
+      });
+
+      assert.equal(
+        response.status,
+        400,
+        `${JSON.stringify(badBody)} phải trả 400 chứ không phải 500`
+      );
+      // Bị chặn trước khi UPDATE, nên không được có truy vấn ghi.
+      assert.ok(
+        !poolMock.calls.some((c) => /update courses/i.test(c.sql)),
+        "không được UPDATE khi dữ liệu sai"
+      );
+    });
+  }
+});
+
+test("PUT /api/courses/update/1 keeps price 0 instead of dropping it", async () => {
+  const poolMock = createPoolMock(sqlMock((sql) => {
+    const q = sql.toLowerCase();
+    if (q.includes("select role from users")) return { rows: [{ role: "admin" }] };
+    if (q.includes("select * from courses")) {
+      return { rows: [{ course_id: 1, title: "Old", level: "beginner", price: 100, discount_price: 80 }] };
+    }
+    if (q.includes("update courses")) return { rows: [{ course_id: 1 }] };
+    return { rows: [] };
+  }));
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/courses/update/1", {
+      method: "PUT",
+      headers: authHeaders(),
+      body: { uid: "admin-1", price: 0, discount_price: 0 },
+    });
+
+    assert.equal(response.status, 200);
+    const update = poolMock.calls.find((c) => /update courses/i.test(c.sql));
+    assert.ok(update);
+    assert.equal(update.params[3], 0, "price = 0 phải được lưu, không bị đổi thành null");
+    assert.equal(update.params[4], 0, "discount_price = 0 phải được lưu");
+  });
+});
+
+test("POST /api/courses/create rejects discount_price greater than price (regression)", async () => {
+  // Trước đây không chặn, nên discount_percent ra số âm và giá hiển thị sai.
+  const poolMock = createPoolMock(sqlMock((sql) => {
+    if (sql.toLowerCase().includes("select name, role from users")) {
+      return { rows: [{ name: "M", role: "mentor" }] };
+    }
+    return { rows: [] };
+  }));
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/courses/create", {
+      method: "POST",
+      headers: authHeaders(),
+      body: { uid: "admin-1", title: "C", category_id: 1, price: 100, discount_price: 150 },
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.match(body.error, /không được lớn hơn price/);
+    assert.ok(!poolMock.calls.some((c) => /INSERT INTO courses/i.test(c.sql)));
+  });
+});
+
+test("PUT /api/courses/update/1 rejects discount_price greater than the stored price", async () => {
+  // Client chỉ gửi discount_price: phải so với price HIỆN CÓ trong DB.
+  const poolMock = createPoolMock(sqlMock((sql) => {
+    const q = sql.toLowerCase();
+    if (q.includes("select role from users")) return { rows: [{ role: "admin" }] };
+    if (q.includes("select * from courses")) {
+      return { rows: [{ course_id: 1, title: "Old", price: 100, discount_price: null }] };
+    }
+    return { rows: [] };
+  }));
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/courses/update/1", {
+      method: "PUT",
+      headers: authHeaders(),
+      body: { uid: "admin-1", discount_price: 200 },
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.match(body.error, /không được lớn hơn price/);
+    assert.ok(!poolMock.calls.some((c) => /UPDATE courses/i.test(c.sql)));
+  });
+});
+
+test("GET /api/courses/1 never returns a negative discount_percent", async () => {
+  // Dữ liệu cũ có thể có discount_price > price; response phải kẹp về 0.
+  const poolMock = createPoolMock(sqlMock((sql) => {
+    if (sql.toLowerCase().includes("from courses c")) {
+      return {
+        rows: [
+          {
+            course_id: 1,
+            title: "Bad data",
+            price: 100,
+            discount_price: 150,
+            updated_at: "2026-01-02T00:00:00.000Z",
+            last_lesson_update: null,
+          },
+        ],
+      };
+    }
+    return { rows: [] };
+  }));
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ request }) => {
+    const response = await request("/api/courses/1", { headers: authHeaders() });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.data.discount_percent, 0, "không được trả số âm");
+    assert.ok(body.data.discount_percent >= 0 && body.data.discount_percent <= 100);
+  });
+});
+
 test("PUT /api/courses/update/1 returns 403 when mentor edits another mentor's course", async () => {
   const poolMock = createPoolMock(sqlMock((sql) => {
     const q = sql.toLowerCase();
@@ -602,12 +766,29 @@ test("DELETE /api/courses/delete/1 returns 200 for admin", async () => {
 
     assert.equal(response.status, 200);
     assert.equal(body.success, true);
+    // Phải dùng pool.batch: đó là đường chạy thật trên cả D1 lẫn PostgreSQL.
+    // Nhánh connect()+BEGIN/COMMIT trước đây là dead code vì `pool` luôn có batch.
     assert.ok(
-      poolMock.calls.some((c) => c.sql.trim().toLowerCase() === "begin")
+      !poolMock.calls.some((c) => c.sql.trim().toLowerCase() === "begin"),
+      "không dùng transaction thủ công nữa"
     );
-    assert.ok(
-      poolMock.calls.some((c) => c.sql.trim().toLowerCase() === "commit")
-    );
+    const deletes = poolMock.calls
+      .map((c) => c.sql)
+      .filter((s) => /delete from/i.test(s));
+    assert.equal(deletes.length, 9, "phải xoá đủ 9 bảng phụ thuộc");
+    // Thứ tự quan trọng: quiz_results -> quiz_questions -> quizzes -> ... -> courses
+    const order = deletes.map((s) => s.match(/delete from (\w+)/i)[1].toLowerCase());
+    assert.deepEqual(order, [
+      "quiz_results",
+      "quiz_questions",
+      "quizzes",
+      "lesson_progress",
+      "lessons",
+      "bookmarks",
+      "course_reviews",
+      "enrollments",
+      "courses",
+    ]);
   });
 });
 

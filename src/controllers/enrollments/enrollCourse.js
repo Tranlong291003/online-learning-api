@@ -2,12 +2,21 @@ const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
 const { sendNotification } = require("../../services/notificationService");
 const { resolveActorUid } = require("../../middleware/actor");
+const { parsePositiveInt } = require("../../utils/parseId");
 
 const enrollCourse = async (req, res) => {
-  const { courseId } = req.body;
+  const rawCourseId = req.body.courseId;
 
-  if (!courseId) {
+  if (!rawCourseId) {
     return res.status(400).json({ error: "Thiếu courseId" });
+  }
+
+  // courseId là cột integer: "abc" đi thẳng vào câu SQL sẽ khiến PostgreSQL ném
+  // lỗi → 500, còn "8" (chuỗi số từ form) thì trước đây vẫn lọt nhưng không
+  // được chuẩn hoá. Ép về số nguyên dương ngay tại đây.
+  const courseId = parsePositiveInt(rawCourseId);
+  if (!courseId) {
+    return res.status(400).json({ error: "courseId phải là số nguyên dương" });
   }
 
   // Lấy uid từ token; chỉ admin mới được đăng ký thay người khác

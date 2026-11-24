@@ -256,6 +256,30 @@ test("DELETE /api/enrollments/delete/999 returns 404", async () => {
   });
 });
 
+test("GET /api/enrollments/progress returns 0 instead of NaN when COUNT is missing", async () => {
+  // parseInt(undefined) là NaN, và NaN không phải null/undefined nên toán tử
+  // `?? 0` cũ để nguyên NaN -> progress_percent = NaN -> JSON thành null.
+  const poolMock = createPoolMock(sqlMock((sql) => {
+    const q = sql.toLowerCase();
+    if (q.includes("total_lessons")) return { rows: [{}] };
+    if (q.includes("completed_lessons")) return { rows: [{}] };
+    return { rows: [] };
+  }));
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ request }) => {
+    const response = await request("/api/enrollments/progress?courseId=1", {
+      headers: authHeaders(),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.data.total_lessons, 0);
+    assert.equal(body.data.completed_lessons, 0);
+    assert.equal(body.data.progress_percent, 0);
+  });
+});
+
 test("GET /api/enrollments/progress returns progress percent", async () => {
   const poolMock = createPoolMock(sqlMock((sql) => {
       const q = sql.toLowerCase();

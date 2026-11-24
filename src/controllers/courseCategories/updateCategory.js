@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const { deleteFiles } = require("../../services/fileStorage");
 const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 const { parsePositiveInt } = require("../../utils/parseId");
@@ -29,17 +30,25 @@ const updateCategory = async (req, res) => {
       return res.status(403).json({ error: "Bạn không có quyền thay đổi danh mục" });
     }
 
-    // Update. Icon cũ không bị xoá: bản ghi mới trong uploaded_files nằm ở
-    // đường dẫn ngẫu nhiên khác nên không ghi đè, và giữ lại file cũ tránh làm
-    // hỏng ảnh của bản ghi khác đang trỏ tới cùng đường dẫn.
+    // Update. Icon CŨ được dọn sau khi cập nhật xong — nếu không, mỗi lần đổi
+    // icon lại để lại một bản ghi vĩnh viễn trong uploaded_files. Phải đọc
+    // icon cũ TRƯỚC câu UPDATE vì sau đó giá trị đã bị ghi đè.
+    const previousIcon = iconFile
+      ? (
+          await pool.query(
+            "SELECT icon FROM course_categories WHERE category_id = $1",
+            [category_id]
+          )
+        ).rows[0]?.icon || null
+      : null;
+
     let updateResult;
     if (iconFile) {
-      const newIcon = iconFile.publicPath;
       updateResult = await pool.query(
         `UPDATE course_categories SET name = $1, description = $2, icon = $3, updated_at = NOW()
          WHERE category_id = $4
          RETURNING category_id, name, description, icon`,
-        [name, description, newIcon, category_id]
+        [name, description, iconFile.publicPath, category_id]
       );
     } else {
       updateResult = await pool.query(
@@ -52,6 +61,11 @@ const updateCategory = async (req, res) => {
 
     if (updateResult.rows.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy danh mục" });
+    }
+
+    if (previousIcon) {
+      // Dọn file phụ, không được làm hỏng kết quả chính.
+      deleteFiles([previousIcon]).catch(() => {});
     }
 
     return res.status(200).json({

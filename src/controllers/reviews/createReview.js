@@ -1,14 +1,23 @@
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
+const { parsePositiveInt } = require("../../utils/parseId");
 
 const createReview = async (req, res) => {
   try {
-    const { course_id, rating, comment } = req.body;
-    if (!course_id || rating == null) {
+    const { rating, comment } = req.body;
+    const rawCourseId = req.body.course_id;
+
+    if (!rawCourseId || rating == null) {
       return res
         .status(400)
         .json({ error: "course_id và rating không được bỏ trống" });
+    }
+
+    // course_id là cột integer; "abc" sẽ khiến PostgreSQL ném lỗi → 500.
+    const course_id = parsePositiveInt(rawCourseId);
+    if (!course_id) {
+      return res.status(400).json({ error: "course_id phải là số nguyên dương" });
     }
 
     if (!Number.isInteger(Number(rating)) || Number(rating) < 1 || Number(rating) > 5) {

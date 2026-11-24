@@ -1,6 +1,7 @@
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
 const { parsePositiveInt } = require("../../utils/parseId");
+const { computeDiscountPercent } = require("../../utils/coursePricing");
 
 const getCourseById = async (req, res) => {
   const course_id = parsePositiveInt(req.params.course_id);
@@ -103,12 +104,9 @@ const getCourseById = async (req, res) => {
     const response = {
       ...courseData,
       total_video_duration: `${String(Math.floor(seconds / 3600)).padStart(2, "0")}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`,
-      discount_percent:
-        course.discount_price && course.price
-          ? Math.round(
-              ((course.price - course.discount_price) / course.price) * 100
-            )
-          : 0,
+      // Kẹp trong 0–100: dữ liệu cũ có thể có discount_price > price (trước khi
+      // thêm validate), khi đó công thức cho ra số âm và hiển thị trên app vô nghĩa.
+      discount_percent: computeDiscountPercent(course.price, course.discount_price),
       last_update:
         course.last_lesson_update > course.updated_at
           ? course.last_lesson_update

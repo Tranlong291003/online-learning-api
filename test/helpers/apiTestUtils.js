@@ -46,6 +46,16 @@ function createPoolMock(responses = []) {
     queue,
     pool: {
       query: nextResponse,
+      // `pool` thật trong src/config/db.config.js luôn có `batch` (D1 dùng batch
+      // gốc, PostgreSQL tự mở transaction). Mock phải có cùng bề mặt API, nếu
+      // không các controller gọi `pool.batch` sẽ ném TypeError.
+      batch: async (queries) => {
+        const results = [];
+        for (const query of queries) {
+          results.push(await nextResponse(query.text, query.values));
+        }
+        return results;
+      },
       connect: async () => client,
       on: () => {},
       end: async () => {},

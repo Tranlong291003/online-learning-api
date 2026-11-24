@@ -1,7 +1,8 @@
-const { parsePositiveInt } = require("../../utils/parseId");
+const { parsePositiveInt, parseOptionalInt } = require("../../utils/parseId");
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
+const { deleteFiles } = require("../../services/fileStorage");
 const {
   extractVideoId,
   resolveVideoMetadata,
@@ -63,17 +64,21 @@ const updateLesson = async (req, res) => {
       return res.status(403).json({ error: "Bạn chỉ được cập nhật bài học do bạn tạo" });
     }
 
-    // Xử lý file. File cũ không bị xoá: bản ghi mới nằm ở đường dẫn ngẫu nhiên
-    // khác nên không ghi đè, và giữ lại tránh làm hỏng dữ liệu đang trỏ tới nó.
+    // Xử lý file. File mới nằm ở đường dẫn ngẫu nhiên khác nên không ghi đè,
+    // nhưng file CŨ phải được dọn sau khi UPDATE thành công — nếu không, mỗi
+    // lần thay tài liệu lại để lại một bản ghi vĩnh viễn trong uploaded_files.
     let newPdfUrl = current.pdf_url;
     let newSlideUrl = current.slide_url;
+    const replacedFiles = [];
 
     if (req.files?.pdf?.[0]) {
       newPdfUrl = req.files.pdf[0].publicPath;
+      replacedFiles.push(current.pdf_url);
     }
 
     if (req.files?.slide?.[0]) {
       newSlideUrl = req.files.slide[0].publicPath;
+      replacedFiles.push(current.slide_url);
     }
 
     // Merge dữ liệu
@@ -137,6 +142,10 @@ const updateLesson = async (req, res) => {
       message: "Cập nhật bài học thành công",
       data: updateResult.rows[0],
     });
+
+    // Dọn file bị thay thế SAU khi response đã gửi: đây là bước phụ, không được
+    // làm chậm hay làm hỏng kết quả chính.
+    deleteFiles(replacedFiles).catch(() => {});
   } catch (err) {
     sendServerError(res, "Lỗi cập nhật bài học", err);
   }

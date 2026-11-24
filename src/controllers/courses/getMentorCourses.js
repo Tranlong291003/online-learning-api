@@ -1,5 +1,6 @@
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
+const { computeDiscountPercent } = require("../../utils/coursePricing");
 
 const getMentorCourses = async (req, res) => {
   try {
@@ -90,19 +91,17 @@ const getMentorCourses = async (req, res) => {
           ? `${String(Math.floor(total_seconds / 3600)).padStart(2, "0")}:${String(Math.floor((total_seconds % 3600) / 60)).padStart(2, "0")}:${String(total_seconds % 60).padStart(2, "0")}`
           : "00:00:00",
         lesson_count: course.lesson_count || 0,
-        discount_percent:
-          course.discount_price && course.price
-            ? Math.round(
-                ((course.price - course.discount_price) / course.price) * 100
-              )
-            : 0,
+        // Kẹp 0–100, tránh số âm với dữ liệu cũ (xem utils/coursePricing.js).
+        discount_percent: computeDiscountPercent(course.price, course.discount_price),
       };
     });
 
     if (courses.length === 0) {
-      return res
-        .status(200)
-        .json({ message: "Không có khóa học nào của mentor này" });
+      // Cùng hình dạng với nhánh có dữ liệu — xem getAllCourses.
+      return res.status(200).json({
+        data: { pending: [], approved: [], rejected: [] },
+        total: 0,
+      });
     }
 
     // Phân loại khóa học theo 3 trạng thái

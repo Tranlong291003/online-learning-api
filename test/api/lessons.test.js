@@ -231,6 +231,57 @@ test("PUT /api/lessons/update/1 returns 200", async () => {
   });
 });
 
+test("PUT /api/lessons/update/1 rejects a non-numeric order with 400 (regression)", async () => {
+  // `parseOptionalInt` từng không được import trong file này, nên mọi request
+  // có `order` (kể cả hợp lệ) đều ném ReferenceError → 500.
+  for (const badOrder of ["abc", "-1", "1.5"]) {
+    const poolMock = createPoolMock(sqlMock((sql) => {
+      const q = sql.toLowerCase();
+      if (q.includes("select role from users")) return { rows: [{ role: "admin" }] };
+      if (q.includes("select * from lessons")) {
+        return { rows: [{ lesson_id: 1, title: "Old", order: 1, creator_uid: "admin-1" }] };
+      }
+      return { rows: [] };
+    }));
+    const { app } = loadApp({ poolMock });
+
+    await withServer(app, async ({ json }) => {
+      const response = await json("/api/lessons/update/1", {
+        method: "PUT",
+        headers: authHeaders(),
+        body: { uid: "admin-1", order: badOrder },
+      });
+
+      assert.equal(response.status, 400, `order=${badOrder} phải trả 400`);
+    });
+  }
+});
+
+test("PUT /api/lessons/update/1 accepts a valid order and writes it", async () => {
+  const poolMock = createPoolMock(sqlMock((sql) => {
+    const q = sql.toLowerCase();
+    if (q.includes("select role from users")) return { rows: [{ role: "admin" }] };
+    if (q.includes("select * from lessons")) {
+      return { rows: [{ lesson_id: 1, title: "Old", order: 1, creator_uid: "admin-1" }] };
+    }
+    if (q.includes("update lessons")) return { rows: [{ lesson_id: 1, order: 5 }] };
+    return { rows: [] };
+  }));
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/lessons/update/1", {
+      method: "PUT",
+      headers: authHeaders(),
+      body: { uid: "admin-1", order: 5 },
+    });
+
+    assert.equal(response.status, 200, "order hợp lệ không được gây 500");
+    const update = poolMock.calls.find((c) => /update lessons/i.test(c.sql));
+    assert.equal(update.params[7], 5, "order phải được ghi xuống");
+  });
+});
+
 test("PUT /api/lessons/update/1 rejects spoofed uid (regression)", async () => {
   const poolMock = createPoolMock([]);
   const { app } = loadApp({ poolMock });
