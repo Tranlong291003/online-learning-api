@@ -1,7 +1,6 @@
 const createUser = require("./createUser");
 const deleteUser = require("./deleteUser");
 const getAllUsers = require("./getAllUsers");
-const getUserById = require("./getUserById");
 const getPublicProfile = require("./getPublicProfile");
 const updateUserStatus = require("./updateUserStatus");
 const loginUser = require("./loginUser");
@@ -13,7 +12,6 @@ module.exports = {
   createUser,
   deleteUser,
   getAllUsers,
-  getUserById,
   getPublicProfile,
   updateUserStatus,
   loginUser,

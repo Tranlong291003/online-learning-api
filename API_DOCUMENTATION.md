@@ -287,7 +287,7 @@ Body:
 
 ### 10.3 Chi tiết kết quả — `GET /api/quiz-results/:result_id`
 → `200`: `{ message, data: { quiz_id, user_uid, score, explanation, total_correct_answers, total_wrong_answers, processing_time, questions: [{ question_id, question, options, correct_answer (0-based), user_answer, is_correct, explanation }] } }`
-> ⚠️ Endpoint này gọi **OpenAI để sinh giải thích** cho câu sai mỗi lần GET (worker threads, timeout 3s/câu). Nếu không có `OPENAI_API_KEY`, server trả giải thích mặc định. Lưu ý latency và chi phí khi gọi nhiều.
+> ⚠️ Endpoint này sinh **lời giải bằng AI** cho câu sai mỗi lần gọi (timeout 3s/câu, chạy song song có giới hạn). Nếu chưa cấu hình `AI_BASE_URL`/`AI_API_KEY`/`AI_MODEL`, server trả lời giải mặc định. Lưu ý latency và chi phí khi gọi nhiều; thêm `?explanations=0` để bỏ qua bước này.
 
 ### 10.4 Chấm bài tự luận — `PATCH /api/quiz-results/quiz-results/:result_id/grade` *(mentor/admin)*
 Body: `{ uid*, explanation*, score* }`

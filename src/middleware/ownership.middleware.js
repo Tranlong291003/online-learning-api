@@ -5,7 +5,7 @@
  * liệu, còn ở đây so định danh người gọi với định danh trên URL.
  *
  * Cách dùng:
- *   router.get("/:id", authorizeSelfOrAdmin("id"), getUserById);
+ *   router.get("/:id", authorizeSelfOrAdmin("id"), getPublicProfile);
  *
  * Luôn là "hoặc admin": admin phải xem/sửa được hồ sơ của mọi người (màn quản
  * trị người dùng).

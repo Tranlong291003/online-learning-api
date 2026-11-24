@@ -14,6 +14,9 @@ src/public/uploads/
 # Local embedded PostgreSQL data dir (dùng cho test thủ công)
 .localdb/
 
+# Trạng thái local của wrangler khi `npm run cf:dev` (D1/KV/cache cục bộ)
+.wrangler/
+
 # Cấu hình local của công cụ soạn code (không phải cấu hình dự án)
 .claude/
 

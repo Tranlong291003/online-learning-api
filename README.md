@@ -142,7 +142,7 @@ Server chạy tại `http://localhost:3000`.
 | `PORT` / `HOST` | Cổng và địa chỉ lắng nghe khi chạy Express trực tiếp |
 | `CORS_ORIGIN` | Giới hạn origin được phép. Bỏ trống = cho phép tất cả |
 | `FIREBASE_SERVICE_ACCOUNT_BASE64` | Nội dung file service account mã hoá base64. **Chỉ cần nếu dùng push notification** (FCM). Không liên quan tới đăng nhập |
-| `OPENAI_API_KEY` | Sinh câu hỏi quiz bằng AI |
+| `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL` | Sinh câu hỏi và lời giải bằng AI (cổng tương thích API OpenAI, ví dụ 9router) |
 | `YOUTUBE_API_KEY` | Lấy thông tin video bài học |
 | `DEV_API_KEY` + `DEV_API_KEY_UID` / `_ROLE` | Bypass JWT cho môi trường dev. **Tự động tắt khi `NODE_ENV=production`** |
 | `AUTH_SKIP_DB_CHECK` | `true` để bỏ đối chiếu DB khi xác thực (chỉ dùng cho test) |
