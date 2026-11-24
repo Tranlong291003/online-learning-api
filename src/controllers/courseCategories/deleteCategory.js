@@ -2,6 +2,7 @@ const { pool } = require("../../config/db.config");
 const { deleteFiles } = require("../../services/fileStorage");
 const { parsePositiveInt } = require("../../utils/parseId");
 const { sendServerError } = require("../../utils/errorResponse");
+const { isForeignKeyViolation } = require("../../utils/dbErrors");
 const { resolveActorUid } = require("../../middleware/actor");
 
 const deleteCategory = async (req, res) => {
@@ -46,7 +47,7 @@ const deleteCategory = async (req, res) => {
 
     res.status(200).json({ message: "🗑️ Xóa danh mục thành công" });
   } catch (err) {
-    if (err.code === "23503") {
+    if (isForeignKeyViolation(err)) {
       return res.status(409).json({ error: "Không thể xoá danh mục đang có khóa học" });
     }
     sendServerError(res, "❌ Lỗi xoá danh mục", err);

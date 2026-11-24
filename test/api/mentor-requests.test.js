@@ -33,7 +33,14 @@ function formDataWithImage(fields = {}) {
 }
 
 test("POST /api/mentor-requests/ creates a pending request with image", async () => {
-  const poolMock = createPoolMock([{ rows: [] }, { rows: [] }]);
+  // Thứ tự thật: middleware lưu file (INSERT uploaded_files) chạy TRƯỚC
+  // controller, nên mock phải khớp theo nội dung SQL chứ không theo vị trí.
+  const bySql = (sql) => {
+    if (sql.includes("INSERT INTO uploaded_files")) return { rows: [] };
+    if (sql.includes("SELECT role FROM users")) return { rows: [{ role: "user" }] };
+    return { rows: [] };
+  };
+  const poolMock = createPoolMock(Array.from({ length: 12 }, () => bySql));
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ request }) => {
@@ -86,13 +93,14 @@ test("POST /api/mentor-requests/ returns 400 when no image file is sent", async 
 });
 
 test("POST /api/mentor-requests/ returns 400 when a pending request already exists", async () => {
-  // Truy vấn thứ nhất là INSERT vào uploaded_files (tầng lưu trữ file), truy vấn
-  // thứ hai mới là kiểm tra yêu cầu đang chờ duyệt.
-  const bySql = (sql) =>
-    sql.includes("INSERT INTO uploaded_files")
-      ? { rows: [] }
-      : { rows: [{ id: 1 }] };
-  const poolMock = createPoolMock([bySql, bySql]);
+  // Truy vấn 1: kiểm tra role. Truy vấn 2: INSERT vào uploaded_files (tầng lưu
+  // trữ file). Truy vấn 3: kiểm tra yêu cầu đang chờ duyệt.
+  const bySql = (sql) => {
+    if (sql.includes("SELECT role FROM users")) return { rows: [{ role: "user" }] };
+    if (sql.includes("INSERT INTO uploaded_files")) return { rows: [] };
+    return { rows: [{ id: 1 }] };
+  };
+  const poolMock = createPoolMock(Array.from({ length: 10 }, () => bySql));
   const { app } = loadApp({ poolMock });
 
   await withServer(app, async ({ request }) => {
@@ -105,6 +113,33 @@ test("POST /api/mentor-requests/ returns 400 when a pending request already exis
 
     assert.equal(response.status, 400);
     assert.ok(body.error.includes("đang chờ duyệt"));
+  });
+});
+
+test("POST /api/mentor-requests/ rejects a user who is already a mentor (regression)", async () => {
+  // Trước đây không kiểm tra role: mentor gửi được yêu cầu, và khi admin duyệt
+  // thì role bị ghi đè — một admin có thể tự hạ quyền mình thành mentor.
+  const bySql = (sql) => {
+    if (sql.includes("SELECT role FROM users")) return { rows: [{ role: "admin" }] };
+    return { rows: [] };
+  };
+  const poolMock = createPoolMock(Array.from({ length: 6 }, () => bySql));
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ request }) => {
+    const response = await request("/api/mentor-requests/", {
+      method: "POST",
+      headers: authHeaders({ role: "admin", uid: "admin-1" }),
+      body: formDataWithImage({ user_uid: "admin-1" }),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.match(body.error, /không cần gửi yêu cầu nâng cấp/);
+    assert.ok(
+      !poolMock.calls.some((c) => /INSERT INTO upgrade_requests/i.test(c.sql)),
+      "không được tạo yêu cầu"
+    );
   });
 });
 
@@ -165,7 +200,7 @@ test("GET /api/mentor-requests/ returns 403 for non-admin users", async () => {
 
 test("PUT /api/mentor-requests/1/status rejects a request as admin", async () => {
   const poolMock = createPoolMock([
-    { rows: [] },
+    // UPDATE ... RETURNING user_uid
     { rows: [{ user_uid: "student-1" }] },
     { rows: [{ fcm_token: null }] },
     { rows: [{ noti_id: 11 }] },
@@ -182,6 +217,25 @@ test("PUT /api/mentor-requests/1/status rejects a request as admin", async () =>
 
     assert.equal(response.status, 200);
     assert.equal(body.message, "Yêu cầu đã được từ chối");
+  });
+});
+
+test("PUT /api/mentor-requests/999/status returns 404 when the request does not exist (regression)", async () => {
+  // Trước đây UPDATE không kiểm tra kết quả, nên id bịa vẫn trả 200 "đã duyệt"
+  // và admin tưởng đã xử lý xong.
+  const poolMock = createPoolMock([{ rows: [] }]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/mentor-requests/999/status", {
+      method: "PUT",
+      headers: authHeaders(),
+      body: { status: "approved" },
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 404);
+    assert.match(body.error, /Không tìm thấy yêu cầu nâng cấp/);
   });
 });
 
@@ -223,7 +277,7 @@ test("PUT /api/mentor-requests/1/status returns 403 for non-admin users", async 
 
 test("PUT /api/mentor-requests/1/status approved updates user role to mentor", async () => {
   const poolMock = createPoolMock([
-    { rows: [] },
+    // UPDATE ... RETURNING user_uid
     { rows: [{ user_uid: "student-1" }] },
     { rows: [{ fcm_token: "fcm-token-1" }] },
     { rows: [] },

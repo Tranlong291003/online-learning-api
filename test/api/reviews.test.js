@@ -255,7 +255,9 @@ test("PUT /api/reviews/update/1 returns 400 when no fields to update", async () 
   });
 });
 
-test("PUT /api/reviews/update/1 returns 403 when review belongs to another user", async () => {
+test("PUT /api/reviews/update/1 returns 403 when a non-admin edits another user's review", async () => {
+  // Dùng token role user: đây mới là trường hợp phải bị chặn. Token admin mặc
+  // định được phép thao tác hộ (xem resolveActorUid), nên không dùng nó ở đây.
   const poolMock = createPoolMock([
     { rows: [{ user_uid: "someone-else" }] },
   ]);
@@ -264,7 +266,7 @@ test("PUT /api/reviews/update/1 returns 403 when review belongs to another user"
   await withServer(app, async ({ json }) => {
     const response = await json("/api/reviews/update/1", {
       method: "PUT",
-      headers: authHeaders(),
+      headers: authHeaders({ uid: "user-1", role: "user" }),
       body: { user_uid: "user-1", rating: 3 },
     });
     const body = await response.json();
@@ -272,6 +274,28 @@ test("PUT /api/reviews/update/1 returns 403 when review belongs to another user"
     assert.equal(response.status, 403);
     assert.match(body.error, /không có quyền cập nhật/);
     assert.equal(poolMock.calls.length, 1);
+  });
+});
+
+test("PUT /api/reviews/update/1 lets an admin edit another user's review (regression)", async () => {
+  // Trước đây controller so uid đích với uid bị đổi nên admin luôn bị 403 —
+  // trái với hợp đồng của resolveActorUid ("admin thao tác hộ").
+  const poolMock = createPoolMock([
+    { rows: [{ user_uid: "someone-else" }] },
+    { rows: [] },
+  ]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/reviews/update/1", {
+      method: "PUT",
+      headers: authHeaders({ uid: "admin-1", role: "admin" }),
+      body: { user_uid: "someone-else", rating: 3 },
+    });
+
+    assert.equal(response.status, 200);
+    const update = poolMock.calls.find((c) => /update course_reviews/i.test(c.sql));
+    assert.ok(update, "admin phải sửa được review của người khác");
   });
 });
 
@@ -332,7 +356,7 @@ test("DELETE /api/reviews/delete/1 rejects spoofed user_uid (regression)", async
   });
 });
 
-test("DELETE /api/reviews/delete/1 returns 403 when review belongs to another user", async () => {
+test("DELETE /api/reviews/delete/1 returns 403 when a non-admin deletes another user's review", async () => {
   const poolMock = createPoolMock([
     { rows: [{ user_uid: "someone-else" }] },
   ]);
@@ -341,13 +365,35 @@ test("DELETE /api/reviews/delete/1 returns 403 when review belongs to another us
   await withServer(app, async ({ json }) => {
     const response = await json("/api/reviews/delete/1", {
       method: "DELETE",
-      headers: authHeaders(),
+      headers: authHeaders({ uid: "user-1", role: "user" }),
       body: { user_uid: "user-1" },
     });
     const body = await response.json();
 
     assert.equal(response.status, 403);
     assert.match(body.error, /không có quyền xóa/);
+  });
+});
+
+test("DELETE /api/reviews/delete/1 lets an admin delete another user's review (regression)", async () => {
+  const poolMock = createPoolMock([
+    { rows: [{ user_uid: "someone-else" }] },
+    { rows: [{ review_id: 1 }] },
+  ]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/reviews/delete/1", {
+      method: "DELETE",
+      headers: authHeaders({ uid: "admin-1", role: "admin" }),
+      body: { user_uid: "someone-else" },
+    });
+
+    assert.equal(response.status, 200);
+    assert.ok(
+      poolMock.calls.some((c) => /delete from course_reviews/i.test(c.sql)),
+      "admin phải xoá được review của người khác"
+    );
   });
 });
 

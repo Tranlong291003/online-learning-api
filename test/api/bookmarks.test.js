@@ -222,7 +222,7 @@ test("DELETE /api/bookmarks/delete ignores a spoofed userUid for a non-admin", a
   });
 });
 
-test("DELETE /api/bookmarks/delete returns 403 when bookmark belongs to another user", async () => {
+test("DELETE /api/bookmarks/delete returns 403 when a non-admin deletes another user's bookmark", async () => {
   const poolMock = createPoolMock([
     { rows: [{ user_uid: "someone-else" }] },
   ]);
@@ -231,13 +231,35 @@ test("DELETE /api/bookmarks/delete returns 403 when bookmark belongs to another 
   await withServer(app, async ({ json }) => {
     const response = await json("/api/bookmarks/delete", {
       method: "DELETE",
-      headers: authHeaders(),
+      headers: authHeaders({ uid: "user-1", role: "user" }),
       body: { bookmarkId: 5, userUid: "user-1" },
     });
     const body = await response.json();
 
     assert.equal(response.status, 403);
     assert.match(body.error, /không có quyền xóa bookmark/);
+  });
+});
+
+test("DELETE /api/bookmarks/delete lets an admin delete another user's bookmark (regression)", async () => {
+  const poolMock = createPoolMock([
+    { rows: [{ user_uid: "someone-else" }] },
+    { rows: [{ bookmark_id: 5 }] },
+  ]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/bookmarks/delete", {
+      method: "DELETE",
+      headers: authHeaders({ uid: "admin-1", role: "admin" }),
+      body: { bookmarkId: 5, userUid: "someone-else" },
+    });
+
+    assert.equal(response.status, 200);
+    assert.ok(
+      poolMock.calls.some((c) => /delete from bookmarks/i.test(c.sql)),
+      "admin phải xoá được bookmark của người khác"
+    );
   });
 });
 

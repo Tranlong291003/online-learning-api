@@ -15,6 +15,23 @@ exports.createRequest = async (req, res) => {
     const user_uid = resolveActorUid(req, res, req.body.user_uid || req.body.uid);
     if (!user_uid) return;
 
+    // Chỉ tài khoản role 'user' mới cần nâng cấp. Không chặn thì mentor/admin
+    // gửi được yêu cầu, và khi admin duyệt thì role bị ghi đè thành 'mentor' —
+    // một admin vô tình tự hạ quyền mình.
+    const roleResult = await pool.query(
+      "SELECT role FROM users WHERE uid = $1",
+      [user_uid]
+    );
+    const currentRole = roleResult.rows[0]?.role;
+    if (!currentRole) {
+      return res.status(404).json({ error: "Không tìm thấy người dùng" });
+    }
+    if (currentRole !== "user") {
+      return res.status(400).json({
+        error: `Tài khoản của bạn đã có vai trò '${currentRole}', không cần gửi yêu cầu nâng cấp`,
+      });
+    }
+
     // Kiểm tra nếu đã có yêu cầu pending
     const check = await pool.query(
       "SELECT id FROM upgrade_requests WHERE user_uid = $1 AND status = 'pending'",
@@ -71,15 +88,21 @@ exports.updateStatusRequest = async (req, res) => {
       return res.status(400).json({ error: "Trạng thái không hợp lệ" });
     }
 
-    // Cập nhật trạng thái
-    await pool.query(
-      `UPDATE upgrade_requests SET status = $1, reason = $2, updated_at = NOW() WHERE id = $3`,
+    // Cập nhật trạng thái và lấy user_uid trong một câu: nếu id không tồn tại
+    // thì `rows` rỗng. Trước đây UPDATE không kiểm tra kết quả nên request với
+    // id bịa vẫn trả 200 "đã duyệt", và admin tưởng đã duyệt cho ai đó.
+    const updated = await pool.query(
+      `UPDATE upgrade_requests SET status = $1, reason = $2, updated_at = NOW()
+       WHERE id = $3
+       RETURNING user_uid`,
       [status, status === "rejected" ? reason : null, id]
     );
 
-    // Lấy user_uid
-    const result = await pool.query("SELECT user_uid FROM upgrade_requests WHERE id = $1", [id]);
-    const user_uid = result.rows[0]?.user_uid;
+    if (updated.rows.length === 0) {
+      return res.status(404).json({ error: "Không tìm thấy yêu cầu nâng cấp" });
+    }
+
+    const user_uid = updated.rows[0].user_uid;
 
     let fcmToken = null;
     if (user_uid) {

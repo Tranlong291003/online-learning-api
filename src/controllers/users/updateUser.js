@@ -69,13 +69,15 @@ const updateUser = async (req, res) => {
   try {
     // UPDATE user
     // Liệt kê cột tường minh thay vì RETURNING *: bảng users có password_hash,
-    // và trả về toàn bộ dòng sẽ đẩy hash mật khẩu ra cho client.
+    // và trả về toàn bộ dòng sẽ đẩy hash mật khẩu ra cho client. `fcm_token`
+    // cũng bị loại vì đó là khoá gửi push notification của thiết bị — lộ ra
+    // ngoài là cho phép người khác bắn thông báo giả tới máy người dùng.
     const updateQuery = `
       UPDATE users
       SET ${setClauses.join(", ")}
       WHERE uid = $${paramIndex}
       RETURNING uid, email, name, avatar_url, bio, phone, gender, birthdate,
-                role, is_active, fcm_token, created_at, updated_at
+                role, is_active, created_at, updated_at
     `;
     const result = await pool.query(updateQuery, values);
 
@@ -91,7 +93,14 @@ const updateUser = async (req, res) => {
       ? new Date(user.birthdate).toLocaleDateString("vi-VN")
       : "Chưa cập nhật";
     const notificationBody = `Hồ sơ của bạn đã được cập nhật: Tên=${user.name}, SĐT=${user.phone}, Giới tính=${user.gender}, Ngày sinh=${bdDisplay}.`;
-    const fcmToken = user.fcm_token;
+
+    // fcm_token không nằm trong kết quả UPDATE (không trả ra client), nên phải
+    // đọc riêng để còn gửi push notification.
+    const tokenResult = await pool.query(
+      "SELECT fcm_token FROM users WHERE uid = $1",
+      [user.uid]
+    );
+    const fcmToken = tokenResult.rows[0]?.fcm_token;
 
     // Insert notification
     const notiResult = await pool.query(

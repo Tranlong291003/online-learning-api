@@ -27,7 +27,10 @@ const updateReview = async (req, res) => {
     const user_uid = resolveActorUid(req, res, req.body.user_uid);
     if (!user_uid) return;
 
-    // Kiểm tra tồn tại và chủ sở hữu
+    // Kiểm tra tồn tại và chủ sở hữu.
+    //
+    // Admin thao tác hộ người khác được (xem resolveActorUid), nên so với actor
+    // trong token thay vì uid đích — nếu so với uid đích, admin luôn bị 403.
     const chk = await pool.query(
       "SELECT user_uid FROM course_reviews WHERE review_id = $1",
       [reviewId]
@@ -35,7 +38,8 @@ const updateReview = async (req, res) => {
     if (chk.rows.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy review" });
     }
-    if (chk.rows[0].user_uid !== user_uid) {
+    const actorUid = req.user && req.user.uid;
+    if (req.user.role !== "admin" && String(chk.rows[0].user_uid) !== String(actorUid)) {
       return res.status(403).json({ error: "Bạn không có quyền cập nhật review này" });
     }
 

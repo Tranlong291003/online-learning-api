@@ -3,6 +3,7 @@ const { pool } = require("../../config/db.config");
 const { hashPassword, validatePassword } = require("../../services/passwordService");
 const { issueRefreshToken, signAccessToken } = require("../../services/tokenService");
 const { PUBLIC_USER_COLUMNS } = require("../../services/authUserLookup");
+const { isUniqueViolation } = require("../../utils/dbErrors");
 
 // Regex cố tình dễ dãi: chặn rõ ràng các giá trị rác ("abc", "a@b") nhưng không
 // cố mô phỏng đầy đủ RFC 5322 — làm vậy chỉ chặn nhầm email hợp lệ.
@@ -84,9 +85,11 @@ const register = async (req, res) => {
     });
   } catch (error) {
     console.error("Lỗi khi đăng ký:", error);
-    // 23505 = unique_violation, xảy ra khi hai request đăng ký cùng email chạy
-    // song song và cùng vượt qua bước kiểm tra tồn tại ở trên.
-    if (error.code === "23505") {
+    // Xảy ra khi hai request đăng ký cùng email chạy song song và cùng vượt qua
+    // bước kiểm tra tồn tại ở trên. Phải nhận diện được cả mã của PostgreSQL
+    // (23505) lẫn của D1/SQLite (UNIQUE constraint failed), nếu không trên
+    // production client nhận 500 thay vì thông báo "email đã được đăng ký".
+    if (isUniqueViolation(error)) {
       return res.status(400).json({ error: "Email này đã được đăng ký" });
     }
     return res.status(500).json({ error: "Lỗi khi đăng ký tài khoản" });
