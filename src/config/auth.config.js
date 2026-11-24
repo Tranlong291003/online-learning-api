@@ -17,9 +17,18 @@ const REFRESH_TOKEN_TTL_DAYS_REMEMBER = Number(
   process.env.REFRESH_TOKEN_TTL_DAYS_REMEMBER || 90
 );
 
-// bcrypt cost. 12 là mức cân bằng hợp lý cho máy chủ hiện nay; mỗi +1 là gấp đôi
-// thời gian hash. Có thể giảm xuống 10 nếu CPU server yếu.
-const BCRYPT_ROUNDS = Number(process.env.BCRYPT_ROUNDS || 12);
+// bcrypt cost.
+//
+// ⚠️ Cloudflare Workers giới hạn CPU mỗi request (gói Free: 10ms, Paid: 30s
+// nhưng mặc định 30s chỉ khi bật). Đo trên máy dev: rounds 12 tốn ~390ms CPU
+// cho MỘT lần hash; trên Workers, login/hash với 12 rounds vượt hạn mức CPU và
+// trả "Error 1102: Worker exceeded resource limits" — đo thực tế trên production
+// cho thấy 10/15 lần đăng nhập thất bại.
+//
+// 10 rounds (~110ms) là mức an toàn cho Worker hiện tại; vẫn đủ mạnh cho mật
+// khẩu người dùng và đây cũng là mức OWASP khuyến nghị tối thiểu. Đặt qua biến
+// môi trường để nâng lên khi chạy trên hạ tầng có CPU rộng hơn (Docker/VPS).
+const BCRYPT_ROUNDS = Number(process.env.BCRYPT_ROUNDS || 10);
 
 // Độ dài tối thiểu của mật khẩu. Chặn ở tầng API để không phụ thuộc client.
 const PASSWORD_MIN_LENGTH = Number(process.env.PASSWORD_MIN_LENGTH || 6);

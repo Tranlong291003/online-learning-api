@@ -505,9 +505,14 @@ test("POST /api/auth/change-password stores a hash and revokes every session", a
     const update = poolMock.calls.find((c) => /UPDATE users/i.test(c.sql));
     assert.ok(update, "phải cập nhật mật khẩu");
     const newHash = update.params[1];
-    assert.ok(newHash.startsWith("$2"), "mật khẩu mới phải được hash");
+    // Không khoá vào một thuật toán cụ thể: BCrypt tốn quá nhiều CPU trên
+    // Cloudflare Workers (gây Error 1102), nên hash mới dùng PBKDF2. Điều quan
+    // trọng là hash phải xác thực đúng mật khẩu mới và không phải bản rõ.
+    assert.notEqual(newHash, "matkhau-moi-123", "không được lưu mật khẩu dạng rõ");
+    assert.match(newHash, /^(\$2[aby]\$|pbkdf2_sha256\$)/, "mật khẩu mới phải được hash");
+    const { verifyPassword } = require("../../src/services/passwordService");
     assert.ok(
-      bcrypt.compareSync("matkhau-moi-123", newHash),
+      await verifyPassword("matkhau-moi-123", newHash),
       "hash phải khớp mật khẩu mới"
     );
 
@@ -609,7 +614,12 @@ test("POST /api/auth/reset-password sets a new hash and revokes sessions", async
 
     const update = poolMock.calls.find((c) => /UPDATE users/i.test(c.sql));
     assert.ok(update);
-    assert.ok(update.params[1].startsWith("$2"), "mật khẩu mới phải được hash");
+    // Chấp nhận cả bcrypt (hash cũ) và PBKDF2 (định dạng mới).
+    assert.match(
+      update.params[1],
+      /^(\$2[aby]\$|pbkdf2_sha256\$)/,
+      "mật khẩu mới phải được hash"
+    );
 
     // Token phải bị đánh dấu đã dùng để không phát lại được request.
     const markUsed = poolMock.calls.find((c) => /UPDATE password_resets/i.test(c.sql));
@@ -711,6 +721,116 @@ test("reusing a revoked refresh token revokes the entire family (theft detection
     assert.ok(revoke, "phải thu hồi cả họ token");
     assert.match(revoke.sql, /family_id/);
     assert.deepEqual(revoke.params, [familyId]);
+  });
+});
+
+test("POST /api/auth/refresh keeps the original session TTL instead of upgrading to remember", async () => {
+  // Trước đây rotateRefreshToken luôn truyền remember: true, nên một phiên
+  // 30 ngày được nâng thành 90 ngày ngay lần refresh đầu tiên và không bao giờ
+  // hết hạn nếu người dùng mở app đều đặn. Token mới phải giữ đúng độ dài cũ.
+  const createdAt = new Date(Date.now() - 2 * 86400000); // tạo cách đây 2 ngày
+  const expiresAt = new Date(createdAt.getTime() + 30 * 86400000); // phiên 30 ngày
+  const poolMock = createPoolMock(sqlMock((sql) => {
+    const q = sql.toLowerCase();
+    if (q.includes("from refresh_tokens") && q.includes("token_hash")) {
+      return {
+        rows: [
+          {
+            token_id: "11111111-1111-1111-1111-111111111111",
+            uid: "user-1",
+            family_id: "22222222-2222-2222-2222-222222222222",
+            expires_at: expiresAt,
+            revoked_at: null,
+            created_at: createdAt,
+          },
+        ],
+      };
+    }
+    if (q.includes("from users")) {
+      return {
+        rows: [
+          {
+            uid: "user-1",
+            email: "user@example.com",
+            name: "User One",
+            role: "mentor",
+            is_active: true,
+          },
+        ],
+      };
+    }
+    if (q.includes("select token_id from refresh_tokens")) {
+      return { rows: [{ token_id: "44444444-4444-4444-4444-444444444444" }] };
+    }
+    return { rows: [] };
+  }));
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/auth/refresh", {
+      method: "POST",
+      body: { refresh_token: "token-phien-thuong" },
+    });
+
+    assert.equal(response.status, 200);
+    const insert = poolMock.calls.find((c) => /INSERT INTO refresh_tokens/i.test(c.sql));
+    assert.ok(insert, "phải phát refresh token mới");
+    // Phiên 30 ngày: token mới phải hết hạn sau ~30 ngày, không phải 90.
+    const newExpires = new Date(insert.params[3]).getTime();
+    const ttlDays = (newExpires - Date.now()) / 86400000;
+    assert.ok(
+      ttlDays > 29 && ttlDays <= 31,
+      `phiên thường phải giữ ~30 ngày, nhận ${ttlDays.toFixed(1)} ngày`
+    );
+  });
+});
+
+test("POST /api/auth/refresh keeps a 90-day session at 90 days", async () => {
+  const createdAt = new Date(Date.now() - 5 * 86400000);
+  const expiresAt = new Date(createdAt.getTime() + 90 * 86400000); // phiên ghi nhớ
+  const poolMock = createPoolMock(sqlMock((sql) => {
+    const q = sql.toLowerCase();
+    if (q.includes("from refresh_tokens") && q.includes("token_hash")) {
+      return {
+        rows: [
+          {
+            token_id: "11111111-1111-1111-1111-111111111111",
+            uid: "user-1",
+            family_id: "22222222-2222-2222-2222-222222222222",
+            expires_at: expiresAt,
+            revoked_at: null,
+            created_at: createdAt,
+          },
+        ],
+      };
+    }
+    if (q.includes("from users")) {
+      return {
+        rows: [
+          { uid: "user-1", email: "user@example.com", name: "U", role: "user", is_active: true },
+        ],
+      };
+    }
+    if (q.includes("select token_id from refresh_tokens")) {
+      return { rows: [{ token_id: "44444444-4444-4444-4444-444444444444" }] };
+    }
+    return { rows: [] };
+  }));
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/auth/refresh", {
+      method: "POST",
+      body: { refresh_token: "token-phien-nho" },
+    });
+
+    assert.equal(response.status, 200);
+    const insert = poolMock.calls.find((c) => /INSERT INTO refresh_tokens/i.test(c.sql));
+    const ttlDays = (new Date(insert.params[3]).getTime() - Date.now()) / 86400000;
+    assert.ok(
+      ttlDays > 89 && ttlDays <= 91,
+      `phiên ghi nhớ phải giữ ~90 ngày, nhận ${ttlDays.toFixed(1)} ngày`
+    );
   });
 });
 

@@ -1,5 +1,5 @@
 const { pool } = require("../../config/db.config");
-const { verifyPassword } = require("../../services/passwordService");
+const { verifyPassword, hashPassword, passwordNeedsRehash } = require("../../services/passwordService");
 const {
   issueRefreshToken,
   signAccessToken,
@@ -9,6 +9,7 @@ const {
   findUserForLogin,
   registerSuccessfulLogin,
   registerFailedLogin,
+  setPasswordHash,
 } = require("../../services/authUserLookup");
 const { MAX_LOGIN_ATTEMPTS, LOGIN_LOCK_MINUTES } = require("../../config/auth.config");
 
@@ -63,6 +64,21 @@ const login = async (req, res) => {
     }
 
     await registerSuccessfulLogin(user.uid, fcmToken);
+
+    // Nâng cấp hash nếu còn ở định dạng cũ (bcrypt).
+    //
+    // bcrypt quá tốn CPU với Cloudflare Workers (gây Error 1102), nên hash mới
+    // dùng PBKDF2. User cũ được chuyển ngay trong lần đăng nhập thành công này —
+    // không cần migration và không ai bị đăng xuất. Đây là bước phụ: lỗi ở đây
+    // không được làm hỏng việc đăng nhập.
+    if (passwordNeedsRehash(user.password_hash)) {
+      try {
+        const upgraded = await hashPassword(password);
+        await setPasswordHash(user.uid, upgraded);
+      } catch (error) {
+        console.warn("Không nâng cấp được hash mật khẩu:", error.message);
+      }
+    }
 
     const tokenPayload = { uid: user.uid, email: user.email, role: user.role };
     const accessToken = signAccessToken(tokenPayload);

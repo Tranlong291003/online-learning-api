@@ -58,8 +58,12 @@ test("POST /api/users/create creates a database user with a hashed password", as
     assert.ok(insert, "phải có truy vấn INSERT INTO users");
 
     // Mật khẩu phải được hash trước khi lưu; không bao giờ lưu bản rõ.
-    const storedHash = insert.params.find((p) => typeof p === "string" && p.startsWith("$2"));
-    assert.ok(storedHash, "mật khẩu phải được hash bằng bcrypt (tiền tố $2)");
+    // Chấp nhận bcrypt (hash cũ) lẫn PBKDF2 (định dạng mới, nhẹ CPU hơn trên
+    // Cloudflare Workers).
+    const storedHash = insert.params.find(
+      (p) => typeof p === "string" && /^(\$2[aby]\$|pbkdf2_sha256\$)/.test(p)
+    );
+    assert.ok(storedHash, "mật khẩu phải được hash (bcrypt hoặc PBKDF2)");
     assert.ok(
       !insert.params.includes("123456"),
       "mật khẩu dạng rõ không được lọt vào tham số truy vấn"

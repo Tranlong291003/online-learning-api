@@ -99,7 +99,7 @@ async function issueRefreshToken({ uid, familyId, remember, userAgent }) {
  */
 async function findRefreshToken(rawToken) {
   const result = await pool.query(
-    `SELECT token_id, uid, family_id, expires_at, revoked_at, user_agent
+    `SELECT token_id, uid, family_id, expires_at, revoked_at, user_agent, created_at
      FROM refresh_tokens
      WHERE token_hash = $1`,
     [hashToken(rawToken)]
@@ -140,7 +140,36 @@ async function revokeAllForUser(uid) {
 }
 
 /**
+ * Đoán phiên hiện tại có bật "ghi nhớ đăng nhập" hay không.
+ *
+ * Chỉ cần một ngưỡng: phiên nhớ sống 90 ngày, phiên thường 30 ngày. Nếu cấu
+ * hình bị đặt bằng nhau thì coi là phiên thường (an toàn hơn).
+ */
+function sessionUsesRememberTtl(currentToken) {
+  const expires = new Date(currentToken.expires_at).getTime();
+  const created = currentToken.created_at
+    ? new Date(currentToken.created_at).getTime()
+    : NaN;
+
+  if (!Number.isFinite(expires) || !Number.isFinite(created)) return false;
+
+  const ttlDays = (expires - created) / 86400000;
+  // Cộng một khoảng đệm nhỏ vì created_at do DB sinh nên có thể lệch vài giây.
+  const midpoint = (REFRESH_TOKEN_TTL_DAYS + REFRESH_TOKEN_TTL_DAYS_REMEMBER) / 2;
+  return ttlDays >= midpoint;
+}
+
+/**
  * Rotate refresh token: thu hồi token cũ và phát token mới cùng họ.
+ *
+ * Thời hạn của token mới KHÔNG cố định: nó giữ đúng độ dài phiên ban đầu, suy
+ * ra từ `expires_at - created_at` của token hiện tại.
+ *
+ * Trước đây chỗ này luôn truyền `remember: true`, nên một phiên đăng nhập
+ * thường (30 ngày) được nâng thành 90 ngày ngay từ lần refresh đầu tiên. Tệ
+ * hơn, mỗi lần rotate lại cộng thêm 90 ngày từ thời điểm hiện tại, nên phiên
+ * không bao giờ hết hạn chỉ cần người dùng mở app định kỳ — đúng thứ mà cơ chế
+ * "không ghi nhớ đăng nhập" muốn tránh.
  *
  * @returns {Promise<{accessToken: string, refreshToken: string, user: object}>}
  */
@@ -148,7 +177,7 @@ async function rotateRefreshToken({ currentToken, user }) {
   const nextRaw = await issueRefreshToken({
     uid: user.uid,
     familyId: currentToken.family_id,
-    remember: true,
+    remember: sessionUsesRememberTtl(currentToken),
     userAgent: currentToken.user_agent,
   });
 
