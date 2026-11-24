@@ -1,5 +1,6 @@
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
+const { parsePositiveInt } = require("../../utils/parseId");
 const { resolveActorUid } = require("../../middleware/actor");
 
 /**
@@ -8,9 +9,15 @@ const { resolveActorUid } = require("../../middleware/actor");
  * uid được lấy từ token (chỉ admin mới được nộp thay người khác).
  */
 const submitQuizResult = async (req, res) => {
-  const { quiz_id, answers = {}, explanation } = req.body;
+  const { answers = {}, explanation } = req.body;
 
-  if (!quiz_id || !answers) {
+  // quiz_id phải là số nguyên dương. Để nguyên chuỗi lạ ("abc") thì PostgreSQL
+  // ném "invalid input syntax for type integer" → 500, trong khi lỗi thật là
+  // client gửi sai nên phải là 400.
+  const quiz_id = parsePositiveInt(req.body.quiz_id);
+
+  if (!quiz_id) {
+    // Giữ nguyên câu chữ cũ để client hiện tại (và test) không phải sửa.
     return res.status(400).json({ error: "Thiếu quiz_id hoặc câu trả lời" });
   }
 
@@ -37,13 +44,37 @@ const submitQuizResult = async (req, res) => {
   if (!uid) return;
 
   try {
-    // Lấy loại quiz
-    const quizRow = await pool.query("SELECT type FROM quizzes WHERE quiz_id = $1", [quiz_id]);
+    // Lấy loại quiz KÈM course_id để kiểm tra quyền truy cập.
+    const quizRow = await pool.query(
+      "SELECT type, course_id FROM quizzes WHERE quiz_id = $1",
+      [quiz_id]
+    );
     if (quizRow.rows.length === 0) {
       return res.status(404).json({ error: "Không tìm thấy bài kiểm tra" });
     }
 
     const quizType = quizRow.rows[0].type;
+    const quizCourseId = quizRow.rows[0].course_id;
+
+    // Chỉ người đã ghi danh khoá học mới được nộp bài.
+    //
+    // Trước đây chỉ kiểm tra quiz có tồn tại, nên bất kỳ ai đã đăng nhập cũng
+    // nộp được bài của mọi khoá — và response trả về kèm `correct_answer` cho
+    // từng câu, tức là đọc được đáp án của đề chưa học. Admin và mentor phụ
+    // trách khoá vẫn được phép (để chấm/thử).
+    const actor = req.user || {};
+    const isPrivileged = actor.role === "admin";
+    if (!isPrivileged) {
+      const enrolled = await pool.query(
+        "SELECT 1 FROM enrollments WHERE user_uid = $1 AND course_id = $2 LIMIT 1",
+        [uid, quizCourseId]
+      );
+      if (enrolled.rows.length === 0) {
+        return res.status(403).json({
+          error: "Bạn chưa ghi danh khóa học chứa bài kiểm tra này",
+        });
+      }
+    }
 
     // Lấy tất cả câu hỏi
     const qRows = await pool.query(
@@ -85,7 +116,18 @@ const submitQuizResult = async (req, res) => {
       }
 
       totalAnswered++;
-      const isCorrect = userAns !== null && userAns === qInfo.correct;
+
+      // Chuẩn hoá trước khi so sánh: `correct_index` đọc từ DB là số, còn đáp
+      // án client gửi lên có thể là chuỗi ("1" thay vì 1) — JSON không phân
+      // biệt khi client dựng body từ dữ liệu form. So sánh strict `===` giữa
+      // "1" và 1 luôn false, khiến học viên chọn đúng vẫn bị 0 điểm.
+      const normalizedAnswer =
+        userAns === null || userAns === undefined || userAns === ""
+          ? null
+          : Number(userAns);
+
+      const isCorrect =
+        normalizedAnswer !== null && normalizedAnswer === Number(qInfo.correct);
       if (isCorrect) correctCount++;
 
       questionDetails.push({
@@ -99,7 +141,13 @@ const submitQuizResult = async (req, res) => {
     }
 
     // Điểm
-    const rawScore = totalAnswered ? (correctCount / totalAnswered) * 10 : 0;
+    //
+    // Mẫu số là TỔNG số câu của đề, không phải số câu client gửi lên. Trước đây
+    // dùng `totalAnswered`, nên học viên chỉ gửi 1 câu và trả lời đúng là được
+    // trọn 10 điểm cho cả bài 10 câu — vừa sai điểm vừa mở đường gian lận.
+    // `total_answered` vẫn được trả riêng để client hiển thị số câu đã làm.
+    const totalQuestions = qRows.rows.length;
+    const rawScore = totalQuestions ? (correctCount / totalQuestions) * 10 : 0;
     const finalScore = Math.round(rawScore * 10) / 10;
 
     // Lưu kết quả

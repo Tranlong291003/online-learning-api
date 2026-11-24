@@ -38,9 +38,19 @@ const deleteQuiz = async (req, res) => {
       });
     }
 
-    // Xoá quiz
-    await pool.query("DELETE FROM quiz_results WHERE quiz_id = $1", [quiz_id]);
-    await pool.query("DELETE FROM quizzes WHERE quiz_id = $1", [quiz_id]);
+    // Xoá quiz và dữ liệu con trong MỘT batch.
+    //
+    // Hai lý do:
+    //  - Đúng thứ tự phụ thuộc: quiz_questions.quiz_id không có ON DELETE
+    //    CASCADE trên D1, nên phải xoá câu hỏi trước quizzes (PostgreSQL có
+    //    CASCADE nên lỗi này chỉ lộ ra ở production).
+    //  - Nguyên tử: nếu một câu lỗi, không để lại trạng thái nửa vời (kết quả
+    //    bài làm đã mất nhưng quiz vẫn còn).
+    await pool.batch([
+      { text: "DELETE FROM quiz_results WHERE quiz_id = $1", values: [quiz_id] },
+      { text: "DELETE FROM quiz_questions WHERE quiz_id = $1", values: [quiz_id] },
+      { text: "DELETE FROM quizzes WHERE quiz_id = $1", values: [quiz_id] },
+    ]);
 
     res.status(200).json({ message: "Xoá bài kiểm tra thành công" });
   } catch (err) {

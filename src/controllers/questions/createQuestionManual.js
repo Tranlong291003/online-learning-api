@@ -67,13 +67,20 @@ const createQuestion = async (req, res) => {
       if (!Array.isArray(optionList)) {
         return res.status(400).json({ error: "Trường 'options' phải là một mảng các đáp án." });
       }
-      if (!Number.isInteger(correct_index) || correct_index < 1 || correct_index > optionList.length) {
+      // Ép về số trước khi kiểm tra: client gửi từ form thường là chuỗi ("2"),
+      // và Number.isInteger("2") là false nên trước đây bị từ chối vô lý.
+      const correctIndexNumber = Number(correct_index);
+      if (
+        !Number.isInteger(correctIndexNumber) ||
+        correctIndexNumber < 1 ||
+        correctIndexNumber > optionList.length
+      ) {
         return res.status(400).json({
           error: "correct_index phải là số nguyên nằm trong khoảng từ 1 đến số lượng đáp án.",
         });
       }
       finalOptions = JSON.stringify(optionList);
-      finalCorrectIndex = correct_index - 1;
+      finalCorrectIndex = correctIndexNumber - 1;
     } else if (quizType === "tu_luan") {
       finalExpectedKeywords = expected_keywords || null;
     } else {

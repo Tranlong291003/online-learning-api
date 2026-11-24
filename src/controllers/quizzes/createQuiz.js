@@ -1,5 +1,6 @@
 const { pool } = require("../../config/db.config");
 const { parsePositiveInt } = require("../../utils/parseId");
+const { QUIZ_TYPES } = require("../../utils/constants");
 const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
 const { canManageCourse } = require("../../utils/access");
@@ -9,6 +10,16 @@ const createQuiz = async (req, res) => {
 
   if (!course_id || !title) {
     return res.status(400).json({ error: "Thiếu thông tin khóa học hoặc tiêu đề" });
+  }
+
+  // `type` quyết định cách chấm điểm (tự động hay chờ chấm) và cách kiểm tra
+  // câu hỏi, nên giá trị lạ phải bị chặn ngay tại đây thay vì ghi vào DB rồi
+  // để các controller khác rẽ nhánh sai.
+  const quizType = type ?? "trac_nghiem";
+  if (!QUIZ_TYPES.includes(quizType)) {
+    return res.status(400).json({
+      error: `Loại bài kiểm tra không hợp lệ. Chỉ chấp nhận: ${QUIZ_TYPES.join(", ")}`,
+    });
   }
 
   // Các cột này là integer trong CSDL. Nếu client gửi chuỗi ("abc"), PostgreSQL
@@ -50,7 +61,7 @@ const createQuiz = async (req, res) => {
       `INSERT INTO quizzes (course_id, title, type, time_limit, attempt_limit, creator_uid, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW())
        RETURNING *`,
-      [course_id, title, type || "trac_nghiem", timeLimit, attemptLimit, uid]
+      [course_id, title, quizType, timeLimit, attemptLimit, uid]
     );
 
     const quiz = result.rows[0];

@@ -91,7 +91,10 @@ test("GET /api/quizzes/getquizbycoures/1 returns quizzes with stats", async () =
   });
 });
 
-test("GET /api/quizzes/getquizbycoures/1 returns 404 when no quizzes", async () => {
+test("GET /api/quizzes/getquizbycoures/1 returns an empty list when the course has no quiz", async () => {
+  // Đổi từ 404 sang 200 + mảng rỗng: đây là thay đổi hợp đồng API. "Khoá chưa
+  // có bài kiểm tra" là trạng thái bình thường, không phải lỗi — giữ 404 thì FE
+  // phải phân biệt hai trường hợp cho cùng một màn hình danh sách.
   const poolMock = createPoolMock([{ rows: [] }]);
   const { app } = loadApp({ poolMock });
 
@@ -101,8 +104,8 @@ test("GET /api/quizzes/getquizbycoures/1 returns 404 when no quizzes", async () 
     });
     const body = await response.json();
 
-    assert.equal(response.status, 404);
-    assert.equal(body.error, "Không tìm thấy bài kiểm tra cho khóa học này");
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.data, []);
   });
 });
 
@@ -264,6 +267,68 @@ test("PUT /api/quizzes/update/1 rejects spoofed uid (regression)", async () => {
   });
 });
 
+test("POST /api/quizzes/create rejects an unknown type (regression)", async () => {
+  // `type` quyết định cách chấm điểm; giá trị lạ ghi vào DB sẽ làm
+  // submitQuizResult rẽ nhánh sai và bài làm kẹt ở "cho_cham".
+  const poolMock = createPoolMock([{ rows: [{ role: "admin" }] }]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/quizzes/create", {
+      method: "POST",
+      headers: authHeaders({ role: "admin", uid: "admin-1" }),
+      body: { course_id: 1, title: "Quiz", type: "khong_ton_tai", uid: "admin-1" },
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.match(body.error, /Loại bài kiểm tra không hợp lệ/);
+    assert.ok(!poolMock.calls.some((c) => /INSERT INTO quizzes/i.test(c.sql)));
+  });
+});
+
+test("PUT /api/quizzes/update/1 rejects a non-numeric time_limit (regression)", async () => {
+  // Trước đây "abc" đi thẳng vào cột integer → PostgreSQL ném lỗi → 500.
+  const poolMock = createPoolMock([
+    { rows: [{ role: "admin" }] },
+    { rows: [{ quiz_id: 1, title: "Old", type: "trac_nghiem", creator_uid: "admin-1" }] },
+  ]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/quizzes/update/1", {
+      method: "PUT",
+      headers: authHeaders({ role: "admin", uid: "admin-1" }),
+      body: { uid: "admin-1", time_limit: "abc" },
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.match(body.error, /time_limit phải là số nguyên dương/);
+    assert.ok(!poolMock.calls.some((c) => /UPDATE quizzes/i.test(c.sql)));
+  });
+});
+
+test("PUT /api/quizzes/update/1 rejects an unknown type (regression)", async () => {
+  const poolMock = createPoolMock([
+    { rows: [{ role: "admin" }] },
+    { rows: [{ quiz_id: 1, title: "Old", type: "trac_nghiem", creator_uid: "admin-1" }] },
+  ]);
+  const { app } = loadApp({ poolMock });
+
+  await withServer(app, async ({ json }) => {
+    const response = await json("/api/quizzes/update/1", {
+      method: "PUT",
+      headers: authHeaders({ role: "admin", uid: "admin-1" }),
+      body: { uid: "admin-1", type: "khong_ton_tai" },
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.match(body.error, /Loại bài kiểm tra không hợp lệ/);
+  });
+});
+
 test("PUT /api/quizzes/update/1 returns 403 for non-owner non-admin", async () => {
   const poolMock = createPoolMock([
     { rows: [{ role: "user" }] },
@@ -301,10 +366,11 @@ test("PUT /api/quizzes/update/1 returns 404 when quiz missing", async () => {
   });
 });
 
-test("DELETE /api/quizzes/delete/1 returns 200 and deletes quiz_results BEFORE quizzes", async () => {
+test("DELETE /api/quizzes/delete/1 cancels the quiz and its children in FK order", async () => {
   const poolMock = createPoolMock([
     { rows: [{ role: "admin" }] },
     { rows: [{ creator_uid: "admin-1" }] },
+    { rows: [] },
     { rows: [] },
     { rows: [] },
   ]);
@@ -320,19 +386,13 @@ test("DELETE /api/quizzes/delete/1 returns 200 and deletes quiz_results BEFORE q
 
     assert.equal(response.status, 200);
     assert.equal(body.message, "Xoá bài kiểm tra thành công");
-    assert.equal(poolMock.calls.length, 4);
-    const resultsDelete = poolMock.calls.findIndex((c) =>
-      c.sql.includes("DELETE FROM quiz_results")
-    );
-    const quizzesDelete = poolMock.calls.findIndex((c) =>
-      c.sql.includes("DELETE FROM quizzes")
-    );
-    assert.notEqual(resultsDelete, -1, "expected DELETE FROM quiz_results query");
-    assert.notEqual(quizzesDelete, -1, "expected DELETE FROM quizzes query");
-    assert.ok(
-      resultsDelete < quizzesDelete,
-      "quiz_results must be deleted before quizzes"
-    );
+
+    const deleteCalls = poolMock.calls.filter((c) => /^DELETE FROM/i.test(c.sql.trim()));
+    assert.equal(deleteCalls.length, 3, "phải xoá quiz_results, quiz_questions, quizzes");
+    const order = deleteCalls.map((c) => c.sql.match(/DELETE FROM (\w+)/i)[1].toLowerCase());
+    // quiz_questions.quiz_id không có ON DELETE CASCADE trên D1: xoá câu hỏi
+    // trước quizzes, nếu không production trả 500.
+    assert.deepEqual(order, ["quiz_results", "quiz_questions", "quizzes"]);
   });
 });
 

@@ -105,7 +105,9 @@ test("GET /api/questions/1 returns 404 when quiz missing", async () => {
   });
 });
 
-test("GET /api/questions/1 returns 404 when quiz has no questions", async () => {
+test("GET /api/questions/1 returns an empty list when the quiz has no question", async () => {
+  // Đổi từ 404 sang 200 + mảng rỗng: "đề chưa có câu hỏi" là trạng thái bình
+  // thường, không phải lỗi.
   const poolMock = createPoolMock([{ rows: [{ quiz_id: 1 }] }, { rows: [] }]);
   const { app } = loadApp({ poolMock });
 
@@ -113,8 +115,8 @@ test("GET /api/questions/1 returns 404 when quiz has no questions", async () => 
     const response = await request("/api/questions/1", { headers: authHeaders() });
     const body = await response.json();
 
-    assert.equal(response.status, 404);
-    assert.equal(body.error, "Không tìm thấy câu hỏi cho bài kiểm tra này");
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.data, []);
   });
 });
 

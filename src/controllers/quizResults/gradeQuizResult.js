@@ -23,6 +23,12 @@ const gradeQuizResult = async (req, res) => {
   if (!Number.isFinite(scoreValue)) {
     return res.status(400).json({ error: "score phải là một số" });
   }
+  // Thang điểm của cả hệ thống là 0–10 (submitQuizResult cũng chấm theo thang
+  // này, getResultsByUser lấy mốc >= 5 là đạt). Không chặn thì một request
+  // 999999 ghi vào DB sẽ làm hỏng mọi báo cáo điểm trung bình.
+  if (scoreValue < 0 || scoreValue > 10) {
+    return res.status(400).json({ error: "score phải nằm trong khoảng 0 đến 10" });
+  }
 
   // Lấy uid từ token; chỉ admin mới được thao tác thay người khác
   const uid = resolveActorUid(req, res, req.body.uid);

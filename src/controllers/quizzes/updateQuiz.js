@@ -1,4 +1,5 @@
 const { parsePositiveInt } = require("../../utils/parseId");
+const { QUIZ_TYPES } = require("../../utils/constants");
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
 const { resolveActorUid } = require("../../middleware/actor");
@@ -41,10 +42,34 @@ const updateQuiz = async (req, res) => {
     }
 
     // Merge dữ liệu
+    //
+    // `time_limit`/`attempt_limit` là cột integer. Trước đây nhận nguyên giá trị
+    // client gửi lên, nên "abc" đi thẳng vào câu SQL → PostgreSQL ném lỗi → 500
+    // thay vì 400. `type` cũng phải thuộc danh sách hợp lệ: chấm điểm và hiển
+    // thị đều rẽ nhánh theo `type`, nên một giá trị lạ sẽ làm hỏng bài làm.
+    let updatedTimeLimit = current.time_limit;
+    let updatedAttemptLimit = current.attempt_limit;
+
+    if (time_limit !== undefined && time_limit !== null && time_limit !== "") {
+      updatedTimeLimit = parsePositiveInt(time_limit);
+      if (updatedTimeLimit === null) {
+        return res.status(400).json({ error: "time_limit phải là số nguyên dương" });
+      }
+    }
+    if (attempt_limit !== undefined && attempt_limit !== null && attempt_limit !== "") {
+      updatedAttemptLimit = parsePositiveInt(attempt_limit);
+      if (updatedAttemptLimit === null) {
+        return res.status(400).json({ error: "attempt_limit phải là số nguyên dương" });
+      }
+    }
+
     const updatedTitle = title ?? current.title;
     const updatedType = type ?? current.type;
-    const updatedTimeLimit = time_limit ?? current.time_limit;
-    const updatedAttemptLimit = attempt_limit ?? current.attempt_limit;
+    if (!QUIZ_TYPES.includes(updatedType)) {
+      return res.status(400).json({
+        error: `Loại bài kiểm tra không hợp lệ. Chỉ chấp nhận: ${QUIZ_TYPES.join(", ")}`,
+      });
+    }
 
     // Update
     const updateResult = await pool.query(

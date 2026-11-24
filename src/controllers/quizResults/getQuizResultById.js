@@ -1,70 +1,112 @@
 const { pool } = require("../../config/db.config");
 const { sendServerError } = require("../../utils/errorResponse");
-const { Worker, isMainThread, parentPort, workerData } = require("worker_threads");
 const { parsePositiveInt } = require("../../utils/parseId");
 const { askAi, isAiConfigured } = require("../../config/ai.config");
 
-const BATCH_SIZE = 5;
-const REQUEST_TIMEOUT = 3000;
-const MAX_CONCURRENT_WORKERS = 10;
+/**
+ * Số câu hỏi xử lý song song trong một lượt.
+ *
+ * Giới hạn để không mở hàng trăm request tới dịch vụ AI cùng lúc (mỗi request
+ * đều tốn quota và bộ nhớ). Trước đây giá trị này là số worker thread.
+ */
+const EXPLANATION_CONCURRENCY = 5;
 const MAX_CONCURRENT_REQUESTS = 20;
+/** Ngân sách thời gian cho một lời giải. Quá hạn thì dùng lời giải mặc định. */
+const REQUEST_TIMEOUT = 3000;
+const DEFAULT_EXPLANATION = "Đáp án đúng vì tuân thủ nội dung bài học.";
+
+/**
+ * Cache lời giải theo nội dung câu hỏi.
+ *
+ * Chỉ có tác dụng trong vòng đời một instance (mỗi lần khởi động lại là mất),
+ * nhưng đủ để không gọi lại AI khi học viên mở lại cùng một bài làm.
+ */
 const explanationCache = new Map();
+const EXPLANATION_CACHE_LIMIT = 500;
 
-// Worker thread code
-if (!isMainThread) {
-  const processExplanation = async (question, options, correctIndex) => {
-    const cacheKey = `${question}-${options.join("-")}-${correctIndex}`;
-    if (explanationCache.has(cacheKey)) return explanationCache.get(cacheKey);
+async function explainQuestion(question, options, correctIndex) {
+  const cacheKey = `${question}-${options.join("-")}-${correctIndex}`;
+  if (explanationCache.has(cacheKey)) return explanationCache.get(cacheKey);
 
-    const prompt = `Giải thích chi tiết về câu hỏi: ${question}
+  // Chưa cấu hình AI thì dùng lời giải mặc định — đây là tiện ích phụ, không
+  // được làm hỏng việc trả kết quả bài làm.
+  if (!isAiConfigured()) return DEFAULT_EXPLANATION;
+
+  const prompt = `Giải thích chi tiết về câu hỏi: ${question}
 Các lựa chọn: ${options.join(" | ")}
 Đáp án đúng: ${correctIndex + 1}`;
 
-    // Chưa cấu hình AI thì dùng lời giải mặc định — đây là tiện ích phụ, không
-    // được làm hỏng việc trả kết quả bài làm.
-    if (!isAiConfigured()) {
-      return "Đáp án đúng vì tuân thủ nội dung bài học.";
-    }
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+    const explanation = await askAi({
+      prompt,
+      temperature: 0.4,
+      maxTokens: 200,
+      // Ngân sách thời gian ngắn vì việc sinh lời giải chạy song song cho
+      // nhiều câu; câu nào quá hạn thì dùng lời giải mặc định.
+      timeout: REQUEST_TIMEOUT,
+      signal: controller.signal,
+    });
 
-      const explanation = await askAi({
-        prompt,
-        temperature: 0.4,
-        maxTokens: 200,
-        // Ngân sách thời gian ở đây rất ngắn vì việc sinh lời giải chạy song
-        // song cho nhiều câu; câu nào quá hạn thì dùng lời giải mặc định.
-        timeout: REQUEST_TIMEOUT,
-        signal: controller.signal,
-      });
+    clearTimeout(timeoutId);
+    const text = String(explanation ?? "").trim();
+    if (!text) return DEFAULT_EXPLANATION;
 
-      clearTimeout(timeoutId);
-      const text = String(explanation ?? "").trim();
-      if (!text) return "Đáp án đúng vì tuân thủ các nguyên tắc và best practice.";
-
-      explanationCache.set(cacheKey, text);
-      return text;
-    } catch (error) {
-      return "Đáp án đúng vì tuân thủ các nguyên tắc và best practice.";
-    }
-  };
-
-  const processBatch = async () => {
-    const { questions } = workerData;
-    const promises = questions.map((q) =>
-      processExplanation(q.question.question, q.parsedOptions, q.question.correct_index)
-        .then((explanation) => ({ question_id: q.question.question_id, explanation }))
-    );
-    const results = await Promise.all(promises);
-    parentPort.postMessage(results);
-  };
-
-  processBatch();
+    // Giới hạn kích thước cache để tiến trình chạy lâu không phình bộ nhớ.
+    if (explanationCache.size >= EXPLANATION_CACHE_LIMIT) explanationCache.clear();
+    explanationCache.set(cacheKey, text);
+    return text;
+  } catch (error) {
+    return DEFAULT_EXPLANATION;
+  }
 }
 
-// Main thread code
+/**
+ * Sinh lời giải cho danh sách câu hỏi, giới hạn số request đồng thời.
+ *
+ * Trước đây hàm này spawn `worker_threads` để chạy song song. Cách đó không
+ * dùng được trên Cloudflare Workers (`worker_threads` không được hỗ trợ, và
+ * `__filename` cũng không tồn tại), nên mọi bài làm có câu sai đều lỗi 500 trên
+ * production. Hàng đợi bất đồng bộ dưới đây chạy được ở cả hai môi trường và
+ * không cần khởi tạo thread.
+ */
+async function buildExplanations(questions) {
+  const results = new Array(questions.length);
+  let cursor = 0;
+  let inFlight = 0;
+
+  return new Promise((resolve) => {
+    if (questions.length === 0) return resolve(results);
+
+    const finish = () => {
+      if (cursor >= questions.length && inFlight === 0) resolve(results);
+    };
+
+    const runNext = () => {
+      while (inFlight < EXPLANATION_CONCURRENCY && cursor < questions.length) {
+        const index = cursor++;
+        const { question, parsedOptions } = questions[index];
+        inFlight++;
+        explainQuestion(
+          question.question,
+          parsedOptions,
+          question.correct_index
+        ).then((explanation) => {
+          results[index] = { question_id: question.question_id, explanation };
+          inFlight--;
+          runNext();
+          finish();
+        });
+      }
+      finish();
+    };
+
+    runNext();
+  });
+}
+
 const getQuizResultById = async (req, res) => {
   const result_id = parsePositiveInt(req.params.result_id);
 
@@ -124,56 +166,29 @@ const getQuizResultById = async (req, res) => {
       let parsedOptions = [];
       try { parsedOptions = JSON.parse(q.options); } catch (_) {}
       const userAnswer = userAnswers[q.question_id];
-      const isCorrect = userAnswer !== null && userAnswer === q.correct_index;
+      // Cùng lý do như submitQuizResult: đáp án có thể về dạng chuỗi ("1").
+      const normalized =
+        userAnswer === null || userAnswer === undefined || userAnswer === ""
+          ? null
+          : Number(userAnswer);
+      const isCorrect = normalized !== null && normalized === Number(q.correct_index);
       return { question: q, parsedOptions, userAnswer, isCorrect, needsExplanation: !isCorrect };
     });
 
     const questionsNeedingExplanation = questionsForAI.filter((q) => q.needsExplanation);
 
-    // Xử lý AI với Worker threads
-    const totalQuestions = questionsNeedingExplanation.length;
-    const optimalWorkers = Math.min(MAX_CONCURRENT_WORKERS, Math.ceil(totalQuestions / BATCH_SIZE));
+    // Có tham số ?explanations=0 để bỏ qua lời giải AI (dùng cho client chỉ cần
+    // điểm, hoặc khi dịch vụ AI chậm). Giới hạn số câu để một request không giữ
+    // kết nối quá lâu.
+    const wantsExplanations = String(req.query.explanations ?? "1") !== "0";
+    const limited = questionsNeedingExplanation.slice(0, MAX_CONCURRENT_REQUESTS * 5);
+    const explanationResults = wantsExplanations
+      ? await buildExplanations(limited)
+      : [];
 
-    const batches = [];
-    for (let i = 0; i < totalQuestions; i += BATCH_SIZE) {
-      batches.push(questionsNeedingExplanation.slice(i, i + BATCH_SIZE));
-    }
-
-    const results = [];
-    for (let i = 0; i < batches.length; i += optimalWorkers) {
-      const currentBatches = batches.slice(i, i + optimalWorkers);
-
-      // Chạy từng worker, giới hạn số worker đồng thời trong cả request.
-      // Không dùng semaphore acquire/release: release trong finally sẽ chạy ngay
-      // sau khi tạo Worker (chưa xong việc) nên không giới hạn được gì.
-      const runWorker = (batch) =>
-        new Promise((resolve, reject) => {
-          const worker = new Worker(__filename, { workerData: { questions: batch } });
-          worker.on("message", resolve);
-          worker.on("error", reject);
-          worker.on("exit", (code) => {
-            if (code !== 0) reject(new Error(`Worker dừng với mã lỗi ${code}`));
-          });
-        });
-
-      const batchPromises = [];
-      const queue = [...currentBatches];
-      const workers = Array.from(
-        { length: Math.min(MAX_CONCURRENT_REQUESTS, queue.length) },
-        async () => {
-          while (queue.length > 0) {
-            const batch = queue.shift();
-            batchPromises.push(await runWorker(batch));
-          }
-        }
-      );
-      await Promise.all(workers);
-
-      const batchResults = await Promise.all(batchPromises);
-      results.push(...batchResults.flat());
-    }
-
-    const explanationMap = new Map(results.map((e) => [e.question_id, e.explanation]));
+    const explanationMap = new Map(
+      explanationResults.filter(Boolean).map((e) => [e.question_id, e.explanation])
+    );
 
     const questionWithAnswers = questionsForAI.map((q) => ({
       question_id: q.question.question_id,
@@ -182,7 +197,9 @@ const getQuizResultById = async (req, res) => {
       correct_answer: q.question.correct_index,
       user_answer: q.userAnswer,
       is_correct: q.isCorrect,
-      explanation: q.needsExplanation ? explanationMap.get(q.question.question_id) : null,
+      explanation: q.needsExplanation
+        ? explanationMap.get(q.question.question_id) || null
+        : null,
     }));
 
     const totalCorrect = questionWithAnswers.filter((q) => q.is_correct).length;
@@ -202,4 +219,4 @@ const getQuizResultById = async (req, res) => {
   }
 };
 
-if (isMainThread) module.exports = getQuizResultById;
+module.exports = getQuizResultById;

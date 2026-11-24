@@ -76,9 +76,13 @@ const updateQuestion = async (req, res) => {
     }
 
     // Chuẩn bị dữ liệu
-    let finalOptions = null;
-    let finalCorrectIndex = null;
-    let finalExpectedKeywords = null;
+    //
+    // Với quiz tự luận, `options` và `correct_index` phải giữ nguyên giá trị cũ:
+    // câu UPDATE bên dưới luôn ghi cả 4 cột, nên nếu gán null thì mỗi lần sửa
+    // nội dung/expected_keywords của câu tự luận là xoá mất dữ liệu sẵn có.
+    let finalOptions = currentQuestion.options;
+    let finalCorrectIndex = currentQuestion.correct_index;
+    let finalExpectedKeywords = currentQuestion.expected_keywords;
 
     if (quizType === "trac_nghiem") {
       if (!options || correct_index === undefined) {
@@ -93,15 +97,22 @@ const updateQuestion = async (req, res) => {
       if (!Array.isArray(optionList)) {
         return res.status(400).json({ message: "Trường 'options' phải là một mảng các đáp án." });
       }
-      if (!Number.isInteger(correct_index) || correct_index < 1 || correct_index > optionList.length) {
+      // Ép về số trước khi kiểm tra: client gửi từ form thường là chuỗi ("2"),
+      // và Number.isInteger("2") là false nên trước đây bị từ chối vô lý.
+      const correctIndexNumber = Number(correct_index);
+      if (
+        !Number.isInteger(correctIndexNumber) ||
+        correctIndexNumber < 1 ||
+        correctIndexNumber > optionList.length
+      ) {
         return res.status(400).json({
           message: "correct_index phải là số nguyên nằm trong khoảng từ 1 đến số lượng đáp án.",
         });
       }
       finalOptions = JSON.stringify(optionList);
-      finalCorrectIndex = correct_index - 1;
-    } else {
-      finalExpectedKeywords = expected_keywords !== undefined ? expected_keywords : currentQuestion.expected_keywords;
+      finalCorrectIndex = correctIndexNumber - 1;
+    } else if (expected_keywords !== undefined) {
+      finalExpectedKeywords = expected_keywords;
     }
 
     // Update

@@ -28,7 +28,12 @@ const getQuestionsByQuiz = async (req, res) => {
     );
 
     if (questionResult.rows.length === 0) {
-      return res.status(404).json({ error: "Không tìm thấy câu hỏi cho bài kiểm tra này" });
+      // Quiz chưa có câu hỏi là trạng thái bình thường (đề vừa tạo). Trả 404
+      // khiến FE hiện lỗi thay vì danh sách rỗng.
+      return res.status(200).json({
+        message: "Danh sách câu hỏi của bài kiểm tra",
+        data: [],
+      });
     }
 
     // Đáp án đúng chỉ trả cho người được phép chấm/sửa quiz (admin hoặc mentor

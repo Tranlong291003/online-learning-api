@@ -48,8 +48,12 @@ const getQuizzesByCourse = async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({
-        error: "Không tìm thấy bài kiểm tra cho khóa học này",
+      // Khoá học chưa có bài kiểm tra là trạng thái BÌNH THƯỜNG, không phải
+      // lỗi. Trả 404 khiến FE phải phân biệt "khoá không tồn tại" với "khoá
+      // chưa có quiz", trong khi cả hai đều nên hiện danh sách rỗng.
+      return res.status(200).json({
+        message: "📋 Danh sách bài kiểm tra của khóa học",
+        data: [],
       });
     }
 
